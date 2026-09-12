@@ -4013,6 +4013,49 @@ migration 025 applied.
 
 ---
 
+## Current state — 12 September 2026
+
+Supersedes the 11 September entry below. Since then: the `REPO_AUDIT.md`
+remediation (sections 12-15), version control, CI, and a dependency pass.
+
+```
+npm run typecheck     clean  — all three configs
+npm run lint          clean  — at --max-warnings=0
+npm run test:unit     93 files / 715 tests passed
+npm run test:e2e      27 passed | 0 failed
+npm run audit:ci      0 production advisories, 0 exemptions
+npm run build         clean
+```
+
+Coverage is 76.24% statements / 68.04% branches / 72.16% functions / 78.63%
+lines — still under the 80% standard, and the one substantial item left open.
+
+**This repository is now under version control.** It had no `.git` at all.
+`.gitignore` already covered `.env`, `node_modules`, `dist`, `coverage`, `logs`
+and `uploads`; three gaps were closed before the first commit so nothing
+sensitive or generated entered history — `uploads-quarantine/` (real guest
+photos awaiting moderation), `.claude-flow/` and `.impeccable/` (agent state
+that may carry tokens), and `.npm-cache/`.
+
+**CI runs on push and on pull requests** (`.github/workflows/ci.yml`): lint,
+typecheck and build in one job; migrations, unit tests with coverage and e2e in
+another against a real Postgres 16 service; and a blocking dependency audit in a
+third. It has never actually run, because the repository has no remote yet.
+
+**Production dependency advisories are at zero**, down from seven. `multer`,
+`qs` and `jspdf` were upgraded, and `ftp-srv` was replaced with
+`@electerm/ftp-srv` — the only way to clear an SSRF advisory in `ip` that has no
+fixed version anywhere. Details in `REPO_AUDIT.md` §15.
+
+Two upgrades turned out to have no test behind them at all, which only became
+visible when they were changed: nothing in the suite constructed jsPDF, and
+nothing started the FTP server. Both now have real integration tests, and the
+FTP one immediately caught a silent break — the new library reports the client
+path on STOR where the old one reported the path on disk, so uploaded frames
+would have vanished with all fifteen existing FTP tests still green.
+
+---
+
 ## Current state — 11 September 2026
 
 The per-entry figures above are a running history, each recording what was true

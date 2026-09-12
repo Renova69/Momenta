@@ -62,11 +62,11 @@ unchanged.
 | `server/middleware/` | auth, rateLimit, tierGate, validate, uuid | `server/middleware/auth.ts:107` |
 | `server/ws/` | event-scoped WebSocket manager | `server/ws/wsServer.ts:54` |
 | `server/ftp/` | in-process FTP server for in-camera transfer | `server/index.ts:166` |
-| `src/` | React 18 SPA. 76 TypeScript/TSX files. | `package.json:7` |
+| `src/` | React 18 SPA. 76 TypeScript/TSX files. | `package.json:11` |
 | `shared/` | code shared by client and server (slug transliteration) | `server/lib/storage.ts:8` |
 | `database/migrations/` | 25 sequential `.sql` migrations | `database/migrations/025_email_bounces.sql:22` |
-| `scripts/` | 20 operational CLI entry points | `package.json:13-33` |
-| `tests/` | 92 unit specs, 1 e2e, 1 integration, 1 helper | `package.json:35,39` |
+| `scripts/` | 20 operational CLI entry points | `package.json:17-37` |
+| `tests/` | 93 unit specs, 1 e2e, 1 integration, 3 harness files | `package.json:39,43` |
 | `docs/` | 15 reference documents | `ls docs/` |
 
 ### Files at root that are not application files
@@ -94,7 +94,7 @@ import './server/index';
 (`server.ts:1-2`)
 
 No reference to `server.ts` appears in `package.json`, `Dockerfile`, `docker-compose.yml` or
-`vercel.json`. The entry point actually used is `server/index.ts` (`package.json:11`).
+`vercel.json`. The entry point actually used is `server/index.ts` (`package.json:15`).
 
 ### Source files by size
 
@@ -590,14 +590,20 @@ backstops remain (`server/middleware/rateLimit.ts:14-17`, `:98-104`).
 
 ## 9. Test Coverage Reality
 
-**Coverage measured 12 September 2026** (`npm run test:coverage`, v8 provider):
+**Coverage measured 12 September 2026** (`npm run test:coverage`, v8 provider),
+after the work in §13-§15:
 
-| Metric | Result | Standard |
-|---|---|---|
-| Statements | 75.54% (3664/4850) | 80% |
-| Branches | 67.61% (2514/3718) | 80% |
-| Functions | 70.76% (673/951) | 80% |
-| Lines | 77.89% (3456/4437) | 80% |
+| Metric | Result | Standard | At audit start |
+|---|---|---|---|
+| Statements | 76.24% (3740/4905) | 80% | 75.54% |
+| Branches | 68.04% (2542/3736) | 80% | 67.61% |
+| Functions | 72.16% (700/970) | 80% | 70.76% |
+| Lines | 78.63% (3523/4480) | 80% | 77.89% |
+
+The "at audit start" column is the first measurement taken in this session. The
+movement is small and comes entirely from tests added alongside fixes — the
+jsPDF and FTP integration specs in §15 most of all. No coverage-raising pass
+has been done; that remains open.
 
 **The suite is below the project's own 80% minimum on every metric.** The
 `coverage.include` list at `vitest.config.ts:78-88` covers `server/lib`,
@@ -630,10 +636,10 @@ chunk reached only through the dynamic import at
 | Helpers | 1 |
 
 Runner configuration: `vitest.config.ts` (coverage block at `vitest.config.ts:76`),
-`vitest.r2.config.ts` for real-R2 storage tests (`package.json:37`), and `tests/e2e.test.ts` run
-directly through tsx rather than through vitest (`package.json:39`).
+`vitest.r2.config.ts` for real-R2 storage tests (`package.json:41`), and `tests/e2e.test.ts` run
+directly through tsx rather than through vitest (`package.json:43`).
 
-Test commands (`package.json:34-39`):
+Test commands (`package.json:38-43`):
 
 ```
 test              test:unit && test:e2e
@@ -644,7 +650,7 @@ test:coverage     vitest run --coverage
 test:e2e          tsx tests/e2e.test.ts
 ```
 
-Last full run during this session: **92 files / 704 tests passing**, e2e **27/27**.
+Last full run: **93 files / 715 tests passing**, e2e **27/27**.
 
 `npm run typecheck` is three separate invocations — `tsconfig.json` (which includes only `src` and
 `shared`), `tsconfig.server.json`, and `tsconfig.test.json` (`package.json:9`). Running
@@ -684,7 +690,7 @@ Reference documentation in `docs/`: `API_REFERENCE.md`, `ARCHITECTURE.md`,
 
 ### Operational CLI surface
 
-From `package.json:13-33`:
+From `package.json:17-37`:
 
 ```
 migrate                 tsx server/lib/migrate.ts
@@ -775,7 +781,7 @@ reading. The original question is kept so the answer can be checked against what
 |---|---|---|---|
 | 1 | Is root `server.ts` intentional or dead? | **Dead.** Unreferenced by any config, and in no tsconfig `include` — `tsconfig.json` covers `src`+`shared`, `tsconfig.server.json` covers `server`+`scripts`+`shared`. It was never even typechecked. | `tsconfig.json:29`, `tsconfig.server.json:11` |
 | 2 | Are `1`, `617`, `{{.Destination}}` safe to delete? | **Yes.** No reference in `package.json`, `Dockerfile`, `docker-compose.yml`, `vercel.json`, or any `.ts`/`.tsx` file. | grep over the tree |
-| 3 | What does `npm run test:coverage` report? | **75.54% statements, 67.61% branches, 70.76% functions, 77.89% lines** — below the 80% standard on all four. | §9 |
+| 3 | What does `npm run test:coverage` report? | **75.54% statements, 67.61% branches, 70.76% functions, 77.89% lines** — below the 80% standard on all four. Now 76.24 / 68.04 / 72.16 / 78.63, still below it. | §9 |
 | 4 | Does `src/config/plans.ts` agree with `server/lib/planLimits.ts`? | **Yes, on every number.** Storage 500 MB / 10 / 25 / 100 GB matches; the limits rendered from i18n (`50 photos`, `7 days`, `3 months`, `1 full year`, `Ongoing access`) match `maxPhotos` and `retentionDays`. | `src/config/plans.ts:41,63,86,108`, `src/i18n/index.ts:984-1020`, `server/lib/planLimits.ts:27-50` |
 | 5 | Is `events.plan_tier` read for any non-entitlement purpose? | **No — fully vestigial.** Every handler overwrote `planTier` from `getEffectiveTierForEvent`/`ForUser` before responding, and the client prefers `planTier` over `plan_tier`. It was still shipped on the wire as a second, staler answer. | `server/routes/events.ts:149,355,378,530`, `server/routes/auth.ts:99,276,307`, `src/services/eventNormalization.ts:101,143` |
 | 6 | Is the 800-line standard advisory for route files? | Treated as binding. Both files are now split — §13. | §13 |
@@ -1016,9 +1022,10 @@ Two fixes:
 
 ### Not done
 
-- **Coverage is unchanged at 75.54%**, still below the 80% standard. Explicitly
-  scoped out. §9 lists the lowest-covered modules; `server/lib/photoWrite.ts` is
-  new and has no direct unit tests of its own, though both callers are covered.
+- **Coverage was 75.54% at the end of this pass**, below the 80% standard and
+  explicitly scoped out. §9 lists the lowest-covered modules;
+  `server/lib/photoWrite.ts` is new and has no direct unit tests of its own,
+  though both callers are covered. See §15 for the current figure.
 - **No file now exceeds the 800-line ceiling.** The largest is
   `src/components/camera/CameraCaptureModal.tsx` at 694.
 
@@ -1110,34 +1117,184 @@ parallelism left on.
 
 ---
 
+## 15. CI and dependencies — 12 September 2026
+
+The repository had a test suite worth trusting and nothing running it, and
+seven known advisories against dependencies that reach production.
+
+### Continuous integration
+
+`.github/workflows/ci.yml`, three jobs on push to `main` and on pull requests:
+
+| Job | Runs | Why separate |
+|---|---|---|
+| `static` | lint, typecheck, build | No database, so a typing or formatting mistake fails in about a minute rather than after Postgres boots |
+| `test` | 25 migrations, then unit + coverage, then e2e | Needs a real Postgres; the specs insert real rows and assert on what the queries return |
+| `audit` | `npm run audit:ci` | Production dependencies only |
+
+Hardening: top-level `permissions: contents: read`; concurrency that cancels
+superseded branch runs but never `main`; `timeout-minutes` on every job;
+`npm ci` rather than `npm install`; coverage uploaded with `if: always()`,
+because a coverage report is most useful when something failed.
+
+Lint runs at `--max-warnings=0`. That surfaced five warnings — unused imports
+left behind by the route and dashboard splits in §13 — which were cleaned up so
+the gate starts green rather than pre-suppressed.
+
+No secret is hardcoded in the workflow, including throwaway ones: a literal JWT
+secret in a workflow file becomes a real value somebody copies into a real
+deployment. It is derived per run from the run id and commit sha.
+
+Supporting files: `.github/dependabot.yml` (weekly npm, monthly actions, patch
+and minor grouped, majors ignored as deliberate work), `.nvmrc`, and an
+`engines` field. All three pin Node 24 and move together.
+
+**Verified rather than assumed.** Every step was run locally with `.env` moved
+aside and only the variables the workflow sets, since CI has no dotenv file.
+Then the migrations were applied to a brand new empty database and the entire
+suite re-run against it — the condition CI actually starts from, and the one a
+local run never reproduces.
+
+### Dependency upgrades
+
+Seven advisories, closed one commit at a time with the suite as the check.
+
+| Package | Change | Advisory |
+|---|---|---|
+| `multer` | 2.2.0 → 2.3.0 | high — DoS via crafted multipart field names |
+| `qs` | 6.15.3 → 6.16.0 | moderate — array-limit bypass |
+| `jspdf` | 2.5.2 → 4.2.1 | **critical** — ReDoS, and the transitive `dompurify` XSS with it |
+| `uuid` | override → 11.1.1, then removed | moderate — buffer bounds in v3/v5/v6 |
+| `ftp-srv` | replaced by `@electerm/ftp-srv` 1.0.5 | high — SSRF in `ip`, no fixed version anywhere |
+
+**Production advisories: 7 → 0.**
+
+### Two upgrades that had no test behind them
+
+Both `jspdf` and `ftp-srv` were exercised by nothing in the suite, which only
+became visible when they were changed.
+
+`pdfPrintService.spec.ts` had eight tests covering print dimensions and the
+browser print dialog, and never called `exportPosterPdf` — the only place jsPDF
+is constructed. A two-major upgrade could therefore typecheck, bundle and ship
+while being broken at runtime. A ninth test now builds a real PDF: html2canvas
+is mocked because it needs a layout engine, jsPDF is not, and the assertions are
+on the bytes — A4 in millimetres, a `%PDF-` header, and an embedded image rather
+than an empty shell.
+
+`ftpServer.spec.ts` had fifteen tests, all driving `handleLogin` and
+`handleStoredFile` with a mock connection. Correct for the throttle and the
+listener-dedup rules, and it meant `startFtpServer` — the only place the FTP
+library is constructed — was never called.
+
+**That gap hid a real break.** `@electerm/ftp-srv` emits the *client* path on
+STOR (`/DSC_0001.jpg`) where `ftp-srv` 4.x emitted the path on disk.
+`handleStoredFile` stats and reads that string, so it resolved against the
+process working directory, threw, and was swallowed by the catch. A
+photographer would have uploaded frames that silently never arrived, with all
+fifteen tests still green.
+
+`tests/unit/ftpIngestIntegration.spec.ts` now starts the real server on an
+ephemeral port, connects with a real FTP client (`basic-ftp`), uploads a real
+JPEG and asserts the row lands with `source='photographer'` and `priority=10`.
+It also asserts a wrong ingest key is refused. That test is what found the STOR
+difference, and it is what will find the next one.
+
+`resolveStoredPath()` maps the client path onto the event's staging directory
+and refuses anything that escapes it. That check is new rather than carried
+over: the path is now chosen by the client, and `../` is the whole distance
+between one photographer's frames and another event's folder.
+
+### The audit gate
+
+`npm audit` has two settings and neither works alone in CI: gate on everything
+and the build stays red over advisories nobody can fix; gate on nothing and the
+check is decoration. A permanently red check is worse than none, because people
+learn to scroll past it.
+
+`scripts/audit-gate.ts` gates on production dependencies at high and above,
+against an allowlist where each entry states why it is acceptable and when a
+person last checked. It fails in **both** directions, and both were verified by
+breaking them: an advisory that is not allowlisted fails the run, and an
+allowlist entry whose advisory has gone also fails it.
+
+That second direction did its job during the ftp-srv replacement — it flagged
+the `ip` and `ftp-srv` exemptions as stale the moment the dependency left, and
+they were deleted rather than left to rot. **The allowlist is now empty.**
+
+### Not done
+
+- **Coverage is 76.24%** (branches 68.04%, functions 72.16%, lines 78.63%),
+  still under the project's own 80% standard. Explicitly out of scope for this
+  pass. The new jsPDF and FTP tests moved it from 75.54%.
+  `server/lib/photoWrite.ts` still has no direct unit tests, though both of its
+  callers are covered.
+- **Nothing is pushed.** The repository has no remote, so the workflow has never
+  run. It will on the first push.
+- **Branch protection** is a repository setting rather than a file: `static` and
+  `test` should be required on pull requests to `main` once the first run is
+  green.
+- **`@electerm/ftp-srv` carries roughly 3,000 monthly downloads against
+  `ftp-srv`'s 70,000.** That is the trade this pass made — maintained code with
+  fewer eyes, in exchange for a dependency that no longer ships a known
+  vulnerability. The integration test above is what makes it defensible.
+
+---
+
 ## Appendix A — Dependency inventory
 
-### Runtime (`package.json:44-73`)
+Refreshed 12 September 2026, after the upgrade pass in §15.
+
+### Runtime (`package.json:49-78`)
 
 ```
-@aws-sdk/client-s3  ^3.1118.0     archiver            ^8.0.0
-@types/nodemailer   ^8.0.1        bcryptjs            ^3.0.3
-canvas-confetti     ^1.9.4        clsx                ^2.1.1
-cors                ^2.8.6        cross-env           ^10.1.0
-dotenv              ^17.4.2       express             ^5.2.1
-express-rate-limit  ^8.6.2        ftp-srv             ^4.6.3
-helmet              ^8.3.0        html2canvas         ^1.4.1
-jsonwebtoken        ^9.0.3        jspdf               ^2.5.2
-lucide-react        ^1.16.0       multer              ^2.2.0
-nodemailer          ^10.0.6       pg                  ^8.23.0
-qrcode.react        ^4.2.0        react               ^18.3.1
-react-dom           ^18.3.1       sharp               ^0.35.4
-stripe              ^22.6.1       tailwind-merge      ^3.0.2
-ws                  ^8.21.3       zod                 ^4.4.3
+@aws-sdk/client-s3  ^3.1118.0      @electerm/ftp-srv   ^1.0.5
+@types/nodemailer   ^8.0.1         archiver            ^8.0.0
+bcryptjs            ^3.0.3         canvas-confetti     ^1.9.4
+clsx                ^2.1.1         cors                ^2.8.6
+cross-env           ^10.1.0        dotenv              ^17.4.2
+express             ^5.2.1         express-rate-limit  ^8.6.2
+helmet              ^8.3.0         html2canvas         ^1.4.1
+jsonwebtoken        ^9.0.3         jspdf               ^4.2.1
+lucide-react        ^1.16.0        multer              ^2.3.0
+nodemailer          ^10.0.6        pg                  ^8.23.0
+qrcode.react        ^4.2.0         react               ^18.3.1
+react-dom           ^18.3.1        sharp               ^0.35.4
+stripe              ^22.6.1        tailwind-merge      ^3.0.2
+ws                  ^8.21.3        zod                 ^4.4.3
 ```
 
-`@types/nodemailer` is listed under `dependencies` rather than `devDependencies`
-(`package.json:46`).
+Twenty-eight runtime dependencies, and **zero known advisories** against them
+(`npm run audit:ci`).
 
-### Development (`package.json:74-107`)
+Four moved in §15: `multer` 2.2.0 → 2.3.0, `jspdf` 2.5.2 → 4.2.1, and `ftp-srv`
+4.6.3 replaced outright by `@electerm/ftp-srv` 1.0.5. `qs` moved 6.15.3 →
+6.16.0 in the lockfile only, arriving through express.
 
-TypeScript 5.7, Vite 6.2, Vitest 4.1, ESLint 8.57, jsdom 30, Testing Library, tsx 4.23, Tailwind
-3.4, plus `js-yaml` and `@types/js-yaml` (`package.json:82,99`).
+Two observations that still stand:
+
+- `@types/nodemailer` is under `dependencies` rather than `devDependencies`
+  (`package.json:52`). Harmless, but it ships a types-only package to
+  production.
+- `cross-env` is likewise a runtime dependency, though it is only used by npm
+  scripts (`package.json:58`).
+
+### Development (`package.json:79-113`)
+
+TypeScript 5.7, Vite 6.2, Vitest 4.1, ESLint 8.57, jsdom 30, Testing Library,
+tsx 4.23, Tailwind 3.4, `js-yaml`, and `basic-ftp` ^6.2.1 — the last added in
+§15 as the client half of the FTP integration test.
+
+### Engines
+
+`node >=24.0.0`, `npm >=11.0.0` (`package.json:6-9`), matching `.nvmrc` and the
+`NODE_VERSION` in `.github/workflows/ci.yml`. All three move together.
+
+### No overrides
+
+The `uuid` override added in §15 was removed in the same section once
+`@electerm/ftp-srv` dropped the dependency that needed it. An override with no
+remaining reason is the same hazard as a stale audit exemption.
 
 ---
 

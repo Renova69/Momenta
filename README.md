@@ -101,15 +101,30 @@ node start-tunnel.cjs  # дава публичен https:// адрес
 ## 🧪 Тестове & Валидация (Test Suite)
 
 ```bash
-npm run lint         # ESLint (src, server, shared, tests)
+npm run lint         # ESLint (src, server, shared, scripts, tests)
 npm run typecheck    # tsc over src, server + shared, and tests
 npm run test         # unit specs + full-stack E2E (needs PostgreSQL)
 npm run test:unit    # Vitest only
 npm run test:coverage
+npm run audit:ci     # production dependency advisories, against a reviewed allowlist
 ```
 
 > Стартирайте базата преди тестовете: `docker compose up -d db`.
 > Подробности: [docs/TEST_SPEC_COVERAGE.md](docs/TEST_SPEC_COVERAGE.md).
+
+### Continuous integration
+
+`.github/workflows/ci.yml` runs on every push to `main` and every pull request:
+
+| Job | Какво прави |
+|---|---|
+| `static` | `lint` (при `--max-warnings=0`), `typecheck`, `build` — без база данни |
+| `test` | миграциите, след това `test:coverage` и `test:e2e` срещу реален PostgreSQL 16 |
+| `audit` | `audit:ci` — блокира при нова уязвимост в production зависимост |
+
+Всичките три трябва да минават преди merge. Node версията е фиксирана на едно
+място по три файла — `.nvmrc`, `engines` в `package.json`, и `NODE_VERSION` в
+workflow-а — и се сменят заедно.
 
 ---
 
