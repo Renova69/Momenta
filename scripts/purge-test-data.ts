@@ -62,7 +62,11 @@ export async function purgeTestData(dryRun = false): Promise<PurgeResult> {
   let mediaBytes = 0;
   for (const { id } of doomed) {
     try {
-      mediaBytes += await purgeEventMedia(id);
+      const purge = await purgeEventMedia(id);
+      mediaBytes += purge.freedBytes;
+      if (purge.failedPaths.length > 0) {
+        console.warn(`  ${id}: ${purge.failedPaths.length} object(s) left in storage`);
+      }
     } catch (err) {
       // Storage that will not delete must not block the row cleanup — the
       // alternative is a database that keeps growing because a bucket is

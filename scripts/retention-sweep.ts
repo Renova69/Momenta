@@ -108,6 +108,20 @@ async function main() {
     console.log(
       `\n[retention] Deleted media for ${result.deleted.length} album(s), freeing ${formatBytes(result.freedBytes)}.`
     );
+
+    if (result.leakedPaths.length > 0) {
+      // The rows naming these objects are gone, so nothing in the database can
+      // find them again - only `npm run storage:orphans` can. Printed at the
+      // end of the run rather than left as a console.warn buried mid-loop,
+      // because that is how 164 MB of unreachable objects went unnoticed once
+      // already.
+      console.error(
+        `\n[retention] WARNING — ${result.leakedPaths.length} stored object(s) could not be ` +
+          `deleted and are now orphaned:\n` +
+          result.leakedPaths.map((path) => `  ${path}`).join('\n') +
+          `\n[retention] Run \`npm run storage:orphans\` to confirm, then sweep them.`
+      );
+    }
   }
 
   await pool.end();

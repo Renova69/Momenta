@@ -2,6 +2,7 @@ import { Pool, PoolClient } from 'pg';
 import { pool } from './db';
 import { storageAdapter, toStoragePath } from './storage';
 import { limitsFor } from './planLimits';
+import { errorLabel } from './errors';
 import { BackendPlanTier } from '../middleware/tierGate';
 
 /**
@@ -29,12 +30,19 @@ export const GRACE_PERIOD_DAYS = 30;
  * sweep will not delete an album whose `retention_notified_at` is null or
  * younger than this.
  *
- * This app has no mailer, so nothing sets that column today — which means
- * RETENTION_ENFORCED=true currently deletes nothing at all. That is the
- * intended state, and it is the point: enabling enforcement becomes safe by
- * construction instead of safe by remembering. When a mailer is added, the
- * code that sends the warning stamps the column and deletion begins working
- * on its own, in the right order, without this guard needing to change.
+ * **The mailer now exists, and this is live.** When this guard was written
+ * there was no way to send a notice, so nothing ever set the column and
+ * RETENTION_ENFORCED=true deleted nothing — a safe rehearsal. That is no
+ * longer true: `sendRetentionNotices` stamps `retention_notified_at` after a
+ * confirmed send (`server/lib/retentionNotice.ts:326`), so with SMTP_HOST
+ * configured and notices sent more than RETENTION_NOTICE_DAYS ago,
+ * RETENTION_ENFORCED=true **permanently deletes wedding photos**.
+ *
+ * The guard still holds in the right order, which was the design intent — an
+ * album is deletable only after a notice it could act on. What changed is that
+ * the precondition is now reachable. Do not read this constant as a safety net
+ * that makes enforcement a no-op; the only thing that still makes it a no-op is
+ * an unconfigured mailer (`server/lib/config.ts:155-163`).
  */
 export const RETENTION_NOTICE_DAYS = 14;
 
@@ -73,6 +81,23 @@ export interface SweepResult {
   awaitingNotice: RetentionCandidate[];
   deleted: string[];
   freedBytes: number;
+  /**
+   * Stored objects the adapter refused to delete during a purge.
+   *
+   * By the time a purge returns, the rows that named these are gone, so nothing
+   * in the database can find them again — they are orphans until
+   * `storage:orphans` sweeps them. A `console.warn` inside the loop was the
+   * only record, which is exactly how 164 MB went unnoticed before. Reported
+   * here so the nightly run names them instead.
+   */
+  leakedPaths: string[];
+}
+
+export interface PurgeResult {
+  /** Bytes accounted for by the media rows that were removed. */
+  freedBytes: number;
+  /** Objects the storage adapter refused to delete. See SweepResult.leakedPaths. */
+  failedPaths: string[];
 }
 
 /**
@@ -197,8 +222,20 @@ async function loadCandidates(cutoff: string): Promise<RetentionCandidate[]> {
   }));
 }
 
-/** Delete every stored object for an event, then its media rows. */
-export async function purgeEventMedia(eventId: string): Promise<number> {
+/**
+ * Delete every stored object for an event, then its media rows.
+ *
+ * Files first, and the order is load-bearing: the rows are the only record of
+ * which stored objects belong to this album, so deleting them first orphans
+ * every file permanently. Files first means a failure leaves rows pointing at
+ * missing objects — visible, and fixable — instead of bytes nothing can find.
+ *
+ * A delete the adapter refuses is *not* fatal here: aborting would leave the
+ * album half-purged with no way to resume. It is collected into `failedPaths`
+ * so the caller can report it, because the row that named the object is about
+ * to be deleted and after that only `storage:orphans` can find it.
+ */
+export async function purgeEventMedia(eventId: string): Promise<PurgeResult> {
   const { rows: photos } = await pool.query(
     'SELECT storage_path, original_storage_path, thumbnail_url, storage_bytes FROM photos WHERE event_id = $1',
     [eventId]
@@ -209,6 +246,16 @@ export async function purgeEventMedia(eventId: string): Promise<number> {
   );
 
   let freed = 0;
+  const failedPaths: string[] = [];
+
+  const deleteObject = async (path: string): Promise<void> => {
+    try {
+      await storageAdapter.delete(path);
+    } catch (err) {
+      failedPaths.push(path);
+      console.warn(`[retention] could not delete ${path}:`, errorLabel(err));
+    }
+  };
 
   for (const photo of photos) {
     // The thumbnail belongs here too. It was selected but never deleted, so a
@@ -221,20 +268,14 @@ export async function purgeEventMedia(eventId: string): Promise<number> {
     ];
     for (const path of paths) {
       if (!path) continue;
-      await storageAdapter
-        .delete(path)
-        .catch((err) => console.warn(`[retention] could not delete ${path}:`, err?.message));
+      await deleteObject(path);
     }
     freed += Number(photo.storage_bytes) || 0;
   }
 
   for (const entry of audio) {
     const path = toStoragePath(entry.audio_url as string);
-    if (path) {
-      await storageAdapter
-        .delete(path)
-        .catch((err) => console.warn(`[retention] could not delete ${path}:`, err?.message));
-    }
+    if (path) await deleteObject(path);
     freed += Number(entry.storage_bytes) || 0;
   }
 
@@ -280,7 +321,7 @@ export async function purgeEventMedia(eventId: string): Promise<number> {
   // real directory to remove).
   await storageAdapter.removeEventDirectory?.(eventId);
 
-  return freed;
+  return { freedBytes: freed, failedPaths };
 }
 
 /**
@@ -318,17 +359,22 @@ export async function sweepExpiredAlbums(enforce = false): Promise<SweepResult> 
     awaitingNotice,
     deleted: [],
     freedBytes: 0,
+    leakedPaths: [],
   };
 
   if (!enforce) return result;
 
   for (const candidate of eligible) {
     try {
-      const freed = await purgeEventMedia(candidate.eventId);
+      const purge = await purgeEventMedia(candidate.eventId);
       result.deleted.push(candidate.eventId);
-      result.freedBytes += freed;
+      result.freedBytes += purge.freedBytes;
+      result.leakedPaths.push(...purge.failedPaths);
       console.log(
-        `[retention] purged media for ${candidate.slug} (expired ${candidate.expiresAt}, freed ${freed} bytes)`
+        `[retention] purged media for ${candidate.slug} (expired ${candidate.expiresAt}, ` +
+        `freed ${purge.freedBytes} bytes` +
+        (purge.failedPaths.length > 0 ? `, ${purge.failedPaths.length} object(s) LEAKED` : '') +
+        ')'
       );
     } catch (err) {
       console.error(`[retention] failed to purge ${candidate.slug}:`, err);

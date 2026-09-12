@@ -282,7 +282,7 @@ async function run() {
     // Storage first, then the row. Deleting the event cascades its photo rows,
     // and with them the only record of which files to remove - every earlier run
     // of this script leaked its uploads onto disk that way.
-    const freed = await purgeEventMedia(eventId);
+    const { freedBytes: freed } = await purgeEventMedia(eventId);
     await pool.query('DELETE FROM events WHERE id = $1', [eventId]);
     await pool.query('DELETE FROM users WHERE id = $1', [userId]);
     console.log(`\ncleaned up the load-test event and host (freed ${fmtBytes(freed)}).`);

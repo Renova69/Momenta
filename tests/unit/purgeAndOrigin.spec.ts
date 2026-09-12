@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import { createServer } from 'http';
 import express from 'express';
 import fs from 'fs';
@@ -218,5 +218,53 @@ describe('DELETE /api/photos/:id', () => {
     // storage_bytes was decremented as though they had been freed.
     expect(onDisk(original.storagePath)).toBe(false);
     expect(onDisk(thumb.storagePath)).toBe(false);
+  });
+});
+
+describe('purgeEventMedia leak reporting', () => {
+  it('reports objects the storage adapter refused to delete', async () => {
+    // A delete that fails is warned and then made permanent: the row naming
+    // the object is deleted moments later, so nothing in the database can find
+    // it again. A console.warn inside the loop was the only record of that,
+    // which is how 164 MB of unreachable objects went unnoticed once already.
+    const { pool } = await import('../../server/lib/db');
+    const { storageAdapter, saveBuffer } = await import('../../server/lib/storage');
+    const { purgeEventMedia } = await import('../../server/lib/retention');
+
+    const { rows: eventRows } = await pool.query<{ id: string }>(
+      `INSERT INTO events (slug, title, host_name, host_email, event_date)
+       VALUES ($1, 'Leak Spec', 'Leak Spec Host', 'leak-spec@test.local', CURRENT_DATE)
+       RETURNING id`,
+      [`leak-spec-${Date.now()}`]
+    );
+    const eventId = eventRows[0].id;
+
+    const { rows: guestRows } = await pool.query<{ id: string }>(
+      `INSERT INTO guests (event_id, name) VALUES ($1, 'Leak Spec Guest') RETURNING id`,
+      [eventId]
+    );
+
+    const saved = await saveBuffer(
+      Buffer.from('x'.repeat(512)), 'leak-spec', '.jpg', 'image/jpeg', eventId
+    );
+    await pool.query(
+      `INSERT INTO photos (event_id, guest_id, storage_path, full_url, thumbnail_url, storage_bytes)
+       VALUES ($1, $2, $3, $4, $4, 512)`,
+      [eventId, guestRows[0].id, saved.storagePath, saved.publicUrl]
+    );
+
+    const realDelete = storageAdapter.delete.bind(storageAdapter);
+    const failing = vi
+      .spyOn(storageAdapter, 'delete')
+      .mockRejectedValue(new Error('R2 unavailable'));
+
+    try {
+      const purge = await purgeEventMedia(eventId);
+      expect(purge.failedPaths).toContain(saved.storagePath);
+    } finally {
+      failing.mockRestore();
+      await realDelete(saved.storagePath).catch(() => undefined);
+      await pool.query('DELETE FROM events WHERE id = $1', [eventId]);
+    }
   });
 });

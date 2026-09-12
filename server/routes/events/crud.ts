@@ -556,7 +556,18 @@ eventsRouter.delete(
       const photosDeleted = photoCountRes.rows[0]?.n ?? 0;
 
       // 1. Storage first — see the note above about the cascade.
-      const bytesFreed = await purgeEventMedia(id);
+      const purge = await purgeEventMedia(id);
+      const bytesFreed = purge.freedBytes;
+      if (purge.failedPaths.length > 0) {
+        // The rows naming these are about to be deleted, so after this only
+        // `storage:orphans` can find them. Logged loudly rather than returned:
+        // the host's erasure request did succeed, and this is an operator
+        // problem, not something to report to them as a failure.
+        console.error(
+          `[Events] purge for ${id} left ${purge.failedPaths.length} object(s) in storage:`,
+          purge.failedPaths.join(', ')
+        );
+      }
 
       // 2. Then the row, which cascades guests, quests, comments and the rest.
       await pool.query('DELETE FROM events WHERE id = $1', [id]);
