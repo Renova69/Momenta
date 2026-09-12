@@ -43,7 +43,8 @@
     "test:e2e": "tsx tests/e2e.test.ts",
     "ingest:watch": "tsx scripts/ingest-watcher.ts",
     "tunnel": "node start-tunnel.cjs",
-    "lint": "eslint \"src/**/*.{ts,tsx}\" \"server/**/*.ts\" \"shared/**/*.ts\" \"scripts/**/*.ts\" \"tests/**/*.{ts,tsx}\""
+    "lint": "eslint \"src/**/*.{ts,tsx}\" \"server/**/*.ts\" \"shared/**/*.ts\" \"scripts/**/*.ts\" \"tests/**/*.{ts,tsx}\"",
+    "audit:ci": "tsx scripts/audit-gate.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1118.0",

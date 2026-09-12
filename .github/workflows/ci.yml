@@ -173,18 +173,16 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # Production dependencies only. A vulnerability in a build tool does not
-      # ship to anyone; one in multer or jspdf is in the request path.
+      # Gates on production advisories at high and above, against a written
+      # allowlist in scripts/audit-gate.ts. Blocking, because it can be: the
+      # four advisories that were open when this workflow was written are
+      # resolved, and the one that remains (ip, via ftp-srv) has no fixed
+      # version anywhere and is not reachable — ftp-srv calls ip.isEqual(),
+      # never the vulnerable ip.isPublic().
       #
-      # NON-BLOCKING, and that is a decision with an expiry date rather than an
-      # opinion: there are four known high/critical advisories in direct
-      # production dependencies (ftp-srv, ip, jspdf, multer) that `npm audit
-      # fix` cannot resolve without major version bumps. Gating on them today
-      # would make this workflow red on its first run, and a permanently red
-      # check is one everybody learns to ignore — which is worse than no check.
-      #
-      # Once those four are resolved, delete `continue-on-error` below. The
-      # job is written to gate; it is only held open by that one line.
+      # The gate fails in both directions on purpose. A new advisory that
+      # nobody has reviewed fails the run; so does an allowlist entry whose
+      # advisory has since been fixed, so the list cannot rot into a set of
+      # permanent exemptions.
       - name: Audit production dependencies
-        continue-on-error: true
-        run: npm audit --omit=dev --audit-level=high
+        run: npm run audit:ci
