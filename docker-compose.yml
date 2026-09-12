@@ -1,0 +1,193 @@
+# ====================================================================
+# WedMoments Docker Compose Orchestration
+# Full-stack: PostgreSQL 16 DB + Node.js Unified App & WebSocket Server
+# ====================================================================
+
+services:
+  # ------------------------------------------------------------------
+  # 1. PostgreSQL Database Service
+  # ------------------------------------------------------------------
+  db:
+    image: postgres:16-alpine
+    container_name: wedmoments-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-wedmoments_db}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgrespassword}
+    ports:
+      - "${DB_PORT:-6532}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/migrations:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-wedmoments_db}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    networks:
+      - wedmoments-network
+
+  # ------------------------------------------------------------------
+  # 2. WedMoments Fullstack Application (SPA + REST + WebSockets)
+  # ------------------------------------------------------------------
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: wedmoments-app
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 6501
+      # Image processing runs on libuv's threadpool (default 4). Match it to the
+      # cores you give this container, or uploads queue behind four threads.
+      UV_THREADPOOL_SIZE: ${UV_THREADPOOL_SIZE:-16}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgrespassword}@db:5432/${POSTGRES_DB:-wedmoments_db}
+      # No fallback on purpose. This compose file sets NODE_ENV=production, and
+      # the previous default was a secret committed to this repository — public
+      # knowledge, and enough to forge a session token for any account. Compose
+      # now refuses to start without a real value rather than quietly shipping
+      # that one. Generate with:
+      #   node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env - it must not be the example value from this repo}
+      # The app reads STORAGE_PROVIDER (not STORAGE_DRIVER).
+      STORAGE_PROVIDER: ${STORAGE_PROVIDER:-local}
+      UPLOADS_DIR: /app/uploads
+      # Same-origin by default (SPA + API + WS are served from the same port). Set
+      # CORS_ORIGIN to a comma-separated allow-list only if you split the origin.
+      CORS_ORIGIN: ${CORS_ORIGIN:-}
+      R2_ACCOUNT_ID: ${R2_ACCOUNT_ID:-}
+      R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID:-}
+      R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY:-}
+      R2_BUCKET_NAME: ${R2_BUCKET_NAME:-}
+      R2_PUBLIC_URL: ${R2_PUBLIC_URL:-}
+      # Required in production — config.ts refuses to start without it, because
+      # guessing wrong silently breaks the rate limiters either way. The shipped
+      # compose publishes the port directly with nothing in front, so `false`
+      # (do not trust X-Forwarded-For) is the honest default here. Put nginx,
+      # Traefik or a load balancer in front and this MUST become the number of
+      # hops to trust ("1"), or the proxy's IP/CIDR.
+      TRUST_PROXY: ${TRUST_PROXY:-false}
+      # Baked into every stored photo/audio URL at upload time, and one of the
+      # two origins post-checkout redirects are validated against. Wrong here
+      # means broken images and 400s from checkout.
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-}
+      DB_POOL_MAX: ${DB_POOL_MAX:-40}
+      # Stripe. Leaving STRIPE_SECRET_KEY unset does NOT merely disable
+      # payments: it reopens the unpaid self-serve tier write in
+      # routes/subscriptions.ts, so anyone with an account can grant themselves
+      # a paid plan. Set it in production, or accept that.
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
+      STRIPE_PRICE_CELEBRATION_PASS: ${STRIPE_PRICE_CELEBRATION_PASS:-}
+      STRIPE_PRICE_DELUXE_KEEPSAKE: ${STRIPE_PRICE_DELUXE_KEEPSAKE:-}
+      STRIPE_PRICE_PRO_PLANNER: ${STRIPE_PRICE_PRO_PLANNER:-}
+      SUBSCRIPTION_GRACE_DAYS: ${SUBSCRIPTION_GRACE_DAYS:-7}
+    ports:
+      - "${APP_PORT:-6501}:6501"
+    volumes:
+      - uploads_data:/app/uploads
+    networks:
+      - wedmoments-network
+
+  # Runs the three maintenance sweeps on a schedule. All were written to be run
+  # "from cron" and nothing was running them: without the retention sweep,
+  # storage grows forever against a one-time fee; without the grace sweep, a
+  # subscription whose dunning ends without another Stripe webhook keeps its
+  # tier indefinitely; without the notice sweep no host is ever warned, which
+  # in turn means the retention sweep can never delete anything at all.
+  #
+  # Shares the app image, database and uploads volume. Enforcement is OPT-IN —
+  # by default every sweep only reports. Deleting irreplaceable wedding photos,
+  # removing a plan someone paid for, or mailing every host, must never be a
+  # side effect of merely deploying this service.
+  maintenance:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: wedmoments-maintenance
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    command: ["npx", "tsx", "scripts/maintenance-scheduler.ts"]
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgrespassword}@db:5432/${POSTGRES_DB:-wedmoments_db}
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env - it must not be the example value from this repo}
+      # Config is validated on import here too, so the same explicit answer is
+      # required as for the app itself. Nothing proxies to this container.
+      TRUST_PROXY: ${TRUST_PROXY:-false}
+      # The retention sweep deletes stored media, so it needs the same storage
+      # configuration the app writes with — pointed at local disk while the app
+      # uses R2, it would find nothing to purge and silently report zero.
+      STORAGE_PROVIDER: ${STORAGE_PROVIDER:-local}
+      UPLOADS_DIR: /app/uploads
+      R2_ACCOUNT_ID: ${R2_ACCOUNT_ID:-}
+      R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID:-}
+      R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY:-}
+      R2_BUCKET_NAME: ${R2_BUCKET_NAME:-}
+      R2_PUBLIC_URL: ${R2_PUBLIC_URL:-}
+      DB_POOL_MAX: ${DB_POOL_MAX:-5}
+      # Set these to "true" only when you mean it (see the note above).
+      RETENTION_ENFORCED: ${RETENTION_ENFORCED:-false}
+      GRACE_ENFORCED: ${GRACE_ENFORCED:-false}
+      RETENTION_INTERVAL_HOURS: ${RETENTION_INTERVAL_HOURS:-24}
+      GRACE_INTERVAL_HOURS: ${GRACE_INTERVAL_HOURS:-1}
+      NOTICE_INTERVAL_HOURS: ${NOTICE_INTERVAL_HOURS:-24}
+      # Sending retention warnings is opt-in like the sweeps. While this is
+      # false no host is warned, which means no album ever becomes deletable —
+      # RETENTION_ENFORCED has nothing to act on.
+      NOTICE_SEND: ${NOTICE_SEND:-false}
+      # SMTP. Without SMTP_HOST no mail can be sent at all.
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_SECURE: ${SMTP_SECURE:-false}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      MAIL_FROM: ${MAIL_FROM:-}
+      APP_PUBLIC_URL: ${APP_PUBLIC_URL:-}
+      # Each run's report is appended here as well as to stdout. Report-only
+      # mode is only useful if the reports can be read afterwards, and
+      # OPEN_ITEMS.md D1 asks for the retention report to be reviewed over
+      # several weeks before enforcement is ever switched on — container
+      # stdout is long gone by then.
+      MAINTENANCE_LOG_DIR: /app/logs/maintenance
+      # Reports are pruned after this many days — 0 or "never" keeps them all.
+      # The default is far longer than the review period D1 asks for, and stops
+      # one file per sweep per day accumulating on this volume forever.
+      MAINTENANCE_LOG_RETENTION_DAYS: ${MAINTENANCE_LOG_RETENTION_DAYS:-90}
+    volumes:
+      - uploads_data:/app/uploads
+      # Named volume, so the reports outlive `docker compose down` and an
+      # image rebuild. That is the entire point of keeping them.
+      - maintenance_logs:/app/logs
+    networks:
+      - wedmoments-network
+
+# --------------------------------------------------------------------
+# Persistent Storage Volumes & Network
+# --------------------------------------------------------------------
+volumes:
+  # Every volume is named explicitly. Without `name:`, Compose derives one from
+  # the project name — which defaults to the directory the file happens to sit
+  # in, so the same stack checked out as "Wedding_album" rather than
+  # "wedmoments" would come up against a brand new, empty database volume and
+  # look exactly as though the data had been lost.
+  postgres_data:
+    name: wedmoments_postgres_data
+  # Maintenance sweep reports (see the maintenance service above).
+  maintenance_logs:
+    name: wedmoments_maintenance_logs
+  uploads_data:
+    name: wedmoments_uploads_data
+
+networks:
+  wedmoments-network:
+    name: wedmoments_network
+    driver: bridge

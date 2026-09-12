@@ -1,0 +1,64 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply antialiased overflow-x-hidden min-h-screen;
+    background-color: #121214;
+    color: #FDFBF7;
+  }
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(18, 18, 20, 0.5);
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(212, 175, 55, 0.25);
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(212, 175, 55, 0.5);
+}
+
+/* Print styling for QR Canvas */
+@media print {
+  @page {
+    size: auto;
+    margin: 0mm;
+  }
+  body {
+    background: transparent !important;
+  }
+  body * {
+    visibility: hidden;
+  }
+  #printable-canvas,
+  #printable-canvas * {
+    visibility: visible;
+  }
+  #printable-canvas {
+    position: fixed !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 100vw !important;
+    height: 100vh !important;
+    max-width: 100% !important;
+    max-height: 100% !important;
+    box-sizing: border-box !important;
+    margin: 0 !important;
+    padding: 1.5cm !important;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+    border: none !important;
+    box-shadow: none !important;
+  }
+}

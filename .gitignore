@@ -1,0 +1,45 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+coverage/
+
+# Environment & secrets (never commit)
+.env
+.env.local
+.env.*.local
+.env.production
+
+# Runtime user content
+uploads/*
+!uploads/.gitkeep
+# Quarantined photos: real guest media awaiting moderation or a disposable
+# reveal. Structurally outside the public static mount, and outside git too.
+uploads-quarantine/*
+!uploads-quarantine/.gitkeep
+
+# Logs
+*.log
+logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Test artifacts
+tmp_test_*
+
+# Local agent state (may contain tokens)
+.claude/
+.remember/
+.claude-flow/
+.impeccable/
+
+# Local npm cache written into the project by a sandboxed install
+.npm-cache/
