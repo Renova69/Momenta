@@ -1,10 +1,12 @@
 version: 2
 
 updates:
-  # The actions in .github/workflows are pinned to major tags (actions/checkout@v4),
-  # which float within the major. Dependabot still matters here: it is what moves
-  # the pin when v5 lands, rather than the workflow silently staying on an
-  # unmaintained major for years.
+  # The actions in .github/workflows are pinned to major tags
+  # (actions/checkout@v7), which float within the major. Dependabot still
+  # matters here: it is what moves the pin when the next major lands, rather
+  # than the workflow silently staying on an unmaintained one for years — which
+  # is what had already happened at v4, running on a Node 20 runtime GitHub had
+  # deprecated and was force-upgrading at runtime.
   - package-ecosystem: github-actions
     directory: /
     schedule:
