@@ -48,6 +48,22 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # The Node version is pinned in three places, and the comment on
+      # NODE_VERSION above says they move together. This is what makes that
+      # true rather than hopeful: a bump that updates two of the three fails
+      # here, instead of drifting until a contributor's nvm and CI disagree
+      # about what "24" means and only one of them sees the bug.
+      - name: Node version pins agree
+        run: |
+          nvmrc=$(tr -d '[:space:]' < .nvmrc)
+          engines=$(node -p "require('./package.json').engines.node.match(/[0-9]+/)[0]")
+          if [ "$nvmrc" != "$NODE_VERSION" ] || [ "$engines" != "$NODE_VERSION" ]; then
+            echo "::error::Node pins disagree - .nvmrc=$nvmrc engines=$engines workflow=$NODE_VERSION"
+            echo "Update .nvmrc, the engines field in package.json, and NODE_VERSION in this workflow together."
+            exit 1
+          fi
+          echo "Node $NODE_VERSION pinned consistently in .nvmrc, package.json engines and this workflow."
+
       # Warnings fail the build. The project's eslint config already reports
       # unused imports as warnings, and a warning nobody has to act on is one
       # that accumulates until the output is unreadable.
