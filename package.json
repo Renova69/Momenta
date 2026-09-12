@@ -63,7 +63,7 @@
     "jsonwebtoken": "^9.0.3",
     "jspdf": "^2.5.2",
     "lucide-react": "^1.16.0",
-    "multer": "^2.2.0",
+    "multer": "^2.3.0",
     "nodemailer": "^10.0.6",
     "pg": "^8.23.0",
     "qrcode.react": "^4.2.0",
