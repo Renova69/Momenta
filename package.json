@@ -48,6 +48,7 @@
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1118.0",
+    "@electerm/ftp-srv": "^1.0.5",
     "@types/nodemailer": "^8.0.1",
     "archiver": "^8.0.0",
     "bcryptjs": "^3.0.3",
@@ -58,7 +59,6 @@
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
     "express-rate-limit": "^8.6.2",
-    "ftp-srv": "^4.6.3",
     "helmet": "^8.3.0",
     "html2canvas": "^1.4.1",
     "jsonwebtoken": "^9.0.3",
@@ -75,9 +75,6 @@
     "tailwind-merge": "^3.0.2",
     "ws": "^8.21.3",
     "zod": "^4.4.3"
-  },
-  "overrides": {
-    "uuid": "^11.1.1"
   },
   "devDependencies": {
     "@testing-library/jest-dom": "^7.0.1",
@@ -100,6 +97,7 @@
     "@vitejs/plugin-react": "^4.3.4",
     "@vitest/coverage-v8": "^4.1.11",
     "autoprefixer": "^10.4.20",
+    "basic-ftp": "^6.2.1",
     "eslint": "^8.57.1",
     "eslint-plugin-react-hooks": "^4.6.2",
     "eslint-plugin-vitest": "^0.5.4",

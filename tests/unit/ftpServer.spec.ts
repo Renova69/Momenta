@@ -13,6 +13,7 @@ import {
   recordLoginFailure,
   recordLoginSuccess,
   resetLoginThrottle,
+  resolveStoredPath,
   LOGIN_THROTTLE,
   type FtpConnectionLike,
 } from '../../server/ftp/ftpServer';
@@ -249,5 +250,29 @@ describe('handleStoredFile (SEC-F3, SEC-F4)', () => {
     // fs.unlink's callback is async — give it a tick.
     await new Promise((resolve) => setTimeout(resolve, 50));
     expect(fs.existsSync(staged)).toBe(false);
+  });
+});
+
+describe('resolveStoredPath (STOR path is client-controlled)', () => {
+  const eventDir = path.join(os.tmpdir(), 'wedmoments-stor-spec', 'event-1');
+
+  it('resolves the virtual FTP path to a file inside the event directory', () => {
+    expect(resolveStoredPath(eventDir, '/DSC_0001.jpg')).toBe(path.join(eventDir, 'DSC_0001.jpg'));
+    // No leading slash, and a nested folder the camera created.
+    expect(resolveStoredPath(eventDir, 'sub/DSC_0002.jpg')).toBe(
+      path.join(eventDir, 'sub', 'DSC_0002.jpg')
+    );
+  });
+
+  it('refuses a path that climbs out of the event directory', () => {
+    // The library reports the path the client asked for. One photographer's
+    // frames must not be writable into another event's staging folder, and
+    // `../` is the whole distance between those two things.
+    expect(resolveStoredPath(eventDir, '../event-2/stolen.jpg')).toBeNull();
+    expect(resolveStoredPath(eventDir, '/../../etc/passwd')).toBeNull();
+  });
+
+  it('refuses an empty path rather than resolving to the directory itself', () => {
+    expect(resolveStoredPath(eventDir, '')).toBeNull();
   });
 });

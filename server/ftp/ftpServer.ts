@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import FtpSrv from 'ftp-srv';
+import { FtpSrv } from '@electerm/ftp-srv';
 import { CONFIG } from '../lib/config';
 import { pool } from '../lib/db';
 import { validateIngestKey } from '../lib/ingest';
@@ -33,7 +33,7 @@ async function resolveEventId(username: string): Promise<string | null> {
 }
 
 // --------------------------------------------------------------------
-// SEC-F5 — per-IP login throttle. ftp-srv has no built-in rate limiting,
+// SEC-F5 — per-IP login throttle. The FTP library has no built-in rate limiting,
 // and the ingest key is a bearer credential tried over the FTP PASS
 // command — nothing stopped rapid-fire guessing against it.
 // --------------------------------------------------------------------
@@ -88,6 +88,38 @@ export function resetLoginThrottle(): void {
 
 export const LOGIN_THROTTLE = { MAX_LOGIN_FAILURES, LOGIN_BLOCK_MS };
 
+/**
+ * Resolve the path the STOR event reports into a real filesystem path.
+ *
+ * The library emits the *client* path — the virtual path as the camera sees it,
+ * e.g. `/DSC_0001.jpg` — not the file on disk. (ftp-srv 4.x emitted the server
+ * path; this is the one behavioural difference between it and
+ * @electerm/ftp-srv that this module has to absorb, and it fails silently
+ * rather than loudly: stat() on a client path throws, the catch logs, and the
+ * photo simply never arrives.)
+ *
+ * The client chooses that string, so it is not trusted here even though the
+ * library resolved it once already. Anything that escapes the event's own
+ * staging directory returns null and is dropped: one photographer's frames must
+ * not be writable into another event's folder, and `../` is all that would
+ * take.
+ */
+export function resolveStoredPath(eventDir: string, clientPath: string): string | null {
+  if (!clientPath) return null;
+
+  // The client path is absolute in FTP's own rooted namespace, which is the
+  // event directory. Strip the leading separator so it joins as relative.
+  const relative = clientPath.replace(/^[/\\]+/, '');
+  const resolved = path.resolve(eventDir, relative);
+  const root = path.resolve(eventDir);
+
+  if (resolved !== root && !resolved.startsWith(root + path.sep)) {
+    console.warn(`[FTP] Refused a STOR path outside the event staging directory: ${clientPath}`);
+    return null;
+  }
+  return resolved;
+}
+
 /** Handle a completed FTP STOR: read the staged file, ingest it, then remove it. */
 export async function handleStoredFile(eventId: string, err: Error | null, serverPath?: string): Promise<void> {
   try {
@@ -97,7 +129,7 @@ export async function handleStoredFile(eventId: string, err: Error | null, serve
     }
     if (!serverPath) return;
 
-    // MED-05 — ftp-srv writes the incoming STOR straight to disk with no
+    // MED-05 — the FTP server writes the incoming STOR straight to disk with no
     // size cap of its own (unlike multer's `limits.fileSize` on the HTTP
     // upload paths), so nothing stopped a multi-gigabyte transfer. Stat
     // before reading and refuse anything over the same cap HTTP enforces,
@@ -147,7 +179,7 @@ export function shouldRefusePlaintextStart(
   return !tlsConfigured && isProduction && !allowPlaintext;
 }
 
-/** The slice of ftp-srv's FtpConnection this module actually touches. */
+/** The slice of the FTP library's connection object this module actually touches. */
 export interface FtpConnectionLike {
   ip: string;
   on(event: string, listener: (...args: unknown[]) => void): unknown;
@@ -202,14 +234,15 @@ export async function handleLogin(
     // duplicate DB rows, and an ENOENT on the second unlink attempt.
     connection.removeAllListeners('STOR');
     connection.on('STOR', (...args: unknown[]) => {
-      const [storeErr, serverPath] = args as [Error | null, string | undefined];
+      const [storeErr, clientPath] = args as [Error | null, string | undefined];
+      const serverPath = clientPath ? resolveStoredPath(eventDir, clientPath) ?? undefined : undefined;
       handleStoredFile(eventId, storeErr, serverPath).catch(() => {});
     });
 
     resolve({ root: eventDir, cwd: '/' });
   } catch (err) {
     recordLoginFailure(ip);
-    // ftp-srv's reject expects an Error; wrap anything else so the client
+    // reject() expects an Error; wrap anything else so the client
     // still gets a clean login failure instead of an unhandled rejection.
     reject(err instanceof Error ? err : new Error(String(err)));
   }

@@ -50,29 +50,14 @@ interface AllowedAdvisory {
  * the output quiet.
  */
 const ALLOWLIST: AllowedAdvisory[] = [
-  {
-    name: 'ip',
-    advisory: 'GHSA-2p57-rm9w-gvfp',
-    reason:
-      'SSRF via misclassification in ip.isPublic(). No fixed version exists — the ' +
-      'advisory covers <=2.0.1 and 2.0.1 is the latest release; the package is ' +
-      'unmaintained. Not reachable here: it arrives only through ftp-srv, which calls ' +
-      'ip.isEqual() and nothing else (node_modules/ftp-srv/src/connector/active.js:32, ' +
-      'passive.js:39), and no code in this repository imports ip directly. isEqual is ' +
-      'itself a security check there — it refuses a data connection whose peer differs ' +
-      'from the control connection. Revisit if ftp-srv is upgraded or replaced.',
-    reviewed: '2026-09-12',
-  },
-  {
-    name: 'ftp-srv',
-    advisory: 'GHSA-2p57-rm9w-gvfp',
-    reason:
-      'Reported only because it depends on ip, above. ftp-srv has no advisory of its ' +
-      'own, and npm audit\'s suggested fix (ftp-srv@2.16.2) is a two-major downgrade ' +
-      'of a direct dependency, which trades a theoretical issue for a real loss of ' +
-      'function. Same review trigger as the ip entry.',
-    reviewed: '2026-09-12',
-  },
+  // Empty, and worth keeping that way.
+  //
+  // It held two entries for GHSA-2p57-rm9w-gvfp (ip, and ftp-srv which pulled
+  // it in): an SSRF in ip.isPublic() with no fixed version anywhere, accepted
+  // because ftp-srv only ever called ip.isEqual(). Replacing ftp-srv with
+  // @electerm/ftp-srv removed the dependency entirely, so the exemption went
+  // with it — which is the outcome the stale-entry check below exists to push
+  // toward.
 ];
 
 interface AuditAdvisory {
