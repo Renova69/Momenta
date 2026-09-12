@@ -1,4 +1,5 @@
 import { PlanTier } from '../types';
+import { TIER_WEIGHTS } from '../../shared/planCaps';
 
 export type GatedFeature =
   | 'live_tv'
@@ -19,12 +20,13 @@ export interface FeatureGateDefinition {
   descriptionKey: string;
 }
 
-export const TIER_WEIGHTS: Record<PlanTier, number> = {
-  free: 0,
-  celebration_pass: 1,
-  deluxe_keepsake: 2,
-  pro_planner: 3,
-};
+/**
+ * Imported from `shared/planCaps.ts`, which the server's gate reads too, so what
+ * this hides behind a paywall and what the API refuses cannot disagree. Also
+ * re-exported, because `isFeatureUnlocked` below needs it in local scope and
+ * callers import it from here.
+ */
+export { TIER_WEIGHTS };
 
 export const FEATURE_GATES: Record<GatedFeature, FeatureGateDefinition> = {
   live_tv: {

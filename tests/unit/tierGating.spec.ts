@@ -93,6 +93,9 @@ describe('Tier Gating Configuration & Helpers', () => {
   });
 });
 
+/** A real uuid: requireEventTier validates the shape before it queries. */
+const TEST_EVENT_ID = '3f1a9c52-6b7d-4e18-9a24-0c5d8e7b1f30';
+
 describe('Backend Tier Gate Middleware', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
@@ -113,11 +116,31 @@ describe('Backend Tier Gate Middleware', () => {
     expect(next).not.toHaveBeenCalled();
   });
 
+  it('rejects an eventId that is not a valid uuid', async () => {
+    const queries = vi.spyOn(pool, 'query');
+    const middleware = requireEventTier('celebration_pass');
+    const req = { params: { id: 'not-a-uuid' } } as unknown as Request;
+    const res = {
+      status: vi.fn().mockReturnThis(),
+      json: vi.fn(),
+    } as unknown as Response;
+    const next = vi.fn() as NextFunction;
+
+    await middleware(req, res, next);
+
+    // 400, not the 500 a Postgres 22P02 used to produce, and the database is
+    // never reached. POST /api/audio takes its eventId from the request body,
+    // where no requireUuidParams runs ahead of this middleware.
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(queries).not.toHaveBeenCalled();
+    expect(next).not.toHaveBeenCalled();
+  });
+
   it('returns 404 if event is not found in database', async () => {
     vi.spyOn(pool, 'query').mockResolvedValueOnce({ rows: [] } as unknown as never);
 
     const middleware = requireEventTier('celebration_pass');
-    const req = { params: { id: 'test-event-id' } } as unknown as Request;
+    const req = { params: { id: TEST_EVENT_ID } } as unknown as Request;
     const res = {
       status: vi.fn().mockReturnThis(),
       json: vi.fn(),
@@ -132,11 +155,11 @@ describe('Backend Tier Gate Middleware', () => {
 
   it('returns 403 when the host subscription tier is below required tier', async () => {
     vi.spyOn(pool, 'query')
-      .mockResolvedValueOnce({ rows: [{ id: 'test-event-id' }] } as unknown as never)
+      .mockResolvedValueOnce({ rows: [{ id: TEST_EVENT_ID }] } as unknown as never)
       .mockResolvedValueOnce({ rows: [{ tier: 'free' }] } as unknown as never);
 
     const middleware = requireEventTier('deluxe_keepsake');
-    const req = { params: { id: 'test-event-id' } } as unknown as Request;
+    const req = { params: { id: TEST_EVENT_ID } } as unknown as Request;
     const res = {
       status: vi.fn().mockReturnThis(),
       json: vi.fn(),
@@ -158,11 +181,11 @@ describe('Backend Tier Gate Middleware', () => {
 
   it('calls next() when the host subscription tier meets required tier', async () => {
     vi.spyOn(pool, 'query')
-      .mockResolvedValueOnce({ rows: [{ id: 'test-event-id' }] } as unknown as never)
+      .mockResolvedValueOnce({ rows: [{ id: TEST_EVENT_ID }] } as unknown as never)
       .mockResolvedValueOnce({ rows: [{ tier: 'deluxe_keepsake' }] } as unknown as never);
 
     const middleware = requireEventTier('celebration_pass');
-    const req = { params: { id: 'test-event-id' } } as unknown as Request;
+    const req = { params: { id: TEST_EVENT_ID } } as unknown as Request;
     const res = {
       status: vi.fn().mockReturnThis(),
       json: vi.fn(),
@@ -177,7 +200,7 @@ describe('Backend Tier Gate Middleware', () => {
   it('fails closed (blocks upload) when the database errors', async () => {
     vi.spyOn(pool, 'query').mockRejectedValueOnce(new Error('db down'));
 
-    const res = await checkPhotoUploadTierLimit('test-event-id');
+    const res = await checkPhotoUploadTierLimit(TEST_EVENT_ID);
     expect(res.allowed).toBe(false);
   });
 
@@ -188,7 +211,7 @@ describe('Backend Tier Gate Middleware', () => {
     vi.spyOn(pool, 'query').mockResolvedValue({
       rows: [
         {
-          id: 'test-event-id',
+          id: TEST_EVENT_ID,
           host_user_id: 'host-1',
           storage_bytes: storageBytes,
           pooled_bytes: storageBytes,
@@ -206,17 +229,17 @@ describe('Backend Tier Gate Middleware', () => {
 
   it('enforces the 50 photo limit on the free plan only', async () => {
     mockUsageQueries('free', 10);
-    expect((await checkPhotoUploadTierLimit('test-event-id')).allowed).toBe(true);
+    expect((await checkPhotoUploadTierLimit(TEST_EVENT_ID)).allowed).toBe(true);
 
     mockUsageQueries('free', 50);
-    const blocked = await checkPhotoUploadTierLimit('test-event-id');
+    const blocked = await checkPhotoUploadTierLimit(TEST_EVENT_ID);
     expect(blocked.allowed).toBe(false);
     expect(blocked.code).toBe('TIER_LIMIT_REACHED');
     expect(blocked.reason).toContain('50');
 
     // Paid plans have no photo count ceiling.
     mockUsageQueries('celebration_pass', 5000);
-    expect((await checkPhotoUploadTierLimit('test-event-id')).allowed).toBe(true);
+    expect((await checkPhotoUploadTierLimit(TEST_EVENT_ID)).allowed).toBe(true);
   });
 
   it('enforces the storage allowance the plan sells', async () => {
@@ -224,17 +247,17 @@ describe('Backend Tier Gate Middleware', () => {
 
     // Free plan is 512 MB: an upload that fits is allowed.
     mockUsageQueries('free', 1, 1024);
-    expect((await checkPhotoUploadTierLimit('test-event-id', 1024)).allowed).toBe(true);
+    expect((await checkPhotoUploadTierLimit(TEST_EVENT_ID, 1024)).allowed).toBe(true);
 
     // The same album cannot take one more byte than the allowance.
     mockUsageQueries('free', 1, halfGb);
-    const blocked = await checkPhotoUploadTierLimit('test-event-id', 1);
+    const blocked = await checkPhotoUploadTierLimit(TEST_EVENT_ID, 1);
     expect(blocked.allowed).toBe(false);
     expect(blocked.code).toBe('STORAGE_LIMIT_REACHED');
     expect(blocked.reason).toContain('512 MB');
 
     // A larger plan accepts what the free plan refused.
     mockUsageQueries('celebration_pass', 1, halfGb);
-    expect((await checkPhotoUploadTierLimit('test-event-id', 1)).allowed).toBe(true);
+    expect((await checkPhotoUploadTierLimit(TEST_EVENT_ID, 1)).allowed).toBe(true);
   });
 });

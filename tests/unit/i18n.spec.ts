@@ -38,6 +38,41 @@ describe('i18n Specification', () => {
     expect(i18n.t('unknown.key.456')).toBe('unknown.key.456');
   });
 
+  it('interpolates {{placeholders}} from a params object', () => {
+    expect(i18n.t('showcase.photos_count', { n: 42 })).toContain('42');
+  });
+
+  it('leaves a placeholder in place when no value is supplied for it', () => {
+    // Better a visible {{n}} than the string "undefined" in front of a guest.
+    expect(i18n.t('showcase.photos_count', {})).toContain('{{n}}');
+  });
+
+  it('survives localStorage being unavailable', () => {
+    // A private window, Safari with cookies off, or an embedded webview throws
+    // here. i18n is constructed at module scope and imported by App.tsx, so an
+    // unguarded access does not degrade the switcher — it blanks the app.
+    // Spying on Storage.prototype does not reach jsdom's localStorage instance,
+    // so the accessors have to be replaced on the object the code actually
+    // calls. Without that the test passes whether or not the guard exists.
+    const real = window.localStorage;
+    const deny = () => {
+      throw new DOMException('denied', 'SecurityError');
+    };
+    Object.defineProperty(window, 'localStorage', {
+      configurable: true,
+      value: { getItem: deny, setItem: deny, removeItem: deny, clear: deny, key: deny, length: 0 },
+    });
+
+    try {
+      expect(() => i18n.setLanguage('en')).not.toThrow();
+      expect(i18n.getLanguage()).toBe('en');
+      expect(i18n.t('app.title')).toBe('WedMoments');
+    } finally {
+      Object.defineProperty(window, 'localStorage', { configurable: true, value: real });
+      i18n.setLanguage('bg');
+    }
+  });
+
   it('notifies subscribers on language change', () => {
     const listener = vi.fn();
     const unsub = i18n.subscribe(listener);

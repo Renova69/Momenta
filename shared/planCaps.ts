@@ -22,3 +22,21 @@ export const FREE_TIER_MAX_PHOTOS = 50;
  * caps any single guest's contribution to it, on every tier.
  */
 export const DEFAULT_MAX_PHOTOS_PER_GUEST = 50;
+
+/**
+ * The plan tiers, in order, as a comparable weight.
+ *
+ * Written out twice before this — `server/middleware/tierGate.ts` and
+ * `src/config/tierGating.ts` — which is the same drift risk as the photo cap
+ * above, with a worse failure: the client decides what to show behind a
+ * paywall and the server decides what to allow, so a disagreement either sells
+ * a feature that is then refused, or hides one the customer has paid for.
+ */
+export type PlanTierName = 'free' | 'celebration_pass' | 'deluxe_keepsake' | 'pro_planner';
+
+export const TIER_WEIGHTS: Record<PlanTierName, number> = {
+  free: 0,
+  celebration_pass: 1,
+  deluxe_keepsake: 2,
+  pro_planner: 3,
+};

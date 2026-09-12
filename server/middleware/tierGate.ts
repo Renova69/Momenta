@@ -2,15 +2,12 @@ import { Request, Response, NextFunction } from 'express';
 import { Pool, PoolClient } from 'pg';
 import { pool } from '../lib/db';
 import { limitsFor, formatBytes } from '../lib/planLimits';
+import { isValidUuid } from '../lib/validation';
+/** Tier order lives in `shared/planCaps.ts` so client and server cannot disagree. */
+import { TIER_WEIGHTS } from '../../shared/planCaps';
 
 export type BackendPlanTier = 'free' | 'celebration_pass' | 'deluxe_keepsake' | 'pro_planner';
 
-const TIER_WEIGHTS: Record<BackendPlanTier, number> = {
-  free: 0,
-  celebration_pass: 1,
-  deluxe_keepsake: 2,
-  pro_planner: 3,
-};
 
 /**
  * Re-exported, not restated. The number lives in `shared/planCaps.ts` so the
@@ -82,6 +79,15 @@ export function requireEventTier(minTier: BackendPlanTier) {
 
     if (!eventId || typeof eventId !== 'string') {
       res.status(400).json({ error: 'eventId parameter is required for tier validation' });
+      return;
+    }
+
+    // A malformed id reaches Postgres as an invalid uuid literal, which throws
+    // 22P02 and surfaced from the catch below as a 500 — the caller's bad input
+    // reported as a server fault. Not a bypass (the gate still fails closed),
+    // but the wrong answer, and it buried real 500s in this route's logs.
+    if (!isValidUuid(eventId)) {
+      res.status(400).json({ error: 'eventId must be a valid UUID' });
       return;
     }
 
