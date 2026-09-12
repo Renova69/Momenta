@@ -3,6 +3,7 @@ import {
   PrintExportError,
   getPrintSpec,
   triggerVectorPrint,
+  exportPosterPdf,
   PRINT_SPECS,
   computeRasterScale,
 } from '../../src/services/pdfPrintService';
@@ -128,5 +129,98 @@ describe('PDF & Print Service Spec', () => {
       const { width, height } = outputDims(PRINT_SPECS.A2, 440, scale);
       expect(Math.max(width, height)).toBeGreaterThan(3900);
     });
+  });
+});
+
+/**
+ * The jsPDF integration, exercised for real.
+ *
+ * Every other test in this file covers dimensions and the print dialog, so
+ * `exportPosterPdf` — the only place jsPDF is constructed — was never called by
+ * the suite at all. That meant a jsPDF major upgrade could typecheck, bundle
+ * and ship while being broken at runtime, which is exactly the risk in moving
+ * across two majors to clear a security advisory.
+ *
+ * html2canvas is mocked, because it needs a real layout engine. jsPDF is not:
+ * the constructor, addImage and save all run against the installed version, and
+ * the assertion is made on the bytes that come out the other end.
+ */
+describe('exportPosterPdf — real jsPDF', () => {
+  const mockEvent = {
+    id: 'e1',
+    slug: 'pdf-slug',
+    title: 'PDF Spec Wedding',
+    hostName: 'Host',
+    eventDate: '2026-09-20T15:00:00.000Z',
+    venueName: 'Venue',
+  } as unknown as WeddingEvent;
+
+  const mockConfig = { canvasSize: 'A4' } as unknown as QRCanvasConfig;
+
+  // A 1x1 JPEG. Enough to prove jsPDF accepts the data URL and embeds it;
+  // this is not a test of what the poster looks like.
+  const TINY_JPEG =
+    'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAP//////////////////////' +
+    '////////////////////////////////////////////////////2wBDAf//////////////////////' +
+    '////////////////////////////////////////////////////wAARCAABAAEDASIAAhEBAxEB/8QA' +
+    'FQABAQAAAAAAAAAAAAAAAAAAAAr/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFQEBAQAAAAAAAAAAAAAA' +
+    'AAAAAAr/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwCdABmX/9k=';
+
+  it('builds a real PDF at the exact paper size, with the image embedded', async () => {
+    const el = document.createElement('div');
+    el.id = 'printable-canvas';
+    document.body.appendChild(el);
+
+    const canvas = document.createElement('canvas');
+    canvas.width = 2;
+    canvas.height = 2;
+    canvas.toDataURL = () => TINY_JPEG;
+
+    vi.doMock('html2canvas', () => ({ default: vi.fn(async () => canvas) }));
+
+    // The real jsPDF does the work. Only the constructor is wrapped, so the
+    // document it produces can be inspected and its save() - which ends in a
+    // download jsdom cannot perform - is swapped for a spy.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const docs: any[] = [];
+    const saveSpy = vi.fn();
+    vi.doMock('jspdf', async (importOriginal) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const actual = (await importOriginal()) as any;
+      const Real = actual.jsPDF;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      function Wrapped(this: unknown, ...args: any[]) {
+        const doc = new Real(...args);
+        doc.save = saveSpy;
+        docs.push(doc);
+        return doc;
+      }
+      return { ...actual, jsPDF: Wrapped };
+    });
+
+    try {
+      await exportPosterPdf({ event: mockEvent, canvasConfig: mockConfig });
+
+      expect(docs).toHaveLength(1);
+      const doc = docs[0];
+
+      // A4 portrait in millimetres is what the print shop is promised.
+      expect(Math.round(doc.internal.pageSize.width)).toBe(PRINT_SPECS.A4.widthMm);
+      expect(Math.round(doc.internal.pageSize.height)).toBe(PRINT_SPECS.A4.heightMm);
+
+      // Real bytes, and the image actually embedded rather than an empty shell.
+      const bytes = new Uint8Array(doc.output('arraybuffer') as ArrayBuffer);
+      expect(bytes.byteLength).toBeGreaterThan(1000);
+      expect(new TextDecoder().decode(bytes.slice(0, 5))).toBe('%PDF-');
+
+      expect(saveSpy).toHaveBeenCalledTimes(1);
+      const filename = String(saveSpy.mock.calls[0][0]);
+      expect(filename).toMatch(/\.pdf$/);
+      expect(filename).toContain('pdf-slug');
+    } finally {
+      vi.doUnmock('jspdf');
+      vi.doUnmock('html2canvas');
+      el.remove();
+    }
   });
 });
