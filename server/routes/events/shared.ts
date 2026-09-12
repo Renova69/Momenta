@@ -7,9 +7,7 @@
  */
 
 import { z } from 'zod';
-import path from 'path';
-import { cleanSlug } from '../../lib/storage';
-import { getEffectiveTierForEvent, BackendPlanTier } from '../../middleware/tierGate';
+import { BackendPlanTier } from '../../middleware/tierGate';
 
 /**
  * M2 — a slug is not free text. It addresses the event in a URL that QR codes

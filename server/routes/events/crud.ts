@@ -7,7 +7,6 @@
  */
 
 import { Router } from 'express';
-import path from 'path';
 import { pool } from '../../lib/db';
 import { validateBody } from '../../middleware/validate';
 import { requireUuidParams } from '../../middleware/uuid';

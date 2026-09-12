@@ -15,7 +15,7 @@ import { useHostDashboard } from './context';
 
 export const TabNav: React.FC = () => {
   const {
-    activeTab, setActiveTab, currentTier, event, onOpenPricing, pendingPhotos, quests,
+    activeTab, setActiveTab, currentTier, event, onOpenPricing, pendingPhotos,
   } = useHostDashboard();
 
   return (

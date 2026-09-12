@@ -1,0 +1,48 @@
+version: 2
+
+updates:
+  # The actions in .github/workflows are pinned to major tags (actions/checkout@v4),
+  # which float within the major. Dependabot still matters here: it is what moves
+  # the pin when v5 lands, rather than the workflow silently staying on an
+  # unmaintained major for years.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: ci
+    labels:
+      - dependencies
+
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    # Enough to keep moving, few enough to actually review. An unreviewed
+    # dependency PR that sits open is not an update.
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: chore
+      prefix-development: chore
+    labels:
+      - dependencies
+    groups:
+      # One PR for the routine patch/minor noise across dev tooling, so the
+      # individual PRs that remain are the ones worth reading.
+      dev-minor-and-patch:
+        dependency-type: development
+        update-types:
+          - minor
+          - patch
+      prod-patch:
+        dependency-type: production
+        update-types:
+          - patch
+    ignore:
+      # Majors change behaviour and belong in a deliberate change, not an
+      # automated one. The four production advisories this repo already carries
+      # (ftp-srv, ip, jspdf, multer) all need major bumps and should be handled
+      # as their own piece of work, with the test suite as the check.
+      - dependency-name: '*'
+        update-types:
+          - version-update:semver-major

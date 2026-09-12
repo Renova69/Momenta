@@ -1,0 +1,190 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# A second push to the same branch makes the first run's answer irrelevant.
+# Cancelling it frees the runner instead of paying for a result nobody reads.
+# Never cancel on main: those runs are the record of what was merged.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+# Least privilege. Nothing here writes to the repository, publishes a package,
+# or comments on a PR, so read access to the contents is all any job needs.
+# Declared at the top level so a new job cannot silently inherit more.
+permissions:
+  contents: read
+
+env:
+  # Matches .nvmrc and the engines field in package.json. Changing the version
+  # belongs in all three.
+  NODE_VERSION: '24'
+
+jobs:
+  # Everything that needs no database, so a formatting or typing mistake fails
+  # in about a minute instead of waiting on Postgres to come up.
+  static:
+    name: Lint, typecheck and build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          # Keyed on package-lock.json. Restores ~/.npm, which is what makes
+          # `npm ci` fast; it does not skip the install.
+          cache: npm
+
+      # `ci`, not `install`: installs exactly the locked tree and fails if
+      # package.json and package-lock.json disagree, rather than quietly
+      # resolving something new on a CI machine.
+      - name: Install dependencies
+        run: npm ci
+
+      # Warnings fail the build. The project's eslint config already reports
+      # unused imports as warnings, and a warning nobody has to act on is one
+      # that accumulates until the output is unreadable.
+      - name: Lint
+        run: npm run lint -- --max-warnings=0
+
+      # Three separate tsconfigs: the client (src + shared), the server
+      # (server + scripts + shared) and the tests. `tsc -p tsconfig.json` alone
+      # checks the frontend and nothing else.
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Build
+        run: npm run build
+
+  test:
+    name: Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    services:
+      # The suite is not mocked at the database boundary — specs insert real
+      # events, guests and photos and assert on what the queries return. That
+      # is the reason to trust it, and the reason it needs a real Postgres.
+      # Pinned to the same major the application runs on (docker-compose.yml).
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: wedmoments_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        # Without this the job races the container: the first migration runs
+        # before Postgres is accepting connections and fails on nothing.
+        options: >-
+          --health-cmd "pg_isready -U postgres -d wedmoments_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/wedmoments_test
+
+      # Local disk, never real Cloudflare R2. vitest.config.ts pins this for
+      # the unit run; it is set here too because the e2e suite boots the real
+      # server outside vitest and would otherwise read whatever the
+      # environment happens to hold.
+      STORAGE_PROVIDER: local
+
+      # Never hardcode a JWT secret in a workflow, even a throwaway one: it
+      # becomes a real value that someone copies into a real deployment. This
+      # is 64 hex characters, generated per run, discarded with the runner.
+      # Config refuses to start under 32 characters.
+      JWT_SECRET: ${{ github.run_id }}-ci-only-not-a-real-secret-${{ github.run_attempt }}-${{ github.sha }}
+
+      # Say "no proxy" out loud rather than leaving it unset — the same thing
+      # production is required to do, and it keeps the rate-limiter warning out
+      # of the log where it would be noise on every run.
+      TRUST_PROXY: 'false'
+
+      CORS_ORIGIN: http://localhost:6500
+
+      # Not 'production': that would trip the deliberate guards for a publicly
+      # known JWT secret and for HSTS, neither of which is what is under test.
+      NODE_ENV: test
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # The schema is 25 sequential SQL migrations, and the suite asserts
+      # against real tables, triggers and partial indexes. Applying them is
+      # setup, not a test — if this step fails, every test failure after it
+      # would be noise.
+      - name: Run migrations
+        run: npm run migrate
+
+      # Coverage rather than a plain run: same tests, and the report is worth
+      # having on every commit. The suite runs with file parallelism on, which
+      # is deliberate — the retention specs are scoped by event id so they no
+      # longer collide, and a serial run would hide a regression in that.
+      - name: Unit tests with coverage
+        run: npm run test:coverage
+
+      # Boots the real Express app on its own port and drives it over HTTP and
+      # WebSocket. Separate from the unit run because it is a different kind of
+      # evidence, and because a failure here should be readable on its own.
+      - name: End-to-end tests
+        run: npm run test:e2e
+
+      # Kept even when the tests fail — a coverage report is most useful
+      # precisely when something went wrong.
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-${{ github.run_id }}
+          path: coverage/
+          retention-days: 14
+          if-no-files-found: warn
+
+  audit:
+    name: Dependency audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Production dependencies only. A vulnerability in a build tool does not
+      # ship to anyone; one in multer or jspdf is in the request path.
+      #
+      # NON-BLOCKING, and that is a decision with an expiry date rather than an
+      # opinion: there are four known high/critical advisories in direct
+      # production dependencies (ftp-srv, ip, jspdf, multer) that `npm audit
+      # fix` cannot resolve without major version bumps. Gating on them today
+      # would make this workflow red on its first run, and a permanently red
+      # check is one everybody learns to ignore — which is worse than no check.
+      #
+      # Once those four are resolved, delete `continue-on-error` below. The
+      # job is written to gate; it is only held open by that one line.
+      - name: Audit production dependencies
+        continue-on-error: true
+        run: npm audit --omit=dev --audit-level=high
