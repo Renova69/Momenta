@@ -32,6 +32,10 @@ const TEST_PORT = 6642;
 const BASE_URL = `http://localhost:${TEST_PORT}`;
 let server: ReturnType<typeof createServer>;
 let jpegDataUrl = '';
+// Every album this file creates. The retention helpers below are
+// database-wide by design, so each call is scoped to these ids —
+// otherwise a run here stamps or deletes albums that a sibling spec file
+// created and is still asserting on, under vitest's file parallelism.
 const createdEvents: string[] = [];
 
 interface Host {
@@ -42,11 +46,12 @@ interface Host {
 }
 
 async function registerHost(): Promise<Host> {
+  const email = `retnotice-${Date.now()}-${Math.random().toString(36).slice(2, 7)}@test.com`;
   const res = await fetch(`${BASE_URL}/api/auth/register`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      email: `retnotice-${Date.now()}-${Math.random().toString(36).slice(2, 7)}@test.com`,
+      email,
       fullName: 'Retention Notice Host',
       password: 'Password123!',
     }),
@@ -120,7 +125,7 @@ describe('retention notice and event deletion (D1, D2)', () => {
       await uploadPhoto(host.eventId);
       await makeEligible(host.eventId);
 
-      const result = await sweepExpiredAlbums(true);
+      const result = await sweepExpiredAlbums(true, { eventIds: createdEvents });
 
       expect(result.deleted).not.toContain(host.eventId);
       expect(await photoCount(host.eventId)).toBe(1);
@@ -131,7 +136,7 @@ describe('retention notice and event deletion (D1, D2)', () => {
       await uploadPhoto(host.eventId);
       await makeEligible(host.eventId);
 
-      const result = await sweepExpiredAlbums(false);
+      const result = await sweepExpiredAlbums(false, { eventIds: createdEvents });
 
       expect(result.awaitingNotice.map((c) => c.eventId)).toContain(host.eventId);
       expect(result.eligible.map((c) => c.eventId)).not.toContain(host.eventId);
@@ -145,7 +150,7 @@ describe('retention notice and event deletion (D1, D2)', () => {
         host.eventId,
       ]);
 
-      const result = await sweepExpiredAlbums(true);
+      const result = await sweepExpiredAlbums(true, { eventIds: createdEvents });
 
       expect(result.deleted).not.toContain(host.eventId);
       expect(await photoCount(host.eventId)).toBe(1);
@@ -160,7 +165,7 @@ describe('retention notice and event deletion (D1, D2)', () => {
         [host.eventId]
       );
 
-      const result = await sweepExpiredAlbums(true);
+      const result = await sweepExpiredAlbums(true, { eventIds: createdEvents });
 
       expect(result.deleted).toContain(host.eventId);
       expect(await photoCount(host.eventId)).toBe(0);

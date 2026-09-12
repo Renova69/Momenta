@@ -192,7 +192,10 @@ export async function refreshExpiryDates(
   return rows.length;
 }
 
-async function loadCandidates(cutoff: string): Promise<RetentionCandidate[]> {
+async function loadCandidates(
+  cutoff: string,
+  eventIds?: string[]
+): Promise<RetentionCandidate[]> {
   const { rows } = await pool.query(
     `SELECT e.id, e.slug, e.title, e.host_email, e.expires_at, e.storage_bytes,
             e.retention_notified_at,
@@ -204,8 +207,9 @@ async function loadCandidates(cutoff: string): Promise<RetentionCandidate[]> {
        LEFT JOIN email_bounces b
               ON b.email = lower(e.host_email) AND b.kind = 'hard' AND b.cleared_at IS NULL
       WHERE e.expires_at IS NOT NULL AND e.expires_at < $1
+        AND ($2::uuid[] IS NULL OR e.id = ANY($2))
       ORDER BY e.expires_at ASC`,
-    [cutoff]
+    [cutoff, eventIds ?? null]
   );
 
   return rows.map((r) => ({
@@ -330,13 +334,34 @@ export async function purgeEventMedia(eventId: string): Promise<PurgeResult> {
  * `enforce` defaults to false. Deleting a couple's wedding photos is not
  * something to do as a side effect of running a maintenance task.
  */
-export async function sweepExpiredAlbums(enforce = false): Promise<SweepResult> {
+export interface SweepOptions {
+  /**
+   * Restrict the sweep to these event ids.
+   *
+   * Exists for tests. This function is database-wide by design — a nightly run
+   * must consider every expired album — but the spec files that exercise it run
+   * against one shared database under vitest's file parallelism, and one of
+   * them calls `sweepExpiredAlbums(true)`, which deletes. Unscoped, that spec
+   * can destroy albums another spec file created and is still asserting on.
+   *
+   * Keyed on event id rather than host address so an album with no host email
+   * — which one spec creates deliberately — is still reachable when scoped.
+   *
+   * Production callers omit it and behave exactly as before.
+   */
+  eventIds?: string[];
+}
+
+export async function sweepExpiredAlbums(
+  enforce = false,
+  options: SweepOptions = {}
+): Promise<SweepResult> {
   const now = Date.now();
   const graceCutoff = new Date(now - GRACE_PERIOD_DAYS * 24 * 60 * 60 * 1000).toISOString();
   const soonCutoff = new Date(now + 14 * 24 * 60 * 60 * 1000).toISOString();
 
-  const pastExpiry = await loadCandidates(soonCutoff);
-  const pastGrace = await loadCandidates(graceCutoff);
+  const pastExpiry = await loadCandidates(soonCutoff, options.eventIds);
+  const pastGrace = await loadCandidates(graceCutoff, options.eventIds);
   const pastGraceIds = new Set(pastGrace.map((c) => c.eventId));
 
   // D1 — past the grace period is necessary but not sufficient. An album is

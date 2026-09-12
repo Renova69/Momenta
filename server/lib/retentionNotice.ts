@@ -51,6 +51,23 @@ export interface SendNoticeOptions {
   /** False (the default) reports without sending or stamping anything. */
   send?: boolean;
   limit?: number;
+  /**
+   * Restrict the run to these event ids.
+   *
+   * Exists for tests, the same way `limit` does. This function is
+   * database-wide by design — a nightly run should warn every album that is
+   * due — but four spec files call it against one shared database under
+   * vitest's file parallelism, so an unscoped run stamps
+   * `retention_notified_at` on albums another spec file just created and is
+   * about to assert on. That is a genuinely flaky test on the one code path
+   * that ends in photographs being deleted.
+   *
+   * Keyed on event id rather than host address so an album with no host email
+   * — which one spec creates deliberately — is still reachable when scoped.
+   *
+   * Production callers omit it and behave exactly as before.
+   */
+  eventIds?: string[];
 }
 
 /**
@@ -66,7 +83,10 @@ export interface SendNoticeOptions {
  * retention report's "past grace but NOT deletable" bucket until a person deals
  * with it. An album nobody can warn is not an album that may be destroyed.
  */
-export async function findAlbumsNeedingNotice(limit = DEFAULT_BATCH_LIMIT): Promise<NoticeCandidate[]> {
+export async function findAlbumsNeedingNotice(
+  limit = DEFAULT_BATCH_LIMIT,
+  eventIds?: string[]
+): Promise<NoticeCandidate[]> {
   const { rows } = await pool.query(
     `SELECT e.id, e.slug, e.title, e.host_email, e.expires_at
        FROM events e
@@ -79,9 +99,10 @@ export async function findAlbumsNeedingNotice(limit = DEFAULT_BATCH_LIMIT): Prom
                  AND b.kind = 'hard'
                  AND b.cleared_at IS NULL
             )
+        AND ($3::uuid[] IS NULL OR e.id = ANY($3))
       ORDER BY e.expires_at ASC
       LIMIT $2`,
-    [String(NOTICE_LEAD_DAYS), limit]
+    [String(NOTICE_LEAD_DAYS), limit, eventIds ?? null]
   );
 
   return rows.map((r) => ({
@@ -265,7 +286,10 @@ export function buildNoticeEmail(candidate: NoticeCandidate): { subject: string;
 
 export async function sendRetentionNotices(options: SendNoticeOptions = {}): Promise<NoticeResult> {
   const send = options.send === true;
-  const pending = await findAlbumsNeedingNotice(options.limit ?? DEFAULT_BATCH_LIMIT);
+  const pending = await findAlbumsNeedingNotice(
+    options.limit ?? DEFAULT_BATCH_LIMIT,
+    options.eventIds
+  );
 
   const result: NoticeResult = { pending, sent: [], failed: [] };
   if (!send) return result;

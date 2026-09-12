@@ -129,12 +129,12 @@ describe('email bounces', () => {
       const host = await registerHost();
       await armedForDeletion(host.eventId);
 
-      const before = await sweepExpiredAlbums(false);
+      const before = await sweepExpiredAlbums(false, { eventIds: createdEvents });
       expect(before.eligible.map((c) => c.eventId)).toContain(host.eventId);
 
       await recordBounce({ email: host.email, kind: 'hard', source: 'spec' });
 
-      const after = await sweepExpiredAlbums(false);
+      const after = await sweepExpiredAlbums(false, { eventIds: createdEvents });
       expect(after.eligible.map((c) => c.eventId)).not.toContain(host.eventId);
       expect(after.awaitingNotice.map((c) => c.eventId)).toContain(host.eventId);
     });
@@ -145,7 +145,7 @@ describe('email bounces', () => {
       await expiringSoon(host.eventId);
       await recordBounce({ email: host.email, kind: 'hard', source: 'spec' });
 
-      const result = await sendRetentionNotices({ send: true });
+      const result = await sendRetentionNotices({ send: true, eventIds: createdEvents });
 
       expect(result.pending.map((c) => c.eventId)).not.toContain(host.eventId);
       expect(sent.map((m) => m.to)).not.toContain(host.email);
@@ -157,7 +157,7 @@ describe('email bounces', () => {
       await armedForDeletion(host.eventId);
       await recordBounce({ email: host.email, kind: 'hard', source: 'spec' });
 
-      const result = await sweepExpiredAlbums(false);
+      const result = await sweepExpiredAlbums(false, { eventIds: createdEvents });
       const stuck = result.awaitingNotice.find((c) => c.eventId === host.eventId);
 
       expect(stuck?.bouncedAt).not.toBeNull();
@@ -170,7 +170,7 @@ describe('email bounces', () => {
       await expiringSoon(host.eventId);
 
       await recordBounce({ email: host.email, kind: 'soft', detail: 'mailbox full', source: 'spec' });
-      const result = await sendRetentionNotices({ send: true });
+      const result = await sendRetentionNotices({ send: true, eventIds: createdEvents });
 
       expect(result.sent).toContain(host.eventId);
       expect(await isHardBounced(host.email)).toBe(false);
@@ -214,7 +214,7 @@ describe('email bounces', () => {
       await recordBounce({ email: host.email, kind: 'hard', source: 'spec' });
 
       expect(await clearBounce(host.email)).toBe(true);
-      const result = await sendRetentionNotices({ send: true });
+      const result = await sendRetentionNotices({ send: true, eventIds: createdEvents });
 
       expect(result.sent).toContain(host.eventId);
     });
@@ -254,7 +254,7 @@ describe('email bounces', () => {
       await recordBounce({ email: host.email.toUpperCase(), kind: 'hard', source: 'spec' });
 
       expect(await isHardBounced(host.email)).toBe(true);
-      const result = await sendRetentionNotices({ send: true });
+      const result = await sendRetentionNotices({ send: true, eventIds: createdEvents });
       expect(result.pending.map((c) => c.eventId)).not.toContain(host.eventId);
     });
 

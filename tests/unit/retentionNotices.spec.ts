@@ -48,6 +48,10 @@ const TEST_PORT = 6643;
 const BG_DATE = /\d{1,2} (януари|февруари|март|април|май|юни|юли|август|септември|октомври|ноември|декември) \d{4} г\./;
 const BASE_URL = `http://localhost:${TEST_PORT}`;
 let server: ReturnType<typeof createServer>;
+// Every album this file creates. The retention helpers below are
+// database-wide by design, so each call is scoped to these ids —
+// otherwise a run here stamps or deletes albums that a sibling spec file
+// created and is still asserting on, under vitest's file parallelism.
 const createdEvents: string[] = [];
 
 async function registerHost(): Promise<{ eventId: string; email: string; slug: string }> {
@@ -101,7 +105,7 @@ describe('retention notices', () => {
     const host = await registerHost();
     await expiringSoon(host.eventId);
 
-    const result = await sendRetentionNotices({ send: false });
+    const result = await sendRetentionNotices({ send: false, eventIds: createdEvents });
 
     expect(result.pending.map((p) => p.eventId)).toContain(host.eventId);
     expect(sent).toHaveLength(0);
@@ -112,7 +116,7 @@ describe('retention notices', () => {
     const host = await registerHost();
     await expiringSoon(host.eventId);
 
-    const result = await sendRetentionNotices({ send: true });
+    const result = await sendRetentionNotices({ send: true, eventIds: createdEvents });
 
     expect(result.sent).toContain(host.eventId);
     expect(sent.map((m) => m.to)).toContain(host.email);
@@ -125,7 +129,7 @@ describe('retention notices', () => {
     await expiringSoon(host.eventId);
     failFor = new Set([host.email]);
 
-    const result = await sendRetentionNotices({ send: true });
+    const result = await sendRetentionNotices({ send: true, eventIds: createdEvents });
 
     expect(result.failed.map((f) => f.eventId)).toContain(host.eventId);
     expect(result.sent).not.toContain(host.eventId);
@@ -139,7 +143,7 @@ describe('retention notices', () => {
     await expiringSoon(bad.eventId);
     failFor = new Set([bad.email]);
 
-    await sendRetentionNotices({ send: true });
+    await sendRetentionNotices({ send: true, eventIds: createdEvents });
 
     expect(await notifiedAt(good.eventId)).not.toBeNull();
     expect(await notifiedAt(bad.eventId)).toBeNull();
@@ -149,9 +153,9 @@ describe('retention notices', () => {
     const host = await registerHost();
     await expiringSoon(host.eventId);
 
-    await sendRetentionNotices({ send: true });
+    await sendRetentionNotices({ send: true, eventIds: createdEvents });
     sent.length = 0;
-    const second = await sendRetentionNotices({ send: true });
+    const second = await sendRetentionNotices({ send: true, eventIds: createdEvents });
 
     expect(second.sent).not.toContain(host.eventId);
     // This album specifically, not the mailbox as a whole.
@@ -168,7 +172,7 @@ describe('retention notices', () => {
     const host = await registerHost();
     await query("UPDATE events SET expires_at = NOW() + INTERVAL '2 years' WHERE id = $1", [host.eventId]);
 
-    const result = await sendRetentionNotices({ send: true });
+    const result = await sendRetentionNotices({ send: true, eventIds: createdEvents });
 
     expect(result.sent).not.toContain(host.eventId);
     expect(await notifiedAt(host.eventId)).toBeNull();
@@ -179,7 +183,7 @@ describe('retention notices', () => {
     const host = await registerHost();
     await query('UPDATE events SET expires_at = NULL WHERE id = $1', [host.eventId]);
 
-    const result = await sendRetentionNotices({ send: true });
+    const result = await sendRetentionNotices({ send: true, eventIds: createdEvents });
 
     expect(result.sent).not.toContain(host.eventId);
   });
@@ -188,7 +192,7 @@ describe('retention notices', () => {
     const host = await registerHost();
     await expiringSoon(host.eventId);
 
-    await sendRetentionNotices({ send: true });
+    await sendRetentionNotices({ send: true, eventIds: createdEvents });
     const mail = sent.find((m) => m.to === host.email);
 
     expect(mail).toBeDefined();
@@ -215,7 +219,7 @@ describe('retention notices', () => {
     await expiringSoon(host.eventId);
     await query("UPDATE events SET host_email = '' WHERE id = $1", [host.eventId]);
 
-    const result = await sendRetentionNotices({ send: true });
+    const result = await sendRetentionNotices({ send: true, eventIds: createdEvents });
 
     expect(result.sent).not.toContain(host.eventId);
     expect(result.failed.map((f) => f.eventId)).toContain(host.eventId);
@@ -365,7 +369,7 @@ describe('retention notices', () => {
       const err = vi.spyOn(console, 'error').mockImplementation(() => undefined);
 
       try {
-        const result = await sendRetentionNotices({ send: true });
+        const result = await sendRetentionNotices({ send: true, eventIds: createdEvents });
 
         expect(sent).toHaveLength(0);
         expect(result.failed.map((f) => f.eventId)).toContain(host.eventId);
@@ -384,7 +388,7 @@ describe('retention notices', () => {
       const err = vi.spyOn(console, 'error').mockImplementation(() => undefined);
 
       try {
-        const result = await sendRetentionNotices({ send: true });
+        const result = await sendRetentionNotices({ send: true, eventIds: createdEvents });
 
         expect(sent).toHaveLength(0);
         expect(result.sent).toHaveLength(0);
