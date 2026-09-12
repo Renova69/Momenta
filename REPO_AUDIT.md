@@ -937,16 +937,90 @@ error, which is correct for both.
 `ingestPipeline.ts` went from 269 lines to 235 and no longer contains a
 transaction, a lock, or a cleanup closure.
 
+### Version control
+
+The repository had no `.git` at all. Initialized at the post-remediation tree.
+`.gitignore` already covered `.env`, `node_modules`, `dist`, `coverage`, `logs`
+and `uploads`; three gaps were closed first so nothing sensitive or generated
+entered history:
+
+- `uploads-quarantine/` — 6.7 MB of real guest photos held back from the public
+  mount pending moderation or a disposable reveal, ignored for the same reason
+  `uploads/` is;
+- `.claude-flow/`, `.impeccable/` — local agent state, which may carry tokens;
+- `.npm-cache/` — an npm cache written into the project by a sandboxed install.
+
+Verified before committing: `.env` untracked, `.env.example` placeholders only,
+no live key patterns in any tracked file, and the live `JWT_SECRET` (256 chars)
+distinct from the example placeholder. 310 files tracked.
+
+A fourth piece of root debris, `900` (0 bytes), was found and removed — same
+class as `1` and `617`, created during the remediation session itself.
+
+### i18n review
+
+| Severity | Finding |
+|---|---|
+| HIGH | Unguarded `localStorage` in `I18nManager`. `detectLanguage()` runs from the constructor, the constructor runs at module scope, and the module is imported by `App.tsx` and 35 other files. `getItem` throws a `SecurityError` when site data is blocked — a private window, Safari with cookies disabled, an embedded webview — so the failure mode was not a broken language switcher but the app failing to initialise. The rest of the codebase already wraps `localStorage`; this was the one place that did not, and the one place it mattered most. **Fixed.** |
+| LOW | The lookup chain used `\|\|`, so a key deliberately translated to the empty string fell through into another language's text. **Fixed** (`??`). Nothing is blank today. |
+| — | `src/i18n/index.ts` was 1281 lines, the last file over the 800-line ceiling. Split into `translations/bg.ts` (623), `translations/en.ts` (596) and a 92-line runtime. |
+
+Tests added for interpolation, a missing placeholder value, and storage being
+unavailable. The storage test was first written against `Storage.prototype`,
+which does not reach jsdom's `localStorage` instance and passed with the fix
+reverted; it now replaces the accessors on the object the code actually calls,
+and was confirmed to fail without the guard.
+
+### Tier gating review
+
+**No entitlement defects.** Eight of the nine features in `FEATURE_GATES` have
+server enforcement at an identical tier:
+
+| Feature | Client tier | Server enforcement |
+|---|---|---|
+| `scavenger_quests` | celebration_pass | `requireEventTier` — `quests.ts:77` |
+| `audio_guestbook` | deluxe_keepsake | `requireEventTier` — `audio.ts:37` |
+| `qr_print_studio` | celebration_pass | `requireEventTier` — `events/qr.ts:69` |
+| `zip_export` | celebration_pass | `requireEventTier` — `events/export.ts:78,105` |
+| `photo_moderation` | celebration_pass | `TIER_GATED_EVENT_FIELDS.isModerationEnabled` |
+| `disposable_camera` | deluxe_keepsake | `TIER_GATED_EVENT_FIELDS.isDisposableMode` |
+| `custom_themes` | celebration_pass | `wantsCustomTheme` — `events/crud.ts:325-350` |
+| `multi_events` | pro_planner | `subscriptions.event_limit` (pro_planner 10, all others 1) under `acquireUserEventCreationLock` |
+| `live_tv` | celebration_pass | **none — presentation only** |
+
+`live_tv` is a slideshow over photos the client has already legitimately
+fetched from `GET /api/photos`; there is no distinct server resource to gate,
+so it is a UI-mode paywall rather than an enforced entitlement. Recorded, not
+fixed — enforcing it would mean inventing an endpoint.
+
+Also confirmed sound: the dunning grace window (the webhook holds
+`status = 'active'` with a `past_due_grace_expiry` deadline, so a host is
+carried through a failed card and `subscription-grace-sweep.ts` downgrades on
+expiry), and the SEC-D5 partial unique index on `subscriptions (user_id) WHERE
+status = 'active'`, which makes the one-active-row invariant the tier lookups
+assume actually hold.
+
+Two fixes:
+
+- **`TIER_WEIGHTS` was written out twice**, in `server/middleware/tierGate.ts`
+  and `src/config/tierGating.ts` — the same drift risk as the photo cap, with a
+  worse failure: the client decides what to show behind a paywall and the server
+  decides what to allow, so a disagreement either sells a feature that is then
+  refused, or hides one the customer paid for. Now in `shared/planCaps.ts`.
+- **`requireEventTier` returned 500 for a malformed `eventId`.** The value went
+  unvalidated to Postgres, which threw 22P02, caught as "Internal server error
+  validating tier" — the caller's bad input reported as a server fault. Never a
+  bypass, since the gate fails closed, but the wrong status and it buried real
+  500s. Now a 400 before any query. Reachable: `POST /api/audio` takes its
+  `eventId` from the request body, with no `requireUuidParams` ahead of it.
+
 ### Not done
 
 - **Coverage is unchanged at 75.54%**, still below the 80% standard. Explicitly
   scoped out. §9 lists the lowest-covered modules; `server/lib/photoWrite.ts` is
   new and has no direct unit tests of its own, though both callers are covered.
-- **This repository is still not under version control.** `.gitignore` exists,
-  `.git` does not. Every change described above was made without an undo path.
-  Explicitly scoped out.
-- `src/i18n/index.ts` (1281 lines) is the only remaining file over the 800-line
-  ceiling, and is a translation table rather than logic.
+- **No file now exceeds the 800-line ceiling.** The largest is
+  `src/components/camera/CameraCaptureModal.tsx` at 694.
 
 ---
 
