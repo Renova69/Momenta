@@ -1024,6 +1024,92 @@ Two fixes:
 
 ---
 
+## 14. Retention & deletion review — 12 September 2026
+
+The purge path is the most dangerous code in the repository: it permanently
+destroys irreplaceable photographs. Reviewed on that basis.
+
+| Severity | Finding | Status |
+|---|---|---|
+| HIGH | `retention.ts` documented enforcement as a no-op, and it is not. | Fixed |
+| MEDIUM | A refused storage delete was warned, then made permanent. | Fixed |
+| MEDIUM | Four spec files ran database-wide retention operations concurrently. | Fixed |
+
+### HIGH — the comment said enforcement deletes nothing
+
+The doc block on `RETENTION_NOTICE_DAYS` read:
+
+> This app has no mailer, so nothing sets that column today — which means
+> `RETENTION_ENFORCED=true` currently deletes nothing at all.
+
+True when written, false now. `sendRetentionNotices` stamps
+`retention_notified_at` after a confirmed send (`server/lib/retentionNotice.ts:326`),
+so with `SMTP_HOST` configured and notices sent more than
+`RETENTION_NOTICE_DAYS` ago, `RETENTION_ENFORCED=true` **permanently deletes
+wedding photos**. An operator reading that comment before flipping the flag
+would have believed it was a safe rehearsal.
+
+The guard itself was always correct — an album is deletable only after a notice
+it could act on. What changed is that the precondition became reachable. The
+`config.ts` warning stayed accurate throughout, because it is conditional on
+`SMTP_HOST` being unset (`server/lib/config.ts:155-163`).
+
+### MEDIUM — a refused storage delete was made permanent
+
+`purgeEventMedia` deletes stored objects before the rows that name them. That
+order is correct and deliberate: the rows are the only record of which objects
+belong to an album, so deleting them first orphans every file irrecoverably.
+
+But a delete the adapter refused was logged with `console.warn` and then made
+unrecoverable by the row deletion moments later — nothing in the database could
+find the object again, only `npm run storage:orphans` could. That is exactly how
+164 MB of unreachable objects went unnoticed before.
+
+Aborting the purge on such a failure would be worse: a half-purged album with no
+way to resume. So failures are now collected rather than swallowed.
+`purgeEventMedia` returns `{ freedBytes, failedPaths }`, `SweepResult` carries
+`leakedPaths`, and the sweep report names every leaked object at the end of the
+run together with the command that finds them. The `DELETE /api/events/:id`
+route logs them as an operator problem rather than failing the host's erasure
+request, which did succeed.
+
+### MEDIUM — the specs collided on a shared database
+
+Two spec files failed in a full parallel run and passed in isolation.
+
+`findAlbumsNeedingNotice` and `loadCandidates` both select every matching album
+database-wide — correct for a nightly run. But four spec files call
+`sendRetentionNotices({ send: true })` and `sweepExpiredAlbums` against one
+shared database under vitest's file parallelism, so a run started by one file
+stamps `retention_notified_at` on albums another file created seconds earlier
+and is about to assert on. The observed failure was precisely that.
+
+`sweepExpiredAlbums(true)` is the same shape and **deletes**, so one spec could
+destroy another's albums. Nothing had yet, but only by scheduling luck.
+
+Both now take an optional list of event ids, alongside the `limit` option that
+already existed for the same reason. Production callers pass nothing and behave
+exactly as before. Scoped on event id rather than host address because one spec
+deliberately creates an album with no host email, and an address filter excluded
+that row from its own test.
+
+Verified with three consecutive full runs, 709 passing each time, file
+parallelism left on.
+
+### Reviewed and found sound, no change
+
+- Files-before-rows ordering in `purgeEventMedia`, and the same rule restated on
+  `DELETE /api/events/:id`.
+- The D1 precondition: an album is deletable only when past grace **and**
+  notified at least `RETENTION_NOTICE_DAYS` ago.
+- The bounce path, which clears `retention_notified_at` at the data level
+  (`server/lib/emailBounces.ts:105`) rather than filtering at sweep time, so a
+  bounced host's album cannot be eligible at all.
+- `SET LOCAL wedmoments.bulk_purge` in place of `ALTER TABLE ... DISABLE
+  TRIGGER`, which took an ACCESS EXCLUSIVE lock on the whole `photos` table.
+
+---
+
 ## Appendix A — Dependency inventory
 
 ### Runtime (`package.json:44-73`)
