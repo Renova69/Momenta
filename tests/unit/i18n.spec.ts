@@ -73,6 +73,21 @@ describe('i18n Specification', () => {
     }
   });
 
+  it('uses {{double}} braces for every placeholder, which is what t() interpolates', () => {
+    // Three keys once used single braces. t() only replaces /\{\{(\w+)\}\}/,
+    // so the host was shown a literal "{count}" - and on the delete
+    // confirmation, told to type "{slug}" rather than their album's address,
+    // at the exact moment that safeguard matters most.
+    const offenders: string[] = [];
+    for (const [lang, table] of Object.entries(TRANSLATIONS)) {
+      for (const [key, value] of Object.entries(table)) {
+        // A single brace not paired into a double one.
+        if (/(?<!\{)\{[a-zA-Z_]+\}(?!\})/.test(value)) offenders.push(`${lang}:${key}`);
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+
   it('notifies subscribers on language change', () => {
     const listener = vi.fn();
     const unsub = i18n.subscribe(listener);
