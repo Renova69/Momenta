@@ -447,7 +447,32 @@ logging a warning and moving on, and the sweep report surfaces
 made permanent by the row deletion that follows it. `npm run storage:orphans`
 remains the way to check whether a new code path got it right.
 
-### The capacity figure this document would want is not yet measurable
+### The capacity figure this document would want — now partly measured
+
+**Update, 2026-09-13:** the benchmark was run against live R2. It did not
+produce "N receptions per instance", because at this location the host's
+uplink to Cloudflare saturates at **8.7 MB/s** long before anything in the
+service does — CPU stayed at 17–49% of 16 cores and Postgres held 12 of 40
+connections while the pipe was full. Zero uploads failed at any concurrency.
+
+What it did produce is a formula that reproduces every measured run:
+
+```
+uploads/sec  =  uplink MB/s  ÷  9.1 MB per upload
+```
+
+The number that matters to *this* document is the divisor. **8.5 MB of that
+9.1 MB is the retained full-resolution original — 93% of both the bytes moved
+and the bytes stored.** Every storage-cost figure in §3.B and §8.C, and the
+capacity assumption in §6, are dominated by that single product decision far
+more than by anything about instance sizing. Originals are what a host takes
+to a print shop, so this is not a change to make casually — but it is the only
+lever here worth an order of magnitude.
+
+§6's per-instance assumption remains unvalidated: the service's own ceiling was
+never reached, so it is still unknown.
+
+The original paragraph, for the local-disk measurements that preceded this:
 
 `scripts/load-test.ts` runs clean — roughly 4,000 uploads across ~30 runs at
 concurrency 5–40, zero failures, storage accounting matching bytes written on

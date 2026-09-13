@@ -105,7 +105,51 @@ Already covered: `ErrorBoundary`, `LockedFeatureBadge`, `LiveFeed`,
 Worth noting: **every bug found in this review was in code that had no test until
 one was written for it.** That is not a coincidence.
 
-### G2 — No trustworthy capacity number
+### G2 — No trustworthy capacity number — **ANSWERED, with one part still open (2026-09-13)**
+
+Run against live Cloudflare R2 on 2026-09-13. Full method, rig and tables in
+`docs/G2_CAPACITY_BENCHMARK_RUNBOOK.md` §Results.
+
+| Concurrency | Uploads | Throughput | p50 | p95 | Failures |
+|---|---|---|---|---|---|
+| 5 | 60 | 0.95/s | 4.90 s | 8.41 s | 0 |
+| 10 | 150 | 0.96/s | 10.07 s | 15.34 s | 0 |
+| 20 | 120 | 0.96/s | 19.24 s | 30.53 s | 0 |
+
+**Zero failures anywhere, and no rate limiting** — 57 uploads/min against a
+600/min per-IP ceiling, so the limiter never engaged.
+
+Throughput is identical across a 4× concurrency range while latency scales
+linearly: a saturated resource with a queue in front of it. Little's Law
+(`concurrency ÷ throughput`) predicts the measured p50 within 3–8% at every
+step. The resource was then identified directly, by pushing buffers through
+the storage adapter with sharp, Postgres and HTTP removed from the path —
+**8.7 MB/s to R2**, against the load test's implied 9 MB/s. The application
+adds essentially nothing to the wire time; nothing local was near binding
+(CPU 17–49% of 16 cores *including* the co-resident generator, 12 Postgres
+connections against a pool of 40).
+
+So the honest answer is not "N receptions per instance" but arithmetic:
+
+```
+uploads/sec  =  uplink MB/s  ÷  9.1 MB per upload
+```
+
+which reproduces every row measured (8.7 ÷ 9.1 = 0.96).
+
+**The lever:** 8.5 MB of that 9.1 MB payload is the retained full-resolution
+original — 93%. Capacity and the storage bill are both dominated by that one
+product decision.
+
+**Still open:** the service's own ceiling. The network here saturates so far
+below it that CPU and pool never came under pressure, so "what binds on a fast
+uplink" is unmeasured and needs the app on real hosting with the generator
+elsewhere. What the run removes is the uncertainty about what to look for.
+
+The original entry follows, as written.
+
+---
+
 
 The load test runs clean — roughly 4,000 uploads across ~30 runs at concurrency
 5–40, at 12 MP and 2 MP, **zero failures**. No 429s, no 500s, no pool exhaustion,

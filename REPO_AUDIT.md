@@ -1614,6 +1614,81 @@ feature that is then refused, or hides one the customer has paid for.
 
 ---
 
+## 20. The capacity benchmark (G2) — 13 September 2026
+
+G2 was the last item in this audit with no result. It has one now, though not
+the shape the runbook expected.
+
+Run against live Cloudflare R2, generator co-resident with the app — which
+breaks the runbook's separate-host rule, and it turned out not to matter for
+the reason the runbook feared.
+
+| Concurrency | Uploads | Throughput | p50 | p95 | Failures |
+|---|---|---|---|---|---|
+| 5 | 60 | 0.95/s | 4.90 s | 8.41 s | 0 |
+| 10 | 150 | 0.96/s | 10.07 s | 15.34 s | 0 |
+| 20 | 120 | 0.96/s | 19.24 s | 30.53 s | 0 |
+
+Nothing failed, at any step. No `429` either: 57 uploads/min against a 600/min
+per-IP ceiling, so the limiter the runbook warns about never engaged and did
+not need raising.
+
+### Reading it
+
+Throughput is flat across a 4× concurrency range while latency scales
+linearly. That is a saturated resource with a queue in front of it, and
+Little's Law makes it quantitative — `concurrency ÷ throughput` predicts the
+measured p50 within 3–8% at every step (5.26 vs 4.90, 10.42 vs 10.07, 20.83 vs
+19.24).
+
+The resource was then identified rather than inferred, by pushing buffers
+straight through the storage adapter with sharp, Postgres and HTTP removed
+from the path: 7.1 MB/s at one parallel write, plateauing at **8.7 MB/s**.
+The load test's implied rate was 9 MB/s. The application therefore adds
+essentially nothing to the wire time — image derivation and the database
+round-trip are free relative to the network at this bandwidth. Consistent with
+that, CPU sat at 17–49% of 16 cores *including* the generator's own 12 MP sharp
+work, and Postgres held 12 connections against a pool of 40.
+
+### What it answers
+
+Not "N receptions per instance". Something more portable:
+
+```
+uploads/sec  =  uplink MB/s  ÷  9.1 MB per upload
+```
+
+8.7 ÷ 9.1 = 0.96, which is every row in the table.
+
+And it surfaces the lever: **8.5 MB of the 9.1 MB payload is the retained
+full-resolution original, 93% of it.** Capacity and the storage bill are both
+dominated by whether originals are uploaded, far more than by instance sizing.
+
+### What it does not answer, and why that is fine
+
+The service's own ceiling. The network saturates so far below it that CPU and
+the pool were never under pressure, so "what binds on a fast uplink" remains
+unmeasured and still needs the app on real hosting with the generator
+elsewhere. G2 is therefore marked answered-in-part rather than closed.
+
+The one thing worth saying for the honesty of the number: a co-resident
+generator was supposed to be the flaw that invalidated this run. It was not —
+both processes were starved by the same pipe long before they could compete
+for CPU. The rule in the runbook stays, because on a fast link it will start
+to bite; it simply was not the binding constraint here.
+
+### A change I wanted and did not make
+
+The runbook says to raise `uploadIpLimiter` for the duration of a benchmark.
+Editing a rate limiter was refused by this environment's safety classifier,
+which is the correct default for a file whose whole job is to refuse traffic.
+Rather than route around it I checked whether it mattered, found the run peaks
+at a tenth of the limiter's ceiling, and left the limiter untouched. Worth
+recording because on a faster uplink that permission will genuinely be needed,
+and the answer then is to ask rather than to edit quietly.
+
+---
+
 ## Appendix A — Dependency inventory
 
 Refreshed 13 September 2026, after the upgrade pass in §15 and the first
