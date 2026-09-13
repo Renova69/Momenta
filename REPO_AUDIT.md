@@ -595,15 +595,17 @@ after the work in §13-§15:
 
 | Metric | Result | Standard | At audit start |
 |---|---|---|---|
-| Statements | 76.24% (3740/4905) | 80% | 75.54% |
-| Branches | 68.04% (2542/3736) | 80% | 67.61% |
-| Functions | 72.16% (700/970) | 80% | 70.76% |
-| Lines | 78.63% (3523/4480) | 80% | 77.89% |
+| Statements | **80.22%** (3935/4905) | 80% | 75.54% |
+| Branches | 71.30% (2664/3736) | 80% | 67.61% |
+| Functions | 76.90% (746/970) | 80% | 70.76% |
+| Lines | **82.29%** (3687/4480) | 80% | 77.89% |
 
-The "at audit start" column is the first measurement taken in this session. The
-movement is small and comes entirely from tests added alongside fixes — the
-jsPDF and FTP integration specs in §15 most of all. No coverage-raising pass
-has been done; that remains open.
+The "at audit start" column is the first measurement taken in this session.
+Statements and lines now clear the project's own 80% standard; branches and
+functions do not, and that is the honest remaining gap.
+
+Most of the movement came from the deliberate pass in §16, and the rest from
+tests added alongside fixes — the jsPDF and FTP integration specs in §15.
 
 **The suite is below the project's own 80% minimum on every metric.** The
 `coverage.include` list at `vitest.config.ts:78-88` covers `server/lib`,
@@ -650,7 +652,7 @@ test:coverage     vitest run --coverage
 test:e2e          tsx tests/e2e.test.ts
 ```
 
-Last full run: **93 files / 715 tests passing**, e2e **27/27**.
+Last full run: **99 files / 824 tests passing**, e2e **27/27**.
 
 `npm run typecheck` is three separate invocations — `tsconfig.json` (which includes only `src` and
 `shared`), `tsconfig.server.json`, and `tsconfig.test.json` (`package.json:9`). Running
@@ -781,7 +783,7 @@ reading. The original question is kept so the answer can be checked against what
 |---|---|---|---|
 | 1 | Is root `server.ts` intentional or dead? | **Dead.** Unreferenced by any config, and in no tsconfig `include` — `tsconfig.json` covers `src`+`shared`, `tsconfig.server.json` covers `server`+`scripts`+`shared`. It was never even typechecked. | `tsconfig.json:29`, `tsconfig.server.json:11` |
 | 2 | Are `1`, `617`, `{{.Destination}}` safe to delete? | **Yes.** No reference in `package.json`, `Dockerfile`, `docker-compose.yml`, `vercel.json`, or any `.ts`/`.tsx` file. | grep over the tree |
-| 3 | What does `npm run test:coverage` report? | **75.54% statements, 67.61% branches, 70.76% functions, 77.89% lines** — below the 80% standard on all four. Now 76.24 / 68.04 / 72.16 / 78.63, still below it. | §9 |
+| 3 | What does `npm run test:coverage` report? | **75.54% statements, 67.61% branches, 70.76% functions, 77.89% lines** — below the 80% standard on all four. Now 80.22 / 71.30 / 76.90 / 82.29 — statements and lines clear it, branches and functions do not. | §9, §16 |
 | 4 | Does `src/config/plans.ts` agree with `server/lib/planLimits.ts`? | **Yes, on every number.** Storage 500 MB / 10 / 25 / 100 GB matches; the limits rendered from i18n (`50 photos`, `7 days`, `3 months`, `1 full year`, `Ongoing access`) match `maxPhotos` and `retentionDays`. | `src/config/plans.ts:41,63,86,108`, `src/i18n/index.ts:984-1020`, `server/lib/planLimits.ts:27-50` |
 | 5 | Is `events.plan_tier` read for any non-entitlement purpose? | **No — fully vestigial.** Every handler overwrote `planTier` from `getEffectiveTierForEvent`/`ForUser` before responding, and the client prefers `planTier` over `plan_tier`. It was still shipped on the wire as a second, staler answer. | `server/routes/events.ts:149,355,378,530`, `server/routes/auth.ts:99,276,307`, `src/services/eventNormalization.ts:101,143` |
 | 6 | Is the 800-line standard advisory for route files? | Treated as binding. Both files are now split — §13. | §13 |
@@ -1224,16 +1226,12 @@ they were deleted rather than left to rot. **The allowlist is now empty.**
 
 ### Not done
 
-- **Coverage is 76.24%** (branches 68.04%, functions 72.16%, lines 78.63%),
-  still under the project's own 80% standard. Explicitly out of scope for this
-  pass. The new jsPDF and FTP tests moved it from 75.54%.
-  `server/lib/photoWrite.ts` still has no direct unit tests, though both of its
-  callers are covered.
-- **Nothing is pushed.** The repository has no remote, so the workflow has never
-  run. It will on the first push.
-- **Branch protection** is a repository setting rather than a file: `static` and
-  `test` should be required on pull requests to `main` once the first run is
-  green.
+- **Coverage was 76.24% at the end of this pass**, under the project's own 80%
+  standard and explicitly out of scope for it. Addressed afterwards in §16.
+- **Nothing was pushed at the end of this pass**, so the workflow had never run.
+  Resolved in §16.
+- **Branch protection** is a repository setting rather than a file. Attempted in
+  §16 and blocked by GitHub's account tier.
 - **`@electerm/ftp-srv` carries roughly 3,000 monthly downloads against
   `ftp-srv`'s 70,000.** That is the trade this pass made — maintained code with
   fewer eyes, in exchange for a dependency that no longer ships a known
@@ -1241,31 +1239,141 @@ they were deleted rather than left to rot. **The allowlist is now empty.**
 
 ---
 
+## 16. Push, coverage and the first dependency cycle — 13 September 2026
+
+### The repository is live and CI runs
+
+`github.com/Renova69/Momenta`, private, default branch `main`.
+
+`git init` had left the branch as `master`, which the workflow does not trigger
+on — it was renamed and the remote default moved with it, or CI would have sat
+silent while looking correctly configured.
+
+**Every job passed on the first run**: lint, typecheck and build; migrations
+against the Postgres service, 824 unit tests and 27 e2e; and the audit gate.
+That is attributable to the dry run in §15 rather than to luck — running every
+step locally with `.env` moved aside, and then against a brand new empty
+database, is what a first CI run otherwise discovers for you in public.
+
+It did surface one thing worth having: `actions/checkout@v4` and
+`actions/setup-node@v4` target the Node 20 runtime, which GitHub has deprecated
+and force-upgrades at execution time. Three majors behind. Dependabot opened
+PRs for all three within a minute of the first push, which is the configuration
+working; they were taken in one commit instead and the annotation is gone.
+
+### Branch protection — blocked, not skipped
+
+Requiring `static`, `test` and `audit` on pull requests to `main` is the natural
+completion of the CI work, and it cannot be done here. Both mechanisms refuse:
+
+```
+PUT /repos/.../branches/main/protection   403  Upgrade to GitHub Pro
+POST /repos/.../rulesets                  403  Upgrade to GitHub Pro
+```
+
+Branch protection on a **private** repository is a paid feature. The options are
+GitHub Pro, making the repository public, or leaving `main` unprotected. None of
+those is a technical decision, so the check is configured and enforced on every
+push and pull request, but cannot yet be *required* before a merge.
+
+### Coverage now clears the standard on two of four metrics
+
+| Metric | Before | After | Standard |
+|---|---|---|---|
+| Statements | 76.24% | **80.22%** | 80% |
+| Lines | 78.63% | **82.29%** | 80% |
+| Branches | 68.04% | 71.30% | 80% |
+| Functions | 72.16% | 76.90% | 80% |
+
+772 → 824 tests across six new spec files. Chosen by risk rather than by line
+count; every one was both poorly covered and load-bearing at a live wedding:
+
+| File | Was | Why it mattered |
+|---|---|---|
+| `src/api/ingestApi.ts` | 2.7% | The photographer upload client. Its concurrency limit, per-file progress and error surfacing were unverified on the one path a working photographer uses. |
+| `src/services/realtimeMessages.ts` | 53.6% | The live WebSocket dispatcher — every guest screen, and the only place an optimistic local write is reconciled against the server's copy. |
+| `src/services/realtimeSocket.ts` | 36.4% | Connection lifecycle. Pins SEC-A5 and the H-8 backoff reset. |
+| `src/services/authService.ts` | 70.4% | That logout revokes server-side, and still clears locally when that call fails. |
+| `src/services/compressionService.ts` | 67.1% | That an iOS HEIC falls back rather than leaving the guest with nothing. |
+| `src/components/host/HostProfileModal.tsx` | 0% | Never rendered by the suite at all. |
+
+Two of those specs were written against a wrong idea of the data — photo
+comments carry `commentText`, not `text`. The lightbox spec failed at runtime;
+**the realtime spec passed at runtime and failed `npm run typecheck`**. That is
+the argument for CI running all three tsconfigs rather than the frontend one,
+and it is why the `static` job exists separately.
+
+Branches and functions remain under 80%. That is the honest remaining gap, and
+it is a different kind of work: the uncovered branches are concentrated in
+`CameraCaptureModal` (47%, media APIs jsdom does not implement) and in server
+route error paths.
+
+### The first dependency cycle, reviewed rather than rubber-stamped
+
+Five Dependabot pull requests, all minor or patch within the same major, which
+is exactly what `dependabot.yml` permits. All five were green against the full
+suite before merge. Two were worth more than a glance:
+
+- **lucide-react 1.34 → 1.43** jumps nine minors, and the new specs select on
+  `svg.lucide-share-2`, `lucide-heart`, `lucide-x` and `lucide-download`. Green
+  CI is real evidence those class names still resolve.
+- **express-rate-limit 8.6.2 → 8.7.0** is a security control, and the limiter
+  specs ran against it.
+
+Merged, then verified as a **combination** — each pull request was tested
+against `main` separately, and the set together was not tested by anything until
+it landed. Typecheck, lint, build, 824 unit, 27 e2e and the audit gate all pass
+on the merged head, and CI agrees.
+
+One operational note for anyone repeating this on Windows: `npm ci` failed with
+`EPERM` unlinking `@rollup/rollup-win32-x64-msvc/rollup.win32-x64-msvc.node`.
+Two `vite` dev servers started a week earlier still had the native binary
+memory-mapped. `npm install` completes without needing to unlink it, which is
+the right way round — the alternative is killing processes that belong to
+whoever is at the keyboard.
+
+### Not done
+
+- **Branches (71.30%) and functions (76.90%) are still under 80%.** Statements
+  and lines clear it.
+- **Branch protection**, blocked by account tier as above.
+- **`@electerm/ftp-srv` carries roughly 3,000 monthly downloads against
+  `ftp-srv`'s 70,000** — maintained code with fewer eyes, in exchange for a
+  dependency that no longer ships a known vulnerability. The integration test in
+  §15 is what makes that trade defensible.
+
+---
+
 ## Appendix A — Dependency inventory
 
-Refreshed 12 September 2026, after the upgrade pass in §15.
+Refreshed 13 September 2026, after the upgrade pass in §15 and the first
+Dependabot cycle in §16.
 
 ### Runtime (`package.json:49-78`)
 
 ```
-@aws-sdk/client-s3  ^3.1118.0      @electerm/ftp-srv   ^1.0.5
+@aws-sdk/client-s3  ^3.1128.0      @electerm/ftp-srv   ^1.0.5
 @types/nodemailer   ^8.0.1         archiver            ^8.0.0
 bcryptjs            ^3.0.3         canvas-confetti     ^1.9.4
 clsx                ^2.1.1         cors                ^2.8.6
 cross-env           ^10.1.0        dotenv              ^17.4.2
-express             ^5.2.1         express-rate-limit  ^8.6.2
+express             ^5.2.1         express-rate-limit  ^8.7.0
 helmet              ^8.3.0         html2canvas         ^1.4.1
 jsonwebtoken        ^9.0.3         jspdf               ^4.2.1
-lucide-react        ^1.16.0        multer              ^2.3.0
+lucide-react        ^1.43.0        multer              ^2.3.0
 nodemailer          ^10.0.6        pg                  ^8.23.0
 qrcode.react        ^4.2.0         react               ^18.3.1
 react-dom           ^18.3.1        sharp               ^0.35.4
 stripe              ^22.6.1        tailwind-merge      ^3.0.2
-ws                  ^8.21.3        zod                 ^4.4.3
+ws                  ^8.21.3        zod                 ^4.5.4
 ```
 
 Twenty-eight runtime dependencies, and **zero known advisories** against them
-(`npm run audit:ci`).
+(`npm run audit:ci`), with an empty allowlist.
+
+`zod`, `express-rate-limit`, `lucide-react` and `@aws-sdk/client-s3` moved in
+the first Dependabot cycle (§16); all four are minor or patch within the same
+major, which is the only kind of update `dependabot.yml` proposes.
 
 Four moved in §15: `multer` 2.2.0 → 2.3.0, `jspdf` 2.5.2 → 4.2.1, and `ftp-srv`
 4.6.3 replaced outright by `@electerm/ftp-srv` 1.0.5. `qs` moved 6.15.3 →

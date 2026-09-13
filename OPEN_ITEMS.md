@@ -4013,6 +4013,51 @@ migration 025 applied.
 
 ---
 
+## Current state — 13 September 2026
+
+Supersedes the 12 September entry below. Since then: the repository was pushed,
+CI ran for the first time, coverage was raised past the standard on two of its
+four metrics, and the first Dependabot cycle was reviewed and merged.
+`REPO_AUDIT.md` §16 has the detail.
+
+```
+npm run typecheck     clean  — all three configs
+npm run lint          clean  — at --max-warnings=0
+npm run test:unit     99 files / 824 tests passed
+npm run test:e2e      27 passed | 0 failed
+npm run audit:ci      0 production advisories, 0 exemptions
+npm run build         clean
+```
+
+Coverage: **80.22% statements**, **82.29% lines** — both now clear the project's
+80% standard. Branches (71.30%) and functions (76.90%) do not, and that is the
+honest remaining gap. The uncovered branches are concentrated in
+`CameraCaptureModal` (media APIs jsdom does not implement) and in server route
+error paths.
+
+**The repository is live at `github.com/Renova69/Momenta`** — private, default
+branch `main`. `git init` had left it on `master`, which the workflow does not
+trigger on; renaming it and moving the remote default is what makes CI actually
+fire rather than sit silent while looking correctly configured.
+
+**CI passed every job on its first run.** That is attributable to rehearsing it
+locally — running every step with `.env` moved aside, then against a brand new
+empty database — rather than to luck.
+
+**Branch protection could not be applied.** Requiring the three checks before a
+merge needs GitHub Pro on a private repository; both the branch-protection and
+the rulesets API return 403. The checks run on every push and pull request, they
+simply cannot yet be *required*. Resolving it is a billing or visibility
+decision, not a technical one.
+
+**The first Dependabot cycle merged**: `zod`, `express-rate-limit`,
+`lucide-react` and `@aws-sdk/client-s3`, plus a grouped dev-tooling update. All
+minor or patch within the same major, all green before merge, and verified again
+as a combination afterwards — each pull request is tested against `main`
+separately, so the set together is untested until it lands.
+
+---
+
 ## Current state — 12 September 2026
 
 Supersedes the 11 September entry below. Since then: the `REPO_AUDIT.md`
