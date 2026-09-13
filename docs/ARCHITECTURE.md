@@ -28,6 +28,8 @@ graph TD
         WsEngine["Event-Scoped WebSocket Manager (wsManager)"]
         MulterEngine["Multer Direct Binary Streaming Engine"]
         ZipEngine["Archiver Full-Resolution ZIP Export"]
+        FtpServer["In-Process FTP Ingest Server (server/ftp)"]
+        Maintenance["Retention Sweep, Notices & Bounces (scripts/maintenance-scheduler)"]
     end
 
     subgraph Storage & Database Tier ["Data & Cloud Storage Tier"]
@@ -47,7 +49,17 @@ graph TD
     Router --> MulterEngine --> StorageAdapter
     Router --> ZipEngine --> StorageAdapter
     Router --> Postgres
+    FtpServer --> StorageAdapter
+    FtpServer --> Postgres
+    Maintenance --> StorageAdapter
+    Maintenance --> Postgres
 ```
+
+A photographer's camera or tethering software speaks FTP, not HTTP, which is
+why the ingest server exists in-process rather than as a route: it shares the
+same pipeline, the same plan limits and the same moderation rules as the REST
+ingest endpoint (`server/lib/ingestPipeline.ts`), and differs only in how the
+bytes arrive.
 
 ---
 
@@ -82,6 +94,11 @@ graph TD
 - `server/middleware/validate.ts`: Zod schema validation for all request payloads.
 - `server/middleware/rateLimit.ts`: per-device upload limit (20 req/min, plus a 600 req/min per-IP venue-wide backstop), auth protection (25 req/15min per IP), reaction throttling (30 req/min per device), and general `/api` throttling (3000 req/min, sized per venue). See `docs/SECURITY.md` §4 for the reasoning behind per-device vs per-IP keys.
 - `server/ws/wsServer.ts`: Multi-tenant WebSocket server with isolated event-room channels (`JOIN_EVENT_ROOM`).
+- `server/routes/events/` and `server/routes/photos/`: composed sub-routers. Each directory has a small index that mounts its siblings in their original registration order, because Express resolves routes in the order they are added and a reordering changes which handler answers a request.
+- `server/lib/photoWrite.ts`: the shared tail of both upload paths — writing the display, thumbnail and original variants, inserting the row under the plan's quota inside an advisory lock, and broadcasting. Both the guest REST upload and the photographer ingest pipeline end here, so a quota or quarantine rule cannot hold on one path and not the other.
+- `server/lib/ingestPipeline.ts`: the professional-photo pipeline shared by the REST ingest endpoint and the FTP server below.
+- `server/ftp/ftpServer.ts`: in-process FTP ingest (`@electerm/ftp-srv`) for photographers whose camera or tethering software cannot speak HTTP. Authenticated with the same ingest keys as the REST endpoint, and every STOR path is resolved against the event's own staging directory before anything is written.
+- `server/lib/retention.ts`, `retentionNotice.ts`, `mailer.ts`, `emailBounces.ts`: the retention subsystem. An album is never deleted until its host has been warned and the notice has not bounced; `scripts/maintenance-scheduler.ts` runs the sweep, the notices and the bounce check on a schedule.
 
 ### Layer 3: Storage & Database Tier
 - **Database**: PostgreSQL 16 (Local Docker container `:6532`, with instant compatibility for serverless **Neon** or **Supabase Postgres** — any standard connection string works).

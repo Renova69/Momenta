@@ -154,7 +154,34 @@ that still holds files is deliberately left alone: a non-empty one after a
 purge means a file delete failed, and what is still in there is someone's
 wedding. Covered by `tests/unit/localStorageAdapter.spec.ts`.
 
-### G5 — Docs don't reflect the current state
+### G5 — Docs don't reflect the current state — **CLOSED (2026-09-13)**
+
+Brought up to date against the code:
+
+- `docs/ARCHITECTURE.md` — the FTP ingest server, the shared photo-write path
+  (`server/lib/photoWrite.ts`), the composed sub-routers and the retention/mail
+  subsystem were all missing from both the topology diagram and the Layer 2
+  list. A whole ingest path absent from an architecture document is the kind of
+  omission that makes the document worse than none.
+- `docs/OPERATIONS.md` — said "two sweeps"; there are three, and the one it
+  omitted is the notice sweep that the other two are downstream of. Now states
+  plainly that `RETENTION_ENFORCED=true` deletes nothing while SMTP is unset,
+  and that once SMTP is configured it permanently deletes wedding photos.
+- `docs/TEST_SPEC_COVERAGE.md` — said 57 spec files as of 2026-09-05; there are
+  118 and 1241 tests. Coverage figures and the newer spec groups added.
+- `STORAGE_AND_FINANCIAL_PLAN.md` — new §11 covering the three findings that
+  bear on the cost model: the silent storage-leak class, the capacity figure
+  still not being measurable (§6's per-instance assumption is unvalidated), and
+  storage misconfiguration now failing fast rather than costing nothing while
+  losing everything.
+
+Every file path and every `npm run` command cited across `docs/`, `README.md`
+and `STORAGE_AND_FINANCIAL_PLAN.md` was checked to exist.
+
+The original entry follows, as written.
+
+---
+
 
 `docs/` and `STORAGE_AND_FINANCIAL_PLAN.md` don't mention this session's
 findings: the three storage-leak bugs, the WebSocket regression, the sharp

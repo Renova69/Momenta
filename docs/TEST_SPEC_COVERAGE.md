@@ -20,11 +20,26 @@ specs register throwaway hosts and clean up after themselves.
 
 ## 1. Test Architecture
 
-**57 files in `tests/unit/` as of 2026-09-05** (up from the 23 this section
-used to list — that list predates the nine-phase security/architecture pass
-and the full UI-component coverage sweep in `OPEN_ITEMS.md`). Grouped by what
-they actually exercise, since a flat alphabetical list of 57 one-liners goes
-stale the moment the next file is added:
+**118 files in `tests/unit/`, 1241 tests, as of 2026-09-13** (57 on
+2026-09-05; 23 before the nine-phase security/architecture pass). Grouped by
+what they actually exercise, since a flat alphabetical list goes stale the
+moment the next file is added.
+
+Coverage clears the project's 80% standard on all four metrics:
+
+| Metric | Value |
+| :--- | :--- |
+| Statements | 85.68% |
+| Branches | 80.46% |
+| Functions | 82.26% |
+| Lines | 87.43% |
+
+Two guards keep the suite honest about itself. `testPortAllocation.spec.ts`
+fails if two spec files bind the same TCP port — including ports reached by
+arithmetic such as `TEST_PORT + 3`, since a collision otherwise surfaces as an
+intermittent `EADDRINUSE` in an unrelated file weeks later. And `tests/setup.ts`
+refuses to run against a non-local storage provider, because a spec that
+silently stopped asserting anything is worse than one that fails.
 
 **Security & auth** — `serverAuth.spec.ts`, `authService.spec.ts`,
 `authHardening.spec.ts` (trust-proxy parsing, login timing, bcrypt 72-byte
@@ -67,6 +82,29 @@ QRCanvasStudio), `feedComponents.spec.tsx` (LiveFeed, ScavengerHunt),
 `hostEventsList.spec.tsx`, `photographerIngestPanel.spec.tsx`,
 `landingHomePage.spec.tsx`, `navbar.spec.tsx`, `bottomNav.spec.tsx`,
 `weddingHero.spec.tsx`, `eventNotFound.spec.tsx`, `loadingSpinner.spec.tsx`.
+
+**Paywall** — `tierGatingEndToEnd.spec.ts` drives every server-enforced gate
+over real HTTP at every tier, asserting each is refused below its threshold and
+allowed at or above it, that `events.plan_tier` is never trusted for
+entitlement (only `subscriptions`, and only while `status = 'active'`), and
+that a lapsed host can still switch a paid setting *off*.
+
+**Retention & mail** — `retentionNotices.spec.ts`, `retentionPurge.spec.ts`,
+`emailBounces.spec.ts`, `mailer.spec.ts`, `maintenanceScheduler.spec.ts`. An
+album is never deleted until its host has been warned, so the mailer's refusals
+matter more than its successes: an unconfigured relay, a transport that throws,
+and a transport that accepts the message and then rejects the recipient.
+
+**Storage internals** — `localStorageAdapter.spec.ts` (the adapter every
+non-Cloudflare deployment runs: path containment on delete, promotion out of
+quarantine, post-purge directory removal that must not force a directory still
+holding files), `exportArchiveContents.spec.ts` (which files actually end up in
+the exported ZIP, and that a row naming another album's object is dropped).
+
+**Guest upload rules** — `perGuestPhotoCap.spec.ts` (a cap of zero means accept
+nothing, not "use the default"), `offlineQueue.spec.ts` and
+`offlineQueueAudioAndResilience.spec.ts` (the flush path, including rebuilding a
+queued voice message into multipart and not running two flushes at once).
 
 Plus `tests/e2e.test.ts` (full-stack API, PostgreSQL & WebSocket suite) and
 `tests/run-all-tests.ts` (E2E harness entry point, `npm run test:e2e`).

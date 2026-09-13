@@ -281,6 +281,16 @@ once they exist.
    wedding photos; removing them is never a side effect of a maintenance task.
    Wire the sweep into cron once you are satisfied with what the report shows.
 
+   **A second precondition landed later and matters to the cost model: the
+   sweep will not delete an album until its host has actually been warned.**
+   `events.retention_notified_at` is stamped only when a notice was sent and
+   not bounced (`server/lib/retentionNotice.ts`, `mailer.ts`,
+   `emailBounces.ts`). The practical consequence is that **with no SMTP
+   configured, `RETENTION_ENFORCED=true` deletes nothing at all** — storage
+   grows without bound and the free-tier arithmetic in item 4 below never
+   starts working. Mail is therefore not a nicety here; it is the thing that
+   lets storage cost stop accruing.
+
    Two fixes landed since this was first written, both dormant until the sweep
    is actually turned on: the bulk purge used to fire one `UPDATE events`
    statement per deleted photo (thousands of sequential row-locked writes on
@@ -412,5 +422,59 @@ storage-cost numbers those sections are built on.
 
 ---
 
+## 11. What the later passes changed here (2026-09-11 – 2026-09-13)
+
+Three findings from the sessions recorded in `REPO_AUDIT.md` §§13–19 bear on
+the storage and cost model specifically. The rest of those passes — routing,
+i18n, CI, test coverage, the paywall verification — does not, and is not
+restated here.
+
+### Storage leaks are the expensive failure mode, and they are silent
+
+Three separate bugs in one session were the same mistake: **delete the row,
+leak the bytes.** Each photo is stored three ways since migration 007
+(`storage_path`, `original_storage_path`, `thumbnail_url`), and each buggy
+site deleted a subset.
+
+This class is nasty precisely because nothing surfaces it. Once the row is
+gone nothing references the file, so nothing 404s, no test fails, and
+`events.storage_bytes` says the space was freed. The only place it appears is
+the R2 bill — which is to say, in this document's margins and nowhere else.
+
+`purgeEventMedia()` now returns `{ freedBytes, failedPaths }` rather than
+logging a warning and moving on, and the sweep report surfaces
+`leakedPaths`, so a failed delete is visible as a number instead of being
+made permanent by the row deletion that follows it. `npm run storage:orphans`
+remains the way to check whether a new code path got it right.
+
+### The capacity figure this document would want is not yet measurable
+
+`scripts/load-test.ts` runs clean — roughly 4,000 uploads across ~30 runs at
+concurrency 5–40, zero failures, storage accounting matching bytes written on
+every run. It still cannot produce a number worth quoting in a financial
+model: throughput for identical code ranged **2.46 to 13.44 uploads/sec**,
+because the Docker Desktop volume on Windows drifts 25–50% between
+measurements minutes apart.
+
+What is stable is that latency grows roughly linearly past **10 concurrent
+uploads** — the signature of a saturated resource — and that the saturated
+resource is the disk, not the application: CPU peaked at 789% of 1600%
+available and the database never exceeded 8%. **The per-instance capacity
+assumption in §6 is therefore still unvalidated.** A quotable number needs
+`STORAGE_PROVIDER=r2` and the generator on a separate host; see
+`docs/G2_CAPACITY_BENCHMARK_RUNBOOK.md`. `scripts/load-test.ts` prints this
+caveat itself so the figure cannot be misread later.
+
+### Misconfigured storage now fails fast instead of quietly costing nothing
+
+`STORAGE_PROVIDER` set to anything unrecognised, or to `r2` with missing
+credentials or no `R2_PUBLIC_URL`, used to fall back to container-local disk
+with nothing logged — every wedding photo lost on the next redeploy, and an R2
+bill of zero because nothing was ever written to it. `server/lib/config.ts`
+now refuses to start. A storage bill that is surprisingly *low* is as much a
+signal as one that is surprisingly high.
+
+---
+
 *Document Author: WedMoments Engineering & Product Strategy Team*  
-*Last Updated: 2026-09-05*
+*Last Updated: 2026-09-13*

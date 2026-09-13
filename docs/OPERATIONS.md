@@ -8,18 +8,45 @@ production.
 
 ## 1. Scheduled maintenance
 
-Two sweeps must run continuously. Both were written to be run "from cron", and
+Three sweeps must run continuously. All were written to be run "from cron", and
 for a long time nothing ran them at all — which is invisible until it isn't:
 
+- **Retention notices** — without them no host is ever warned, and an unwarned
+  album can never be deleted however retention is configured. This one is
+  first because the other two are downstream of it.
 - **Retention** — without it, storage grows forever against a one-time fee,
   which is exactly the gap album retention exists to close.
 - **Subscription grace** — without it, a Pro Planner subscription whose dunning
   ends without another Stripe webhook keeps its tier indefinitely.
 
-`docker-compose.yml` runs both via the `maintenance` service
-(`scripts/maintenance-scheduler.ts`): grace hourly, retention daily, and both
-once at boot so a deploy reports the current position immediately rather than
-an hour later.
+`docker-compose.yml` runs all three via the `maintenance` service
+(`scripts/maintenance-scheduler.ts`): notices and grace hourly, retention
+daily, and each once at boot so a deploy reports the current position
+immediately rather than an hour later.
+
+### The notice sweep is what makes retention real
+
+`RETENTION_ENFORCED=true` on its own deletes **nothing** while `SMTP_HOST` is
+unset, because the sweep refuses to delete an album whose
+`retention_notified_at` is null or younger than `RETENTION_NOTICE_DAYS` — a
+code constant of 14 days (`server/lib/retention.ts:47`), not an environment
+variable, because how long someone gets to rescue their wedding photos is not
+a deployment tuning knob. That was a safe rehearsal for as long as no mailer
+existed; it is not one any more.
+
+With SMTP configured and notices sent more than `RETENTION_NOTICE_DAYS` ago,
+`RETENTION_ENFORCED=true` **permanently deletes wedding photos**. Read the
+notice report before enabling it, not after:
+
+```bash
+npm run notify:verify      # check SMTP credentials without sending anything
+npm run notify:report      # who is due a warning, sends nothing
+npm run notify:send        # send the warnings
+```
+
+A notice that bounces does not count as a warning — `npm run bounce:list`
+shows addresses that have hard-bounced, and those albums stay undeletable
+rather than being deleted on the strength of mail nobody received.
 
 ### Enforcement is opt-in
 
@@ -43,7 +70,14 @@ npm run retention:sweep    # deletes (RETENTION_ENFORCED baked in)
 
 npm run grace:report       # accounts past their dunning deadline
 npm run grace:sweep        # downgrades them
+
+npm run maintenance:once   # run every scheduled job a single time, then exit
 ```
+
+A sweep reports `leakedPaths`: objects the storage adapter refused to delete
+while their rows were removed anyway. Those bytes are now unreferenced and
+will be billed indefinitely, so a nonzero count there is a real finding rather
+than noise — `npm run storage:orphans` is how to go and collect them.
 
 Inside a container: `docker exec wedmoments-app npm run grace:report`.
 
