@@ -1539,6 +1539,81 @@ confirmed the test failed, restored.
 
 ---
 
+## 19. Tier gating, verified end to end — 13 September 2026
+
+The paywall is the commercial product. The question worth answering is not
+whether the middleware computes the right boolean — `tierGating.spec.ts`
+already checks that against a mocked pool — but whether a free-tier host can
+reach a paid feature by any route that exists. So every gated endpoint is now
+driven over real HTTP against a real database, at every tier:
+`tests/unit/tierGatingEndToEnd.spec.ts`, 54 cases.
+
+### What is gated, and where
+
+| Feature | Required | Enforced at |
+|---|---|---|
+| ZIP export ticket + download | celebration_pass | `requireEventTier`, `events/export.ts:78,105` |
+| QR print studio | celebration_pass | `requireEventTier`, `events/qr.ts:69` |
+| Scavenger quests | celebration_pass | `requireEventTier`, `quests.ts:77` |
+| Photo moderation | celebration_pass | `TIER_GATED_EVENT_FIELDS`, `events/crud.ts:328` |
+| Custom themes | celebration_pass | `events/crud.ts:342` |
+| Audio guestbook (POST) | deluxe_keepsake | `requireEventTier`, `audio.ts:37` |
+| Disposable mode | deluxe_keepsake | `TIER_GATED_EVENT_FIELDS` |
+| Reveal time | deluxe_keepsake | `TIER_GATED_EVENT_FIELDS` |
+| Concurrent weddings | pro_planner (10) | `subscriptions.event_limit`, re-checked under an advisory lock |
+
+Each is asserted refused at every tier below it and allowed at every tier at or
+above — not one representative case per gate, the whole matrix, because a gate
+that happens to work at `free` and fail at `celebration_pass` is a real and
+easy mistake that a single case would miss.
+
+### The two properties that matter more than the individual gates
+
+**`subscriptions` is the only source of truth.** `events.plan_tier` is a
+denormalized column that the API returns to the client and that the
+event-update path can write. If entitlement were read from it, a host could
+sell themselves a plan. Every gate is re-checked with that column forged to
+`pro_planner` on a free account, and separately with it forged to `free` on a
+paying one — the tier must come from the subscription in both directions. The
+join also requires `status = 'active'`, so a cancelled row entitles nothing.
+
+**Refusals are asymmetric.** Only *enabling* a paid setting is gated. A host
+whose plan lapsed must always be able to switch moderation off or clear a
+reveal time — otherwise a cancelled subscription leaves the setting stuck on
+forever, with no way back for the person whose wedding it is. Publishing and
+withdrawing an album is never gated at all: that is a privacy control, not a
+paid feature.
+
+### Verified by breaking it
+
+Three separate ways, each reverted afterwards:
+
+| What was broken | Cases that failed |
+|---|---|
+| `requireEventTier`'s weight comparison | 14 |
+| the event-settings `meetsTier` check | 8 |
+| the `status = 'active'` requirement on the subscription join | 2 |
+
+### One gate is client-side only, by design
+
+`live_tv` — the projector wall — is checked in `App.tsx` against the
+server-supplied `event.planTier`, and there is no server-side gate because
+there is no privileged server resource behind it: the projector renders the
+album's own photo feed and the ephemeral reaction stream, both of which the
+host already has access to. Nothing is withheld that an entitlement check could
+withhold. Worth stating explicitly so the absence reads as a decision rather
+than an oversight.
+
+### Client and server read the same constants
+
+`shared/planCaps.ts` holds `TIER_WEIGHTS`, `FREE_TIER_MAX_PHOTOS` and
+`DEFAULT_MAX_PHOTOS_PER_GUEST`, and is in both tsconfigs. The spec also asserts
+directly that `TIER_GATED_EVENT_FIELDS` and the route middleware agree with the
+`FEATURE_GATES` the pricing page renders from — a disagreement either sells a
+feature that is then refused, or hides one the customer has paid for.
+
+---
+
 ## Appendix A — Dependency inventory
 
 Refreshed 13 September 2026, after the upgrade pass in §15 and the first

@@ -136,19 +136,23 @@ A number worth quoting needs `STORAGE_PROVIDER=r2` and the generator on a
 separate host. `scripts/load-test.ts` now prints this caveat itself, so the
 figure can't be misread later.
 
-### G3 — Two files over the 800-line limit
+### G3 — Two files over the 800-line limit — **CLOSED (2026-09-13)**
 
-- `src/i18n/index.ts` — 1209 lines. A flat dictionary; arguably fine as-is, but
-  splitting it per namespace would make review diffs legible.
-- `src/services/storageService.ts` — 1016 lines. Not a dictionary. This one
-  should be split.
+No file in the repository now exceeds 800 lines. `src/i18n/index.ts` is 120
+lines (a runtime over per-language tables in `src/i18n/translations/`) and
+`src/services/storageService.ts` is 285. The two oversized route files found
+later in the same pass — `server/routes/events.ts` (1073) and
+`server/routes/photos.ts` (1013) — were split into composed sub-routers, and
+`HostDashboard.tsx` (986) into a context provider with tab consumers.
 
-### G4 — Purge leaves empty directories behind
+### G4 — Purge leaves empty directories behind — **CLOSED**
 
-`purgeEventMedia()` deletes every file but not the now-empty
-`uploads/events/<id>/` directory. Harmless — `npm run storage:orphans` sweeps
-them and reports `0 files` — but it means the orphan count is never truly zero
-after a purge, which makes the report noisier than it needs to be.
+`purgeEventMedia()` now calls `storageAdapter.removeEventDirectory()`
+(`server/lib/retention.ts:326`), which `rmdir`s both the uploads and quarantine
+sides. `rmdir` only succeeds on a genuinely empty directory, so a directory
+that still holds files is deliberately left alone: a non-empty one after a
+purge means a file delete failed, and what is still in there is someone's
+wedding. Covered by `tests/unit/localStorageAdapter.spec.ts`.
 
 ### G5 — Docs don't reflect the current state
 
@@ -161,7 +165,7 @@ threadpool change, or the disk-bound load-test result.
 contradicted it 180 lines later), but it hasn't been rewritten around what was
 learned.
 
-### G6 — Storage falls back to local disk silently
+### G6 — Storage falls back to local disk silently — **CLOSED**
 
 `createStorageAdapter()` (`server/lib/storage.ts:173`):
 
@@ -188,6 +192,13 @@ Worth fixing before the R2 deployment: if `STORAGE_PROVIDER` is set to anything
 other than `local`, and the R2 adapter cannot be constructed, crash at startup
 rather than falling back. `server/lib/config.ts` already does exactly this for
 `JWT_SECRET` — same pattern.
+
+**CLOSED.** `server/lib/config.ts:96-135` now throws at startup for an
+unrecognised `STORAGE_PROVIDER`, for `r2` with any of `R2_ACCOUNT_ID`,
+`R2_ACCESS_KEY_ID` or `R2_SECRET_ACCESS_KEY` missing, and for `r2` without
+`R2_PUBLIC_URL` — the last because without it every photo uploads successfully
+and is then permanently unloadable in a browser, which is the same silent
+failure in a different costume.
 
 ### The recurring bug pattern
 
