@@ -280,10 +280,17 @@ describe('a failed upload', () => {
     await queue.enqueue('photo', { eventId: 'second' });
     setOnline(true);
 
-    let call = 0;
-    vi.spyOn(globalThis, 'fetch').mockImplementation(async () => {
-      call += 1;
-      return call === 1 ? jsonResponse({ error: 'boom' }, 500) : jsonResponse({ id: 'p2' });
+    // Which item the server refuses is decided by its payload, not by the
+    // order the requests arrive in. getQueue() reads an IndexedDB object store
+    // keyed on the item id, and two items enqueued in the same millisecond
+    // differ only by a random suffix — so the flush order between them is not
+    // fixed, and a mock that failed "the first call" would fail whichever item
+    // happened to sort first.
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (_url, init) => {
+      const body = JSON.parse((init as RequestInit).body as string) as { eventId: string };
+      return body.eventId === 'first'
+        ? jsonResponse({ error: 'boom' }, 500)
+        : jsonResponse({ id: 'p2' });
     });
 
     await queue.flushQueue();

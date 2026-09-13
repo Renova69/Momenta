@@ -395,7 +395,12 @@ describe('Express REST Routes Spec', () => {
     expect(showcaseRes.status).toBe(200);
     const showcaseData = await showcaseRes.json();
     expect(Array.isArray(showcaseData)).toBe(true);
-  });
+    // Thirteen sequential round-trips, one of them a bcrypt registration,
+    // against a pool capped at 5 per worker (vitest.config.ts). Vitest's 5s
+    // default is comfortable on its own and not comfortable under a full
+    // parallel run with coverage instrumentation, which makes it a timeout
+    // decided by scheduling rather than by anything about the routes.
+  }, 30_000);
 
   it('transliterates a Bulgarian slug and strips punctuation (cleanSlug)', () => {
     // The only direct coverage of cleanSlug's behaviour anywhere — slugConcurrency
