@@ -64,7 +64,18 @@ got it wrong.
 
 ## Gaps
 
-### G1 — The UI has almost no test coverage
+### G1 — The UI has almost no test coverage — **CLOSED (2026-09-13)**
+
+All 27 components now have direct test suites, and the whole project clears its
+own 80% standard on all four coverage metrics: 85.66% statements, 80.29%
+branches, 82.26% functions, 87.41% lines, across 1187 tests in 117 files. See
+REPO_AUDIT.md §18 for the final pass, which also found a real defect — the audio
+upload rate limit was shared by an entire venue rather than applied per phone —
+and a port-allocation guard that had been failing open.
+
+The original entry follows, as written.
+
+---
 
 20 of 27 components have no direct test. Server-side paths are well covered now
 (156 tests across 23 files); the UI is where the next regression will come from.

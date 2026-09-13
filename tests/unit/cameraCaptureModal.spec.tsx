@@ -312,3 +312,121 @@ describe('uploading', () => {
     expect(compress.mock.calls.length).toBeGreaterThan(1);
   });
 });
+
+/**
+ * Pressing the shutter.
+ *
+ * This is the modal's whole purpose and it was the part jsdom made awkward to
+ * reach: there is no camera, so the live-preview branch only runs once the
+ * stream has been granted and a 2D context exists. Both are stubbed here; the
+ * capture logic itself runs for real.
+ */
+describe('the shutter', () => {
+  /** A 2D context that records the transform calls the mirror path makes. */
+  function stubCanvas() {
+    const calls: string[] = [];
+    const ctx = {
+      translate: vi.fn(() => calls.push('translate')),
+      scale: vi.fn((x: number) => calls.push(`scale:${x}`)),
+      drawImage: vi.fn(() => calls.push('drawImage')),
+    };
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(
+      ctx as unknown as CanvasRenderingContext2D
+    );
+    vi.spyOn(HTMLCanvasElement.prototype, 'toDataURL').mockReturnValue(
+      'data:image/jpeg;base64,SNAPPED'
+    );
+    return { ctx, calls };
+  }
+
+  function shutterButton(container: HTMLElement): HTMLButtonElement {
+    const button = Array.from(container.querySelectorAll('button')).find(
+      (b) => b.getAttribute('title') === i18n.t('camera.title')
+    );
+    if (!button) throw new Error('shutter button not found');
+    return button as HTMLButtonElement;
+  }
+
+  function flipButton(container: HTMLElement): HTMLButtonElement {
+    const button = Array.from(container.querySelectorAll('button')).find(
+      (b) => b.getAttribute('title') === 'Flip camera'
+    );
+    if (!button) throw new Error('flip button not found');
+    return button as HTMLButtonElement;
+  }
+
+  /** Render with the camera granted and wait for the live preview to appear. */
+  async function renderLive() {
+    permissionsReport('granted');
+    const utils = renderModal();
+    await waitFor(() => expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalled());
+    await waitFor(() => flipButton(utils.container));
+    return utils;
+  }
+
+  it('captures the frame and shows it for review', async () => {
+    stubCanvas();
+    const { container } = await renderLive();
+
+    fireEvent.click(shutterButton(container));
+
+    // The live preview is replaced by the still, and the camera is released
+    // rather than left running behind the review screen.
+    await waitFor(() => expect(container.querySelector('img')).toBeTruthy());
+  });
+
+  it('does not mirror a photo taken on the rear camera', async () => {
+    const { calls } = stubCanvas();
+    const { container } = await renderLive();
+
+    fireEvent.click(shutterButton(container));
+
+    await waitFor(() => expect(calls).toContain('drawImage'));
+    expect(calls).not.toContain('translate');
+  });
+
+  it('un-mirrors a selfie so the saved photo is not back-to-front', async () => {
+    // The preview is mirrored so the guest sees themselves the way a mirror
+    // shows them, but the stored photo must read the right way round —
+    // otherwise every selfie at the wedding has reversed text on the signage.
+    const { calls } = stubCanvas();
+    const { container } = await renderLive();
+
+    fireEvent.click(flipButton(container));
+    await waitFor(() => expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalledTimes(2));
+    fireEvent.click(shutterButton(container));
+
+    await waitFor(() => expect(calls).toContain('drawImage'));
+    expect(calls).toContain('translate');
+    expect(calls).toContain('scale:-1');
+  });
+
+  it('does nothing rather than throwing when the browser gives no 2D context', async () => {
+    // Some locked-down or low-memory mobile browsers refuse a context. A
+    // guest pressing the shutter there gets nothing, which is bad — but a
+    // thrown error inside an onClick would white-screen the whole modal.
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(null);
+    const { container } = await renderLive();
+
+    expect(() => fireEvent.click(shutterButton(container))).not.toThrow();
+  });
+
+  it('falls back to the phone’s own camera app when there is no live stream', async () => {
+    // Permission refused, or a browser that cannot preview: the shutter still
+    // has to do something, and the native file input is the way every phone
+    // can still take a photo.
+    denyCamera();
+    permissionsReport('denied');
+    const { container } = renderModal();
+
+    const nativeInput = container.querySelector(
+      'input[capture]'
+    ) as HTMLInputElement | null;
+    expect(nativeInput).toBeTruthy();
+    const click = vi.spyOn(nativeInput!, 'click').mockImplementation(() => undefined);
+
+    fireEvent.click(shutterButton(container));
+
+    expect(click).toHaveBeenCalled();
+  });
+});

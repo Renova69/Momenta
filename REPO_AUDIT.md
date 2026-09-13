@@ -783,7 +783,7 @@ reading. The original question is kept so the answer can be checked against what
 |---|---|---|---|
 | 1 | Is root `server.ts` intentional or dead? | **Dead.** Unreferenced by any config, and in no tsconfig `include` — `tsconfig.json` covers `src`+`shared`, `tsconfig.server.json` covers `server`+`scripts`+`shared`. It was never even typechecked. | `tsconfig.json:29`, `tsconfig.server.json:11` |
 | 2 | Are `1`, `617`, `{{.Destination}}` safe to delete? | **Yes.** No reference in `package.json`, `Dockerfile`, `docker-compose.yml`, `vercel.json`, or any `.ts`/`.tsx` file. | grep over the tree |
-| 3 | What does `npm run test:coverage` report? | **75.54% statements, 67.61% branches, 70.76% functions, 77.89% lines** — below the 80% standard on all four. Now 80.22 / 71.30 / 76.90 / 82.29 — statements and lines clear it, branches and functions do not. | §9, §16 |
+| 3 | What does `npm run test:coverage` report? | **75.54% statements, 67.61% branches, 70.76% functions, 77.89% lines** — below the 80% standard on all four. Now 85.66 / 80.29 / 82.26 / 87.41 — all four clear it. | §9, §16, §18 |
 | 4 | Does `src/config/plans.ts` agree with `server/lib/planLimits.ts`? | **Yes, on every number.** Storage 500 MB / 10 / 25 / 100 GB matches; the limits rendered from i18n (`50 photos`, `7 days`, `3 months`, `1 full year`, `Ongoing access`) match `maxPhotos` and `retentionDays`. | `src/config/plans.ts:41,63,86,108`, `src/i18n/index.ts:984-1020`, `server/lib/planLimits.ts:27-50` |
 | 5 | Is `events.plan_tier` read for any non-entitlement purpose? | **No — fully vestigial.** Every handler overwrote `planTier` from `getEffectiveTierForEvent`/`ForUser` before responding, and the client prefers `planTier` over `plan_tier`. It was still shipped on the wire as a second, staler answer. | `server/routes/events.ts:149,355,378,530`, `server/routes/auth.ts:99,276,307`, `src/services/eventNormalization.ts:101,143` |
 | 6 | Is the 800-line standard advisory for route files? | Treated as binding. Both files are now split — §13. | §13 |
@@ -1448,12 +1448,94 @@ README now says so explicitly, in both languages.
 
 ### Not done
 
-- **Branches (71.30%) and functions (76.90%) remain under the 80% standard.**
-  Statements (80.22%) and lines (82.29%) clear it. The remaining gap is
-  concentrated in `CameraCaptureModal` — media APIs jsdom does not implement —
-  and in server route error paths, and closing it is a different kind of work
-  from the pass in §16.
 - **`@electerm/ftp-srv` adoption**, unchanged from §15 and §16.
+- Coverage was still short on branches and functions at the end of this
+  section; §18 closes it.
+
+---
+
+## 18. Closing the coverage gap — 13 September 2026
+
+All four metrics now clear the project's 80% standard.
+
+| Metric | §16 | §17 | Now | Standard |
+|---|---|---|---|---|
+| Statements | 80.22% | 84.46% | **85.66%** | 80% |
+| Branches | 71.30% | 78.42% | **80.29%** | 80% |
+| Functions | 76.90% | 81.23% | **82.26%** | 80% |
+| Lines | 82.29% | 86.31% | **87.41%** | 80% |
+
+1055 → 1187 tests across eight new spec files. Modules were chosen for what
+they do rather than for their percentage:
+
+| File | Was | Why it mattered |
+|---|---|---|
+| `server/lib/mailer.ts` | 0% | Load-bearing for a destructive decision: the retention sweep will not delete an album until its host has been warned, and it stamps `retention_notified_at` on the strength of what this module reports. |
+| `server/lib/ingestPipeline.ts` | 52.6% | The FTP/batch path a photographer uses to upload a whole wedding unattended, where every refusal must be a refusal and not an exception. |
+| `server/routes/events/export.ts` | 60.0% | File selection, where the export is a security boundary: `photos.storage_path` is untrusted input at rest. |
+| `server/routes/audio.ts` | 76.3% | Attribution and the disposable-mode reveal gate. |
+| `server/lib/storage.ts` (local adapter) | 83.5% | What every non-Cloudflare deployment runs; `storageAdapter.spec.ts` covered only R2. |
+| `src/services/offlineQueueService.ts` | 72.5% | The flush path — what stands between a guest on venue Wi-Fi and a lost photo. |
+| `src/components/camera/CameraCaptureModal.tsx` | 76.0% | The shutter itself, previously unreachable in jsdom. |
+| `server/routes/photos/upload.ts` | 78.2% | The per-guest cap, where zero and null mean opposite things. |
+
+### One real defect, found by writing the tests
+
+At a venue, the audio upload limit was shared by the entire reception.
+`uploadLimiter` allows twenty uploads a minute per device and falls back to the
+caller's IP when it cannot identify one. On `/api/photos` the body is JSON,
+already parsed by `express.json()` before the limiter runs, so
+`deviceFingerprint` is visible and the budget is per phone. `/api/audio` is
+multipart and the limiter runs *before* multer, so `req.body` is undefined
+there and the fallback always applied — and `audioApi` never sent a fingerprint
+in any form the limiter could read. Every guest at a venue is behind the
+building's one NAT address, so the whole room shared twenty recordings a minute
+and the twenty-first guest was told that they personally were uploading too
+fast. `audioApi` now sends `x-device-fingerprint`, which `deviceKey` already
+reads and which is available before the body is parsed.
+
+### The port-allocation guard was failing open
+
+`tests/unit/testPortAllocation.spec.ts` exists so that two spec files binding
+the same TCP port fail immediately and by name, rather than as an intermittent
+EADDRINUSE somewhere unrelated. It was silently missing collisions.
+
+It stripped comments before template literals with a chain of regexes, so the
+`//` in ``const BASE_URL = `http://localhost:${TEST_PORT}`;`` — a line that
+opens almost every spec in the suite — read as a line comment and consumed the
+closing backtick. Every later backtick then paired one out of step, blanking
+whole regions of real code, including `server.listen(TEST_PORT + 3)` in
+`retentionPurge.spec.ts`. That file binds 6616 and 6619; the guard only ever saw
+6616, and waved a new spec onto 6619.
+
+The regex chain is now a single-pass tokenizer that tracks comment, string and
+template state properly, with regressions for the `http://`-in-a-template case,
+an unmatched backtick inside a string, and a nested interpolation.
+
+### Flakes fixed rather than tolerated
+
+Both surfaced only under the extra load of a coverage run, which is the worst
+way to find them:
+
+- `serverRoutes`' lifecycle test makes thirteen sequential round-trips, one a
+  bcrypt registration, on vitest's 5s default. Same for `concurrentUpserts`.
+  Both given explicit timeouts.
+- An offline-queue test of mine assumed two queued items flushed in insertion
+  order. They are keyed on an id carrying a random suffix, so two items enqueued
+  in the same millisecond can sort either way.
+
+### Honest about what a test proves
+
+`localStorageAdapter.spec.ts` has a test named for the refusal it demonstrates
+rather than the line it looked like it guarded. A traversal path into
+`promoteFromQuarantine` is rejected when the *source* is resolved, so the
+`startsWith(uploadsRoot)` check further down never fires: both checks apply the
+same relative segment to their own root, so the net depth change is identical
+and either both stay inside or both escape. Removing that line changes no
+input's outcome. The comment says so.
+
+Every guard added in this section was toggle-verified — broken in the source,
+confirmed the test failed, restored.
 
 ---
 
