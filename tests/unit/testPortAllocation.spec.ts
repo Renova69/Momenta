@@ -35,19 +35,125 @@ function listSpecFiles(dir: string): string[] {
 }
 
 /**
- * Strip comments and template/string literals before scanning.
+ * Blank out comments and string/template literal text before scanning.
  *
  * Without this the scanner matches its own documentation: a comment explaining
  * a past collision contains the very expression it warns about, and the check
  * reports a port nobody actually binds.
+ *
+ * This walks the source once rather than applying a chain of regexes, because
+ * the two forms interact. `const BASE_URL = \`http://localhost:${TEST_PORT}\`;`
+ * holds a `//` *inside* a template literal, so stripping comments first eats
+ * the rest of that line — the closing backtick included. Every later backtick
+ * then pairs up one out of step and whole regions of real code get blanked.
+ * That is not hypothetical: it is why `server.listen(TEST_PORT + 3)` in
+ * retentionPurge.spec.ts was invisible here while the guard reported no
+ * collisions at all, and a new spec was waved onto a port already in use.
+ *
+ * Interpolations are kept as code — `${TEST_PORT + 3}` is a genuine reference
+ * to a port that file talks to — while the literal text around them is blanked.
+ * Newlines are preserved so line positions stay meaningful.
  */
 function stripCommentsAndStrings(source: string): string {
-  return source
-    .replace(/\/\*[\s\S]*?\*\//g, ' ')
-    .replace(/\/\/[^\n]*/g, ' ')
-    .replace(/`(?:\\[\s\S]|\$\{[^}]*\}|[^\\`])*`/g, (m) => m.replace(/[^\n]/g, ' '))
-    .replace(/'(?:\\.|[^'\\])*'/g, ' ')
-    .replace(/"(?:\\.|[^"\\])*"/g, ' ');
+  let out = '';
+  let i = 0;
+  const blank = (ch: string): string => (ch === '\n' ? '\n' : ' ');
+
+  // One entry per template literal we are inside, holding the brace depth
+  // reached within its current `${...}`. Empty means ordinary code.
+  const templateBraces: number[] = [];
+  let inTemplateText = false;
+
+  while (i < source.length) {
+    const ch = source[i];
+    const next = source[i + 1] ?? '';
+
+    if (inTemplateText) {
+      if (ch === '\\') {
+        out += blank(ch) + (i + 1 < source.length ? blank(next) : '');
+        i += 2;
+      } else if (ch === '`') {
+        out += ' ';
+        i += 1;
+        templateBraces.pop();
+        // A nested template can only appear inside an interpolation, so
+        // closing one returns to code either way.
+        inTemplateText = false;
+      } else if (ch === '$' && next === '{') {
+        out += '  ';
+        i += 2;
+        templateBraces[templateBraces.length - 1] = 0;
+        inTemplateText = false;
+      } else {
+        out += blank(ch);
+        i += 1;
+      }
+      continue;
+    }
+
+    if (ch === '/' && next === '/') {
+      while (i < source.length && source[i] !== '\n') out += blank(source[i++]);
+      continue;
+    }
+
+    if (ch === '/' && next === '*') {
+      const end = source.indexOf('*/', i + 2);
+      const stop = end === -1 ? source.length : end + 2;
+      while (i < stop) out += blank(source[i++]);
+      continue;
+    }
+
+    if (ch === '"' || ch === "'") {
+      out += ' ';
+      i += 1;
+      while (i < source.length && source[i] !== ch && source[i] !== '\n') {
+        if (source[i] === '\\') {
+          out += blank(source[i++]);
+          if (i < source.length) out += blank(source[i++]);
+          continue;
+        }
+        out += blank(source[i++]);
+      }
+      if (i < source.length && source[i] === ch) {
+        out += ' ';
+        i += 1;
+      }
+      continue;
+    }
+
+    if (ch === '`') {
+      out += ' ';
+      i += 1;
+      templateBraces.push(0);
+      inTemplateText = true;
+      continue;
+    }
+
+    if (templateBraces.length > 0 && ch === '{') {
+      templateBraces[templateBraces.length - 1] += 1;
+      out += ch;
+      i += 1;
+      continue;
+    }
+
+    if (templateBraces.length > 0 && ch === '}') {
+      if (templateBraces[templateBraces.length - 1] === 0) {
+        out += ' ';
+        i += 1;
+        inTemplateText = true;
+      } else {
+        templateBraces[templateBraces.length - 1] -= 1;
+        out += ch;
+        i += 1;
+      }
+      continue;
+    }
+
+    out += ch;
+    i += 1;
+  }
+
+  return out;
 }
 
 /** Every port a file actually binds, resolving `SOME_PORT + n` arithmetic. */
@@ -112,5 +218,41 @@ describe('spec files do not share TCP ports', () => {
     );
     expect(ports).not.toContain(9999);
     expect(ports).not.toContain(8888);
+  });
+
+  it('is not thrown off by a // inside a template literal', () => {
+    // The regression this guard was silently failing on. Every spec file here
+    // opens with exactly this pair of lines, so a stripper that reads the `//`
+    // in `http://` as a comment loses the closing backtick and then blanks
+    // arbitrary code further down — which is how a real collision got through.
+    const ports = portsBoundBy(
+      [
+        'const TEST_PORT = 6616;',
+        'const BASE_URL = `http://localhost:${TEST_PORT}`;',
+        'server.listen(TEST_PORT + 3);',
+      ].join('\n')
+    );
+
+    expect(ports).toContain(6616);
+    expect(ports).toContain(6619);
+  });
+
+  it('keeps reading code after a string holding an unmatched backtick', () => {
+    const ports = portsBoundBy(
+      ['const label = "a ` backtick";', 'const TEST_PORT = 7001;', 'server.listen(TEST_PORT + 2);'].join(
+        '\n'
+      )
+    );
+
+    expect(ports).toContain(7001);
+    expect(ports).toContain(7003);
+  });
+
+  it('reads code inside a nested interpolation', () => {
+    const ports = portsBoundBy(
+      ['const TEST_PORT = 7100;', 'const url = `a${`b${TEST_PORT + 5}c`}d`;'].join('\n')
+    );
+
+    expect(ports).toContain(7105);
   });
 });

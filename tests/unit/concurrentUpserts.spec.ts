@@ -83,7 +83,12 @@ describe('Concurrent upsert races do not 500 (DB-08)', () => {
     expect(rows.rows[0].c).toBe(1);
 
     await query('DELETE FROM events WHERE id = $1', [host.eventId]).catch(() => undefined);
-  });
+    // Registration hashes a password with bcrypt and this then issues five
+    // concurrent writes, all against a pool deliberately capped at 5 per
+    // worker (vitest.config.ts). Vitest's 5s default is enough on its own and
+    // not enough under a full parallel run, which makes it a timeout that
+    // fails by scheduling luck rather than by anything about the code.
+  }, 20_000);
 
   it('POST /api/subscriptions/upgrade: concurrent upgrades all succeed, exactly one active row exists', async () => {
     const host = await registerHost();
@@ -113,7 +118,7 @@ describe('Concurrent upsert races do not 500 (DB-08)', () => {
     expect(rows.rows[0].c).toBe(1);
 
     await query('DELETE FROM events WHERE id = $1', [host.eventId]).catch(() => undefined);
-  });
+  }, 20_000);
 
   afterAll(() => {
     if (server) server.close();
