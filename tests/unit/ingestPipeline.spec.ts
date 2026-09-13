@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import sharp from 'sharp';
-import { ingestPhoto, ingestPhotoBuffer } from '../../server/lib/ingestPipeline';
+import { ingestPhoto, ingestPhotoBuffer, IngestedPhoto } from '../../server/lib/ingestPipeline';
 import { pool, query } from '../../server/lib/db';
 import { isQuarantined } from '../../server/lib/storage';
 
@@ -142,7 +142,7 @@ describe('a frame that is accepted', () => {
     const outcome = await ingestPhoto(eventId, JPEG, 'DSC_0001.JPG', 'image/jpeg', {});
 
     expect(outcome.ok).toBe(true);
-    const photo = (outcome as { photo: Record<string, unknown> }).photo;
+    const photo = (outcome as { photo: IngestedPhoto }).photo;
     expect(photo.source).toBe('photographer');
     expect(photo.priority).toBe(10);
     expect(photo.status).toBe('approved');
@@ -153,7 +153,7 @@ describe('a frame that is accepted', () => {
 
     const outcome = await ingestPhoto(eventId, JPEG, 'DSC_0002.JPG', 'image/jpeg', {});
 
-    const photo = (outcome as { photo: Record<string, unknown> }).photo;
+    const photo = (outcome as { photo: IngestedPhoto }).photo;
     expect(photo.originalUrl).toBeTruthy();
     expect(photo.fullUrl).toBeTruthy();
     expect(photo.thumbnailUrl).toBeTruthy();
