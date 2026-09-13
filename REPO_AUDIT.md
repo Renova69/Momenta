@@ -1261,20 +1261,19 @@ and force-upgrades at execution time. Three majors behind. Dependabot opened
 PRs for all three within a minute of the first push, which is the configuration
 working; they were taken in one commit instead and the annotation is gone.
 
-### Branch protection — blocked, not skipped
+### Branch protection — blocked while private, resolved by going public
 
-Requiring `static`, `test` and `audit` on pull requests to `main` is the natural
-completion of the CI work, and it cannot be done here. Both mechanisms refuse:
+Requiring the three checks before a merge is the natural completion of the CI
+work, and on a **private** repository it is a paid feature. Both mechanisms
+refused:
 
 ```
 PUT /repos/.../branches/main/protection   403  Upgrade to GitHub Pro
 POST /repos/.../rulesets                  403  Upgrade to GitHub Pro
 ```
 
-Branch protection on a **private** repository is a paid feature. The options are
-GitHub Pro, making the repository public, or leaving `main` unprotected. None of
-those is a technical decision, so the check is configured and enforced on every
-push and pull request, but cannot yet be *required* before a merge.
+The repository was made public later the same day, and it is now applied — see
+§17.
 
 ### Coverage now clears the standard on two of four metrics
 
@@ -1336,11 +1335,125 @@ whoever is at the keyboard.
 
 - **Branches (71.30%) and functions (76.90%) are still under 80%.** Statements
   and lines clear it.
-- **Branch protection**, blocked by account tier as above.
+- **Branch protection**, blocked by account tier as above. Resolved in §17.
 - **`@electerm/ftp-srv` carries roughly 3,000 monthly downloads against
   `ftp-srv`'s 70,000** — maintained code with fewer eyes, in exchange for a
   dependency that no longer ships a known vulnerability. The integration test in
   §15 is what makes that trade defensible.
+
+---
+
+## 17. Going public — 13 September 2026
+
+The repository was made public, which unblocks branch protection and GitHub's
+free security tooling, and permanently exposes the history.
+
+### The history was re-audited before anything else
+
+A private repository's history is a liability only if it leaks. A public one's
+history *is* published, including every commit already made, so the first action
+was to check rather than to trust the check made at the baseline commit.
+
+Across every commit that existed when the repository went public (24 at that
+point) and every blob in them:
+
+- No `.env` was ever committed. The only env file in history is `.env.example`.
+- No live credential pattern appears anywhere — `sk_live_`, `sk_test_`,
+  `rk_live_`, `whsec_`, `AKIA…`, `ghp_`, `gho_`, `xox…`, or a PEM private key
+  header.
+- The **actual values** currently in the local `.env` were searched for
+  literally, not just by pattern: `JWT_SECRET`, `R2_ACCESS_KEY_ID`,
+  `R2_SECRET_ACCESS_KEY` and `STRIPE_SECRET_KEY` appear in no commit.
+
+Nothing needed rotating, and no history rewrite was required.
+
+The placeholder secrets that *are* public — in `.env.example` and
+`docker-compose.yml` — were already handled in the code rather than by
+obscurity: `server/lib/config.ts` keeps a set of the values this repository
+ships and **refuses to start in production** if it finds one in `JWT_SECRET`.
+Publishing them changes nothing, which is the point of that guard.
+
+### Branch protection, applied and proven
+
+```
+required checks (strict):  Lint, typecheck and build
+                           Tests
+                           Dependency audit
+force pushes:              denied
+branch deletion:           denied
+conversation resolution:   required
+admins:                    exempt (deliberate)
+```
+
+`strict` means a branch must be up to date with `main` before it can merge, so
+the checks that passed are the checks against what will actually be on `main`.
+
+**It was verified through a real pull request rather than by reading the
+settings back.** The disclosure policy below was opened as PR #10 specifically
+to confirm that the three required contexts are named exactly as the workflow
+reports them. A name mismatch is the common failure here and it fails silently
+in the worst direction: every future pull request waits forever on a check that
+will never report. The PR came back `MERGEABLE / CLEAN` with all three
+reporting, so the names match.
+
+Admins are deliberately exempt. This is a single-committer repository; requiring
+a pull request from yourself for every change is friction, and the exemption is
+what allows a broken `main` to be fixed directly. The checks still run on every
+push — they simply do not block the owner. One API call flips it if that changes.
+
+### Security tooling now available, and enabled
+
+| Feature | Status |
+|---|---|
+| Secret scanning | enabled |
+| Secret scanning **push protection** | enabled |
+| Dependabot vulnerability alerts | enabled |
+| Dependabot security updates | enabled |
+| Private vulnerability reporting | enabled |
+
+Push protection is the one that changes behaviour rather than only reporting: it
+rejects a push that contains a recognised credential, before it reaches the
+history that can no longer be un-published.
+
+Two options — `secret_scanning_non_provider_patterns` and
+`secret_scanning_validity_checks` — would not enable through the API and remain
+off. They are refinements to an already-enabled scanner rather than gaps in it.
+
+Enabling `dependabot_security_updates` failed on the first attempt and succeeded
+on the second, because it depends on vulnerability alerts already being on.
+Ordering, not flakiness.
+
+### A disclosure policy that is actually a disclosure policy
+
+GitHub was presenting `docs/SECURITY.md` as this repository's security policy.
+That file is architecture documentation — how authentication, tier gating and
+storage work. A researcher finding a flaw in a public product that handles
+wedding photographs and card payments would have landed on it and found no way
+to report anything.
+
+`SECURITY.md` at the root is now the reporting channel, and states the scope
+honestly, naming where this application's real risk sits: album isolation, guest
+identity, photographer ingest keys, tier gating, and the retention sweep that
+permanently destroys photographs. It also lists what is already known and
+deliberate, so a reporter does not spend an evening on the placeholder secrets.
+
+### Licensing — deliberately absent
+
+There is no `LICENSE` file, and that is a decision rather than an oversight.
+Absent one, default copyright applies: the code may be read, and may not be
+used, copied, modified or distributed. WedMoments is a commercial product.
+
+Because "no licence" and "we forgot a licence" look identical from outside, the
+README now says so explicitly, in both languages.
+
+### Not done
+
+- **Branches (71.30%) and functions (76.90%) remain under the 80% standard.**
+  Statements (80.22%) and lines (82.29%) clear it. The remaining gap is
+  concentrated in `CameraCaptureModal` — media APIs jsdom does not implement —
+  and in server route error paths, and closing it is a different kind of work
+  from the pass in §16.
+- **`@electerm/ftp-srv` adoption**, unchanged from §15 and §16.
 
 ---
 

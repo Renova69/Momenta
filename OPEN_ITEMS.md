@@ -4044,11 +4044,28 @@ fire rather than sit silent while looking correctly configured.
 locally — running every step with `.env` moved aside, then against a brand new
 empty database — rather than to luck.
 
-**Branch protection could not be applied.** Requiring the three checks before a
-merge needs GitHub Pro on a private repository; both the branch-protection and
-the rulesets API return 403. The checks run on every push and pull request, they
-simply cannot yet be *required*. Resolving it is a billing or visibility
-decision, not a technical one.
+**The repository is public, and branch protection is applied.** It was blocked
+while private (a paid feature there); going public resolved it. All three checks
+are required and strict, force pushes and branch deletion are denied, and admins
+are deliberately exempt so a broken `main` can still be fixed directly.
+
+Verified through a real pull request rather than by reading the settings back —
+a mismatch between the required context names and what the workflow reports
+fails silently, leaving every future PR waiting on a check that never arrives.
+
+**The history was re-audited before going public** and is clean: no `.env` in
+any commit, no live credential pattern, and the actual values in the
+local `.env` appear in no blob. Nothing needed rotating.
+
+**GitHub's security tooling is enabled**: secret scanning with push protection,
+Dependabot alerts and security updates, and private vulnerability reporting.
+`SECURITY.md` at the root is now a real disclosure policy — GitHub had been
+presenting `docs/SECURITY.md`, which is architecture documentation, as the
+place to report a vulnerability.
+
+**There is deliberately no LICENSE.** Default copyright applies: readable, not
+reusable. The README says so explicitly, because "no licence" and "forgot a
+licence" look the same from outside.
 
 **The first Dependabot cycle merged**: `zod`, `express-rate-limit`,
 `lucide-react` and `@aws-sdk/client-s3`, plus a grouped dev-tooling update. All

@@ -174,3 +174,31 @@ Wedding_album/
 - 🛠️ **[Операции и поддръжка (docs/OPERATIONS.md)](docs/OPERATIONS.md)**: Планираните sweep задачи (retention, grace), почистване на осиротели файлове, тестови данни и конфигурацията, която спира стартирането при грешка.
 - 📈 **[Бенчмарк за капацитет G2 (docs/G2_CAPACITY_BENCHMARK_RUNBOOK.md)](docs/G2_CAPACITY_BENCHMARK_RUNBOOK.md)**: Как се измерва колко едновременни гости издържа един инстанс срещу реален R2.
 
+---
+
+## 🔐 Сигурност (Security)
+
+Ако откриете уязвимост, **не отваряйте публичен issue**. Използвайте
+**Security → Report a vulnerability** в GitHub — частен канал, видим само за
+поддръжката. Обхватът и това, което вече е известно и умишлено, са описани в
+[SECURITY.md](SECURITY.md).
+
+`docs/SECURITY.md` е нещо различно: архитектурна документация за това как
+работят автентикацията, tier gating-ът и съхранението.
+
+---
+
+## 📄 Лиценз (License)
+
+**Всички права запазени.** Този репозиторий е публичен, за да бъде четим, но
+няма лиценз с отворен код — кодът не може да бъде използван, копиран,
+модифициран или разпространяван без изрично писмено разрешение.
+
+Това е съзнателно решение, а не пропуск: WedMoments е търговски продукт.
+Липсата на `LICENSE` файл означава точно това по подразбиране според
+авторското право.
+
+**All rights reserved.** This repository is public so that it can be read, not
+so that it can be reused. Absent a `LICENSE` file, default copyright applies:
+no use, copying, modification or distribution without explicit written
+permission. That is deliberate — WedMoments is a commercial product.
