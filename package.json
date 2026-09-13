@@ -47,7 +47,7 @@
     "audit:ci": "tsx scripts/audit-gate.ts"
   },
   "dependencies": {
-    "@aws-sdk/client-s3": "^3.1118.0",
+    "@aws-sdk/client-s3": "^3.1128.0",
     "@electerm/ftp-srv": "^1.0.5",
     "@types/nodemailer": "^8.0.1",
     "archiver": "^8.0.0",
