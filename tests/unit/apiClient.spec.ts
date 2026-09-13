@@ -200,4 +200,28 @@ describe('API Client Layer Spec', () => {
     });
     expect(created.durationSeconds).toBe(20);
   });
+
+  it('audioApi identifies the device in a header, where the rate limiter can see it', async () => {
+    // The limiter runs before multer, so it cannot read a field inside this
+    // multipart body — req.body is not parsed yet — and falls back to the
+    // caller's IP. At a venue every guest shares the building's NAT address,
+    // so that fallback hands the entire reception one shared budget of twenty
+    // recordings a minute and tells the twenty-first guest that they are
+    // uploading too fast. The header is the only identifier available that
+    // early (server/middleware/rateLimit.ts, deviceKey).
+    global.fetch = vi.fn().mockResolvedValue(createMockResponse({ id: 'a1' }));
+
+    await audioApi.create({
+      eventId: 'e1',
+      guestId: 'g1',
+      audioBlob: new Blob([new Uint8Array([0x1a, 0x45, 0xdf, 0xa3])], { type: 'audio/webm' }),
+      durationSeconds: 20,
+    });
+
+    const headers = (global.fetch as unknown as ReturnType<typeof vi.fn>).mock.calls[0][1]
+      .headers as Record<string, string>;
+    expect(headers['x-device-fingerprint']).toBeTruthy();
+    // And the browser still gets to set the multipart boundary itself.
+    expect(headers).not.toHaveProperty('Content-Type');
+  });
 });

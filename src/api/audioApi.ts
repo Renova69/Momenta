@@ -1,5 +1,6 @@
 import { apiFetch } from './apiClient';
 import { AudioGuestbookEntry } from '../types';
+import { getOrCreateDeviceFingerprint } from '../services/storageKeys';
 
 export const audioApi = {
   // List audio entries scoped by eventId
@@ -32,9 +33,19 @@ export const audioApi = {
     if (entry.localId) form.append('localId', entry.localId);
     if (entry.guestToken) form.append('guestToken', entry.guestToken);
 
+    // The upload rate limiter keys on the device, falling back to the client's
+    // IP when it cannot identify one. It runs before multer, so a
+    // `deviceFingerprint` field inside this FormData would be invisible to it
+    // — req.body is not parsed yet — and every guest at a venue shares the
+    // building's NAT address. That fallback would therefore give the whole
+    // reception one shared budget of twenty recordings a minute, and the
+    // twenty-first guest would be told they personally were uploading too
+    // fast. The header is readable before the body is parsed, which is why the
+    // server reads this one (server/middleware/rateLimit.ts, deviceKey).
     return apiFetch<AudioGuestbookEntry & { localId?: string; guestToken?: string }>('/api/audio', {
       method: 'POST',
       body: form,
+      headers: { 'x-device-fingerprint': getOrCreateDeviceFingerprint() },
     });
   },
 };
