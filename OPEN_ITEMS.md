@@ -31,6 +31,16 @@ should never be a side effect of a maintenance task. But while it stays off,
 storage grows without bound, and the margins in `STORAGE_AND_FINANCIAL_PLAN.md`
 assume it is running.
 
+**Still open as of 2026-09-13, and the stakes have changed.** When this was
+written there was no mailer, so `RETENTION_ENFORCED=true` would have deleted
+nothing regardless — the sweep refuses to touch an album whose host has not
+been warned. That is no longer a safety net: `sendRetentionNotices` now stamps
+`retention_notified_at` after a confirmed send, so with SMTP configured and
+notices more than 14 days old, enforcement **permanently deletes wedding
+photos**. The only thing still making it a no-op is that `SMTP_HOST` is unset.
+Read `npm run notify:report` as well as `npm run retention:report` before
+deciding.
+
 To turn on:
 
 1. `npm run retention:report` — read what it would delete. Do this first, and
@@ -43,7 +53,19 @@ Step 1 is free and reversible. Worth doing now even if you defer the rest — th
 report is the only way to find out whether the expiry dates are sane *before*
 they start deleting things.
 
-### D2 — There is no way to delete an event
+### D2 — There is no way to delete an event — **RESOLVED (a route now exists)**
+
+`DELETE /api/events/:id` is implemented at `server/routes/events/crud.ts:522`.
+It requires auth and ownership, takes a `confirmSlug` body that must match the
+stored slug, and — the part that matters — calls `purgeEventMedia()` *before*
+deleting the row, because the cascade removes the only record of which stored
+objects belong to the album. The warning below is what the implementation
+follows.
+
+The original entry follows, as written. Note its file reference predates the
+router split: `server/routes/events.ts` is now a 35-line composer.
+
+---
 
 `server/routes/events.ts` (727 lines) has no `.delete` handler. A host cannot
 remove an event, ever. Individual photos can be deleted
@@ -1508,9 +1530,9 @@ event's expires_at..."), toggle-verified.
 | ID | Title | Domain | Status | Notes |
 |---|---|---|---|---|
 | **D1** | Retention Sweep Activation | Ops / Lifecycle | **DECIDED (2026-09-05): report-only for now** | Owner chose to keep `RETENTION_ENFORCED` off and run `npm run retention:report` on a schedule first, per this doc's own recommendation. First report run today: 961 events evaluated (almost entirely test-suite fixture events — `purge-spec-*`, `ftp-spec-*`, etc. — on this local dev database), 18 inside the 30-day grace window, **0 eligible for deletion yet**. Revisit enabling the sweep once the report has been reviewed a few times against real data. |
-| **D2** | Event Deletion Route (`DELETE /api/events/:id`) | API / GDPR | **DECIDED (2026-09-05): no delete route** | Owner chose to keep albums permanent — matches this doc's own framing that a wedding album is arguably meant to last. No GDPR erasure path exists as a result; revisit if that becomes a legal requirement. |
+| **D2** | Event Deletion Route (`DELETE /api/events/:id`) | API / GDPR | **SUPERSEDED — the route exists (2026-09-13 review)** | The 2026-09-05 decision was to keep albums permanent. A delete route was added later (`server/routes/events/crud.ts:522`): it requires auth and ownership, takes a `confirmSlug` body checked against the stored slug, and purges storage *before* deleting the row — the ordering that matters, since the cascade takes away the only record of which objects belong to the album. This closes the GDPR erasure gap the original entry raised. |
 | **G1** | UI Component Direct Test Coverage | Quality Assurance | **DONE (2026-09-05)** | All 27 components now have direct test suites. Top 6 highest-damage first (`LiveProjectorScreen`, `ModerationQueue`, `PhotographerIngestPortal`, `AudioGuestbook`, `PricingPlansModal`, `GuestOnboardingModal`, 42 tests), then the remaining 9 lower-risk ones (`HostAuthPage`, `HostEventsList`, `PhotographerIngestPanel`, `LandingHomePage`, `Navbar`, `BottomNav`, `WeddingHero`, `EventNotFound`, `LoadingSpinner`, 51 tests). 93 new tests total. A sample across both batches was mutation-tested (real logic broken, confirmed the test fails, reverted) to confirm the assertions aren't tautological. |
-| **G2** | Cloud Capacity Benchmarking | Performance | **OPEN — owner will run it. Procedure: `docs/G2_CAPACITY_BENCHMARK_RUNBOOK.md`** | Needs real R2 + the generator on a separate host, neither available in this dev environment. Command: `docker exec wedmoments-app npm run loadtest -- --concurrency 10 --uploads 150` with `STORAGE_PROVIDER=r2` set and the generator process on a different machine than the app (see "Verification commands" above). |
+| **G2** | Cloud Capacity Benchmarking | Performance | **RUN 2026-09-13 — answered in part** | Run against live R2. Zero failures at c=5/10/20; throughput flat at 0.96/s while latency scaled linearly, and the saturated resource was identified directly as the host's uplink (8.7 MB/s measured with sharp, Postgres and HTTP removed from the path). Capacity reduces to `uploads/sec = uplink MB/s ÷ 9.1 MB`, and 93% of that payload is the retained original. The service's own ceiling is still unmeasured — the network saturates far below it — and that part needs real hosting with the generator elsewhere. Full tables: `docs/G2_CAPACITY_BENCHMARK_RUNBOOK.md` §Results. |
 | **G3** | File Size Limit Refactoring (>800 lines) | Code Quality | **DONE (2026-09-05)** | `src/services/storageService.ts` (grown to 1240 lines) split into a thin composition-root class plus 12 domain modules (guests/photos/quests/audio/QR canvas/event/sync/realtime), each 30-280 lines. `src/i18n/index.ts` intentionally left as-is — a flat dictionary, not a class, and arguably fine at its size (per the original 2026-08-30 note). |
 | **G4** | Purge Empty Directory Cleanup | Storage | **DONE (2026-09-05)** | `StorageAdapter.removeEventDirectory()` (optional, local-disk only); `purgeEventMedia()` calls it after the DB transaction commits. Regression tests in `storageAdapter.spec.ts` (empty/non-empty/missing-directory cases) and `retentionPurge.spec.ts` (spy confirming the call happens). Toggle-verified. |
 | **G5** | Documentation Sync | Docs | **DONE (2026-09-05)** | `docs/API_REFERENCE.md`, `docs/SECURITY.md`, `docs/DATABASE_SCHEMA.md`, and `STORAGE_AND_FINANCIAL_PLAN.md` updated — removed the `upload/raw` endpoint (gone since Phase 7), corrected the audio endpoint to multipart, added the subscriptions/upgrade endpoint, corrected `events.host_user_id`'s FK behavior (SET NULL → CASCADE, migration 011), added migrations 008-012, and documented guest tokens / session-purpose pinning / WS hardening. See G7 below for a real gap this pass surfaced while verifying the docs against a production build. |
@@ -3400,6 +3422,13 @@ Both decisions taken on instruction to do what is best for the app and
 standard practice, with the R2 lifecycle constraint in scope.
 
 ### D1 — enforcement stays OFF, and the reason is now a precondition in code
+
+> **Later note (2026-09-13):** the mailer this section says does not exist
+> was subsequently built (`server/lib/mailer.ts`, `retentionNotice.ts`). The
+> precondition below still holds and still runs in the right order, but it is
+> no longer a de-facto safety net: with SMTP configured and notices aged past
+> 14 days, `RETENTION_ENFORCED=true` permanently deletes photos. See D1 at the
+> top of this document.
 
 **The decision: do not enable it. Encode why, so it cannot be enabled
 carelessly.**
