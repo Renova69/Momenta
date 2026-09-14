@@ -145,7 +145,18 @@ describe('resolving a path', () => {
   it('streams a file that is there, and nothing for one that is not', async () => {
     const saved = await adapter.save(Buffer.from('bytes'), 'streamed.jpg', 'image/jpeg', 'e1');
 
-    expect(await adapter.getStream(saved.storagePath)).not.toBeNull();
+    const stream = await adapter.getStream(saved.storagePath);
+    expect(stream).not.toBeNull();
+
+    // Read it rather than leaving it open. `fs.createReadStream` opens the file
+    // asynchronously, so an unconsumed stream races the temporary root being
+    // removed in afterAll — and a stream that fails to open with nothing
+    // listening for 'error' takes the whole run down as an uncaught exception
+    // while every test still reports as passing.
+    const chunks: Buffer[] = [];
+    for await (const chunk of stream!) chunks.push(Buffer.from(chunk));
+    expect(Buffer.concat(chunks).toString()).toBe('bytes');
+
     expect(await adapter.getStream('/uploads/events/e1/absent.jpg')).toBeNull();
   });
 });

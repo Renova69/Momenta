@@ -164,6 +164,18 @@ describe('Storage Adapter & Path Containment Spec', () => {
       const stream = await adapter.getStream(saved.storagePath);
       expect(stream).not.toBeNull();
 
+      // Read it to the end before deleting, rather than leaving it open.
+      // `fs.createReadStream` opens the file asynchronously, so an unconsumed
+      // stream races the unlink below: on Linux the delete wins, the open then
+      // fails with ENOENT, and with nothing listening for 'error' Node raises
+      // it as an uncaught exception that fails the whole run while every test
+      // still reports as passing. Consuming it also makes the test check what
+      // its name claims — that the bytes come back — instead of only that a
+      // stream object was returned.
+      const chunks: Buffer[] = [];
+      for await (const chunk of stream!) chunks.push(Buffer.from(chunk));
+      expect(Buffer.concat(chunks).toString()).toBe('quarantined stream bytes');
+
       await adapter.delete(saved.storagePath);
       expect(fs.existsSync(path.join(testQuarantineDir, 'events', eventId, 'stream.jpg'))).toBe(false);
     });
