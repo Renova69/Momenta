@@ -17,8 +17,38 @@ export const authRouter = Router();
 // well under 72 characters. Registration rejects it outright rather than
 // silently accepting a password whose tail never actually gets checked;
 // existing bcrypt hashes are untouched, this only guards new registrations.
+/**
+ * Email, normalised the way the rest of the system already treats it.
+ *
+ * `users.email` is a plain varchar and `users_email_key` is therefore
+ * case-sensitive, while nothing in register or login lowered the input. Two
+ * consequences, both of which a phone keyboard produces on its own by
+ * capitalising the first character of a field:
+ *
+ *   A host who signed up as `Ana@...` on their phone and typed `ana@...` on a
+ *   laptop was told "Invalid email or password" — locked out of their own
+ *   wedding album by an address the two spellings of which no mail server
+ *   distinguishes.
+ *
+ *   And `Ana@...` and `ana@...` could both register, giving one person two
+ *   accounts and two separate albums, neither of them wrong as far as the
+ *   unique constraint was concerned.
+ *
+ * `server/lib/emailBounces.ts` already normalised this way; this is auth
+ * catching up with it. Applied in the schema rather than in each handler
+ * because `validateBody` replaces `req.body` with the parsed value, so every
+ * reader gets the normalised form and no future one has to remember.
+ * Migration 026 lowercases the stored rows and adds a unique index on
+ * `lower(email)`, so the database no longer permits the pair either.
+ */
+const EmailSchema = z
+  .string()
+  .email('Invalid email address')
+  .max(254)
+  .transform((value) => value.trim().toLowerCase());
+
 const RegisterSchema = z.object({
-  email: z.string().email('Invalid email address').max(254),
+  email: EmailSchema,
   fullName: z.string().min(2, 'Full name must be at least 2 characters').max(100),
   password: z.string()
     .min(6, 'Password must be at least 6 characters')
@@ -31,7 +61,7 @@ const RegisterSchema = z.object({
 });
 
 const LoginSchema = z.object({
-  email: z.string().email('Invalid email address').max(254),
+  email: EmailSchema,
   password: z.string().min(1, 'Password is required').max(128),
 });
 
