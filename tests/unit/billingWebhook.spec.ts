@@ -506,3 +506,131 @@ describe('webhook configuration failures', () => {
     expect(res.status).toBe(400);
   });
 });
+
+/**
+ * The same field, two shapes.
+ *
+ * Stripe returns a related object as either a bare id string or an expanded
+ * object, and which one arrives depends on the API version and the expansion
+ * settings on the endpoint — neither of which this app controls, and both of
+ * which can change without a deploy here. Reading only the string form would
+ * lose the subscription or customer id on an expanded payload, and the failure
+ * is the worst-shaped one billing has: the webhook returns 200, Stripe records
+ * a successful delivery and never retries, and the customer who has just paid
+ * stays on the free plan with no error anywhere.
+ */
+describe('expanded payload shapes', () => {
+  it('grants the tier when subscription and customer arrive as objects, not strings', async () => {
+    const userId = await registerHost();
+
+    await postEvent(
+      checkoutSessionEvent('checkout.session.completed', {
+        mode: 'subscription',
+        payment_status: 'paid',
+        amount_total: 4900,
+        customer: { id: 'cus_expanded_ok' },
+        subscription: { id: 'sub_expanded_ok' },
+        metadata: { userId, tier: 'pro_planner' },
+      })
+    );
+
+    const row = await subscriptionRow(userId);
+    expect(row.tier).toBe('pro_planner');
+    expect(row.stripe_subscription_id).toBe('sub_expanded_ok');
+  });
+
+  it('renews on an invoice whose subscription is an expanded object', async () => {
+    const userId = await registerHost();
+    const subscriptionId = uniqueId('sub_invoice_expanded');
+    await applyTierUpgrade(userId, 'pro_planner', {
+      billingType: 'monthly',
+      amountPaidCents: 1,
+      stripeSubscriptionId: subscriptionId,
+    });
+
+    await postEvent({
+      id: uniqueId('evt'),
+      type: 'invoice.paid',
+      data: {
+        object: {
+          id: uniqueId('in'),
+          billing_reason: 'subscription_cycle',
+          amount_paid: 4900,
+          parent: { subscription_details: { subscription: { id: subscriptionId } } },
+        },
+      },
+    });
+
+    // The amount is what proves the renewal was actually applied. Asserting
+    // the tier alone would pass whether or not the invoice resolved, since the
+    // tier was already pro_planner before the event arrived.
+    const row = await subscriptionRow(userId);
+    expect(row.tier).toBe('pro_planner');
+    expect(row.amount_paid_cents).toBe(4900);
+  });
+
+  it('downgrades on a cancellation whose customer is an expanded object', async () => {
+    const userId = await registerHost();
+    await applyTierUpgrade(userId, 'pro_planner', {
+      billingType: 'monthly',
+      stripeSubscriptionId: 'sub_cancel_expanded',
+    });
+
+    await postEvent({
+      id: uniqueId('evt'),
+      type: 'customer.subscription.deleted',
+      data: {
+        object: {
+          id: 'sub_cancel_expanded',
+          status: 'canceled',
+          customer: { id: 'cus_cancel_expanded' },
+        },
+      },
+    });
+
+    expect((await subscriptionRow(userId)).tier).toBe('free');
+  });
+});
+
+describe('events about subscriptions this app has never seen', () => {
+  it('accepts a cancellation for an unknown subscription instead of erroring', async () => {
+    // Stripe sends every event on the account, including ones created outside
+    // this app or belonging to a deleted user. A 500 here makes Stripe retry
+    // the same unresolvable event for days and can mark the endpoint unhealthy,
+    // which then delays the deliveries that *do* matter.
+    const res = await postEvent({
+      id: uniqueId('evt'),
+      type: 'customer.subscription.deleted',
+      data: { object: { id: 'sub_never_seen_here', status: 'canceled', customer: 'cus_unknown' } },
+    });
+
+    expect(res.status).toBe(200);
+  });
+
+  it('accepts a renewal invoice for an unknown subscription', async () => {
+    const res = await postEvent({
+      id: uniqueId('evt'),
+      type: 'invoice.paid',
+      data: {
+        object: {
+          id: uniqueId('in'),
+          billing_reason: 'subscription_cycle',
+          parent: { subscription_details: { subscription: 'sub_never_seen_either' } },
+        },
+      },
+    });
+
+    expect(res.status).toBe(200);
+  });
+
+  it('accepts an invoice carrying no subscription reference at all', async () => {
+    // A one-off invoice, which has no subscription to re-apply a tier from.
+    const res = await postEvent({
+      id: uniqueId('evt'),
+      type: 'invoice.paid',
+      data: { object: { id: uniqueId('in'), billing_reason: 'manual' } },
+    });
+
+    expect(res.status).toBe(200);
+  });
+});
