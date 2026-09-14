@@ -47,6 +47,8 @@ This schema is designed for PostgreSQL 14+ and is 100% compatible with local Doc
   version and read as 0, matching the default, so existing sessions survive
   until their owner logs out.
 - `created_at`, `updated_at` (TIMESTAMPTZ)
+- `company_name` (VARCHAR(150), Nullable): Agency or studio name, for the
+  Pro Planner tier where the account is a business rather than a couple.
 
 ### `subscriptions`
 - `id` (UUID, PK): `gen_random_uuid()`
@@ -116,6 +118,14 @@ Stores wedding/event settings and feature toggles.
   reads this; `npm run retention:sweep` (opt-in via `RETENTION_ENFORCED=true`)
   deletes past it plus a 30-day grace period — see OPEN_ITEMS.md D1.
 - `created_at`, `updated_at` (TIMESTAMPTZ).
+- `is_public` (BOOLEAN, NOT NULL, default `false`): Whether the album appears
+  on the public showcase feed. A privacy control, deliberately **not** tier-gated —
+  publishing and withdrawing your own wedding is never a paid feature.
+- `retention_notified_at` (TIMESTAMPTZ, Nullable): When the host was warned
+  that the album is due for deletion, stamped only after a confirmed send that
+  did not bounce. **The retention sweep will not delete an album whose value
+  here is null or younger than 14 days** (`RETENTION_NOTICE_DAYS`), which is
+  what makes notice a precondition in code rather than a line in a policy.
 
 ### `guests`
 Lightweight guest profile (no password required).
@@ -164,11 +174,25 @@ Main photo entity.
   `created_at` alone (OPEN_ITEMS.md DB-03).
 - `photographer_name` (VARCHAR(150), Nullable): Credit for official photographer photos.
 - `created_at` (TIMESTAMPTZ).
+- `original_url` (TEXT, Nullable): Full-resolution URL for the paid original
+  download. Nulled for non-host requests (OPEN_ITEMS.md MED-02 — embedded
+  EXIF/GPS data).
+- `original_bytes` (BIGINT, Nullable): Size of the untouched upload, recorded
+  separately from `storage_bytes` so the original's share is known.
+- `width` / `height` (INT, Nullable): Pixel dimensions of the display copy,
+  derived at upload so the feed can reserve layout space before the image loads.
+- `is_quarantined` (BOOLEAN, NOT NULL, default `false`): True while the photo's
+  stored copies live under the quarantine prefix rather than a public path
+  (MED-03/SEC-M5). Indexed, and set by both upload paths — a photo awaiting
+  moderation must not merely be unlinked from the feed, it must be unreachable.
+  Hosts see it through a short-lived, host-scoped preview token instead.
 
 ### `scavenger_quests` & `guest_quest_completions`
 Gamification challenges to get guests taking creative photos.
 - Quests table contains `title`, `description`, `icon_name`, `points`.
 - Completions table records `(quest_id, guest_id, photo_id, completed_at)`.
+- `is_active` (BOOLEAN, default `true`) on `scavenger_quests`: A retired quest
+  stops being offered without deleting the completions already earned against it.
 
 ### `audio_guestbook`
 - Stores voice messages (`audio_url`, `duration_seconds`, `note`) left by guests.
@@ -183,6 +207,20 @@ Gamification challenges to get guests taking creative photos.
   (OPEN_ITEMS.md DB-08).
 - `frame_style_type` enum: `minimal_gold`, `floral_vintage`, `modern_clean`, `boho_arch`, `double_border`, `art_deco` (the last two added in migration 014).
 - `center_icon` (TEXT, default `'heart'`): which locally-bundled SVG icon sits in the QR code's excavated center — `heart`/`rings`/`camera`/`sparkle`/`none` (migration 013). Deliberately not a hotlinked image URL — see that migration's comment for why.
+- `canvas_size` (`canvas_size_type` ENUM, default `'A2'`): `A2`, `A3`, `A4`,
+  `TABLE_CARD` or `SQUARE_BANNER`.
+- `headline` (VARCHAR(255)) and `subtext` (TEXT): The printed wording above and
+  below the code.
+- `accent_color` (VARCHAR(50), default `'#D4AF37'`): Frame accent.
+
+### `photo_comments`
+Guest messages attached to a photo.
+- `id` (UUID, PK)
+- `photo_id` (UUID, FK -> `photos.id` ON DELETE CASCADE)
+- `guest_id` (UUID, FK -> `guests.id` ON DELETE CASCADE)
+- `comment_text` (TEXT, NOT NULL): The message. Named `commentText` in API
+  responses — not `text`, which is the shape most clients guess at.
+- `created_at` (TIMESTAMPTZ)
 
 ### `photo_reactions`
 - `(photo_id, guest_id, reaction)` with a UNIQUE constraint on all three — one guest can hold several different `reaction` values on the same photo simultaneously, each toggled independently via `POST /api/photos/:id/reactions`.
@@ -190,6 +228,55 @@ Gamification challenges to get guests taking creative photos.
 - Indexed on both `photo_id` (read path) and `guest_id` (cascade-delete performance, matching migration 012's precedent for `photo_likes`/`photo_comments`/`audio_guestbook`).
 
 ---
+
+### `photographer_ingest_keys`
+FTP and batch-ingest credentials for a photographer working an event
+(migration 006).
+- `id` (UUID, PK)
+- `event_id` (UUID, FK -> `events.id` ON DELETE CASCADE)
+- `label` (VARCHAR(100), default `'Photographer'`): Shown to the host so several
+  keys can be told apart.
+- `key_hash` (VARCHAR(64), NOT NULL): SHA-256 of the key. **The plaintext is
+  returned once at creation and never again** — listing an event's keys shows
+  them masked, because a credential a server can re-display is a credential a
+  compromised server hands over.
+- `last_used_at` (TIMESTAMPTZ, Nullable): Last successful authentication.
+- `expires_at` (TIMESTAMPTZ, Nullable)
+- `revoked_at` (TIMESTAMPTZ, Nullable): Set rather than deleting the row, so a
+  revoked key stays auditable.
+
+### `event_deletions`
+One row per deleted album (migration 024). Written by `DELETE /api/events/:id`
+and by the retention sweep.
+- `id` (UUID, PK)
+- `event_id` (UUID, NOT NULL): Not a foreign key — the row it referred to is gone.
+- `slug` (VARCHAR(160), NOT NULL)
+- `host_user_id` (UUID, FK -> `users.id` ON DELETE SET NULL)
+- `photos_deleted` (INT, NOT NULL, default 0)
+- `bytes_freed` (BIGINT, NOT NULL, default 0)
+- `deleted_at` (TIMESTAMPTZ, NOT NULL, default `NOW()`)
+
+Deliberately holds no personal content: enough to answer *was this album
+deleted, when, and at whose request*, and nothing more. An erasure log that
+retained the thing erased would defeat itself.
+
+### `email_bounces`
+Addresses that have refused mail (migration 025). Consulted before a retention
+notice is sent, because a notice that bounced is not a warning — and an album
+whose host cannot be reached must stay undeletable rather than be deleted on
+the strength of mail nobody received.
+- `email` (TEXT, PK)
+- `kind` (TEXT, NOT NULL, CHECK `hard` | `soft`): `hard` is permanent — no such
+  mailbox, domain does not exist — and blocks. `soft` is transient — mailbox
+  full, greylisted — and is recorded without blocking, since the next run
+  retrying is what a soft bounce means.
+- `bounced_at` (TIMESTAMPTZ, NOT NULL, default `NOW()`)
+- `detail` (TEXT, Nullable): Whatever the provider said, kept verbatim.
+- `source` (TEXT, NOT NULL, default `'manual'`): Who reported it, so a wrong
+  entry can be traced.
+- `cleared_at` (TIMESTAMPTZ, Nullable): Set when a human has dealt with it.
+  Clearing is deliberate and manual; nothing expires a hard bounce on its own,
+  because "it has been a while" is not evidence an address works.
 
 ## 3. Migration History
 

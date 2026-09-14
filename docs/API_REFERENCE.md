@@ -117,6 +117,95 @@ Updates wedding event configuration (moderation toggles, theme, venue name, coun
 }
 ```
 
+### `POST /api/events`
+
+Creates an album for the authenticated host. Requires `Authorization: Bearer <token>`.
+
+The plan's concurrent-album allowance applies: every tier but Pro Planner is
+single-album, and the count is re-checked under an advisory lock inside the
+same transaction as the insert, so two simultaneous requests cannot both pass
+it. The slug is derived from `hostName` when not supplied, and a collision
+retries against the real unique constraint rather than a prior `SELECT`.
+
+`expires_at` is stamped in the same `INSERT`, computed from the plan's
+retention window measured from the *celebration* rather than the setup date —
+a couple planning months ahead does not lose what they paid for.
+
+- **Body**: `hostName` (required, 2–100 chars); optional `title`, `slug`,
+  `eventDate`, `venueName`, `themePalette`, `welcomeMessage`, `coverImageUrl`.
+- **Response** `201 Created`: the event, with `planTier` resolved from the
+  host's active subscription.
+- `403 EVENT_LIMIT_REACHED` — the plan's album allowance is spent.
+- `409` — could not allocate a unique slug after five attempts.
+
+### `GET /api/events`
+
+Lists the authenticated host's albums, newest first. Requires a host session.
+
+`planTier` is resolved once for the host rather than once per row — every album
+in the response belongs to the one authenticated host by definition of the
+query.
+
+### `DELETE /api/events/:id`
+
+Permanently deletes an album and everything in it. Requires a host session and
+ownership. **This is the GDPR Article 17 erasure path.**
+
+Destructive and irreversible, so it is deliberately awkward: the host must type
+the album's own slug back, and the server compares it against the stored value
+rather than against anything else the client supplied.
+
+- **Body**: `{ "confirmSlug": "monika-and-alexander-2026" }`
+- **Response** `200 OK`:
+```json
+{ "success": true, "eventId": "uuid", "photosDeleted": 312, "bytesFreed": 1503238553 }
+```
+- `400` — `confirmSlug` absent or not matching.
+- `403` — not the owner. `404` — no such album.
+
+Stored objects are purged **before** the row is deleted. That ordering is not
+incidental: deleting the event cascades its photo and audio rows away, and
+those rows hold the only record of which stored objects belong to the album.
+Purging afterwards orphans every file permanently, with nothing left that could
+ever find them again.
+
+### `GET /api/events/:id/usage`
+
+The album's position against its plan. Host-only, ownership checked.
+
+- **Response** `200 OK`:
+```json
+{
+  "tier": "celebration_pass",
+  "usedBytes": 524288000,
+  "limitBytes": 10737418240,
+  "usedLabel": "500.0 MB",
+  "limitLabel": "10 GB",
+  "percentUsed": 5,
+  "pooled": false,
+  "photoCount": 312,
+  "maxPhotos": null,
+  "expiresAt": "2026-12-01T00:00:00.000Z"
+}
+```
+
+`percentUsed` is clamped to 100. `pooled` is true only on Pro Planner, whose
+allowance is shared across the host's albums rather than per album;
+`maxPhotos` is `null` on every paid tier.
+
+### `POST /api/events/:id/guest-sessions/reset`
+
+Ends every guest session on this album. Host-only, ownership checked.
+
+A guest token is a bearer credential with a 400-day life, and there is no guest
+logout that could retire one — a token copied off a shared phone, or read out
+of a screenshot, otherwise stays valid for as long as the album does. This is
+the deliberate action by the album's owner that invalidates them all at once.
+Guests simply re-identify on their next request; nothing they uploaded is
+affected.
+
+- **Response** `200 OK`: `{ "success": true, "guestsReset": 42 }`
+
 ### `POST /api/events/:id/reactions`
 
 Broadcast an ephemeral live reaction to everyone watching the event, including the
@@ -163,6 +252,24 @@ Streams a high-resolution `.zip` archive of all wedding photos and audio recordi
 > inserting a `photos`/`audio_guestbook` row, so `storage_bytes` accounting —
 > which only increments on those inserts — never saw the bytes. Every upload
 > path below writes storage and its DB row together.
+
+### `GET /api/photos/:id/preview?variant=display&token=:token`
+
+Serves a photo that is still in quarantine awaiting moderation, to the host who
+owns it.
+
+A pending photo is written to a quarantine path precisely so that it is not
+reachable at a guessable public URL (MED-03/SEC-M5) — but the host has to be
+able to see it in order to moderate it. This endpoint is that hole, made
+narrow: the token is short-lived, scoped to one photo *and* one host user, and
+carries no authority beyond fetching those bytes. It takes no session, because
+it is used as an `<img src>`.
+
+- `variant` is `display`, `thumbnail` or `original`.
+- `401` — token missing, expired, or minted for a different photo or user.
+
+The moderation broadcast substitutes these URLs for the real ones when it
+announces a pending photo, and that broadcast reaches hosts only.
 
 ### `GET /api/photos?eventId=:id&limit=50&cursor=:cursor`
 Retrieves photos for an event (ordered `priority DESC, created_at DESC`),
@@ -356,6 +463,23 @@ payment behind it.
   OPEN_ITEMS.md SEC-05/P1 for the fuller history — it originally existed to
   close a worse bug (the client showed a fake "upgraded" UI that reverted on
   reload).
+
+---
+
+### `POST /api/billing/portal-session`
+
+Returns a Stripe Billing Portal link for the authenticated host.
+
+Cancellation, plan changes and payment-method updates happen there rather than
+here: this app deliberately does not hold the authority to destroy a live
+subscription from a non-billing endpoint, so the self-service downgrade route
+refuses while one exists and sends the customer here instead.
+
+- **Body**: `{ "returnUrl": "https://..." }` — pinned to the same origin
+  allow-list as the checkout redirects, so the parameter cannot be used to
+  bounce a customer somewhere else after billing.
+- **Response** `200 OK`: `{ "url": "https://billing.stripe.com/..." }`
+- `400` — `returnUrl` not on the allow-list.
 
 ---
 
