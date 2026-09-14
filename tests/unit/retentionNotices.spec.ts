@@ -66,10 +66,32 @@ async function registerHost(): Promise<{ eventId: string; email: string; slug: s
   return { eventId: data.event.id, email, slug: data.event.slug };
 }
 
-/** Put the album inside the notice window without expiring it yet. */
+/**
+ * Put the album inside the notice window without expiring it yet.
+ *
+ * The celebration is moved into the past as well, because a notice is only due
+ * once it has happened — registration puts `event_date` 30 days out, which is a
+ * wedding that has not occurred yet and is therefore never warned about. Every
+ * album in this file is one whose reception is over and whose window is closing,
+ * which is the only situation a retention notice describes.
+ */
 async function expiringSoon(eventId: string): Promise<void> {
   await query(
-    `UPDATE events SET expires_at = NOW() + INTERVAL '${Math.max(1, NOTICE_LEAD_DAYS - 2)} days' WHERE id = $1`,
+    `UPDATE events
+        SET expires_at = NOW() + INTERVAL '${Math.max(1, NOTICE_LEAD_DAYS - 2)} days',
+            event_date = NOW() - INTERVAL '1 day'
+      WHERE id = $1`,
+    [eventId]
+  );
+}
+
+/** Inside the notice window, but the wedding has not happened yet. */
+async function expiringSoonBeforeTheWedding(eventId: string): Promise<void> {
+  await query(
+    `UPDATE events
+        SET expires_at = NOW() + INTERVAL '${Math.max(1, NOTICE_LEAD_DAYS - 2)} days',
+            event_date = NOW() + INTERVAL '5 days'
+      WHERE id = $1`,
     [eventId]
   );
 }
@@ -176,6 +198,40 @@ describe('retention notices', () => {
 
     expect(result.sent).not.toContain(host.eventId);
     expect(await notifiedAt(host.eventId)).toBeNull();
+  });
+
+  it('does not warn a couple before their own wedding', async () => {
+    // The free tier's window is 7 days from the celebration, so
+    // expires_at = event_date + 7, while the notice lead is 14 days — which
+    // makes the window condition true from event_date - 7 onward. Without the
+    // celebration guard, a couple who set their album up a month ahead would be
+    // emailed "your album will be deleted on ..." a week before they got
+    // married, and every free album would do it.
+    const host = await registerHost();
+    await expiringSoonBeforeTheWedding(host.eventId);
+
+    const result = await sendRetentionNotices({ send: true, eventIds: createdEvents });
+
+    expect(result.sent).not.toContain(host.eventId);
+    expect(await notifiedAt(host.eventId)).toBeNull();
+  });
+
+  it('warns once the wedding is behind them and the window is closing', async () => {
+    // The same album, on the other side of the celebration: now the notice
+    // describes something real, and withholding it would eventually make the
+    // album undeletable rather than protected.
+    const host = await registerHost();
+    await expiringSoonBeforeTheWedding(host.eventId);
+    await sendRetentionNotices({ send: true, eventIds: createdEvents });
+    expect(await notifiedAt(host.eventId)).toBeNull();
+
+    await query("UPDATE events SET event_date = NOW() - INTERVAL '1 day' WHERE id = $1", [
+      host.eventId,
+    ]);
+    const after = await sendRetentionNotices({ send: true, eventIds: createdEvents });
+
+    expect(after.sent).toContain(host.eventId);
+    expect(await notifiedAt(host.eventId)).not.toBeNull();
   });
 
   it('ignores an album with indefinite retention', async () => {

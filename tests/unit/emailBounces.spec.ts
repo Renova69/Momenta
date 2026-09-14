@@ -62,9 +62,17 @@ async function registerHost(): Promise<{ eventId: string; email: string; slug: s
   return { eventId: data.event.id, email, slug: data.event.slug };
 }
 
+/**
+ * Inside the notice window, with the celebration already behind them —
+ * registration puts `event_date` 30 days out, and a notice is only due once the
+ * wedding has actually happened (see findAlbumsNeedingNotice).
+ */
 async function expiringSoon(eventId: string): Promise<void> {
   await query(
-    `UPDATE events SET expires_at = NOW() + INTERVAL '${Math.max(1, NOTICE_LEAD_DAYS - 2)} days' WHERE id = $1`,
+    `UPDATE events
+        SET expires_at = NOW() + INTERVAL '${Math.max(1, NOTICE_LEAD_DAYS - 2)} days',
+            event_date = NOW() - INTERVAL '1 day'
+      WHERE id = $1`,
     [eventId]
   );
 }
@@ -74,7 +82,8 @@ async function armedForDeletion(eventId: string): Promise<void> {
   await query(
     `UPDATE events
         SET expires_at = NOW() - INTERVAL '${GRACE_PERIOD_DAYS + 5} days',
-            retention_notified_at = NOW() - INTERVAL '${RETENTION_NOTICE_DAYS + 1} days'
+            retention_notified_at = NOW() - INTERVAL '${RETENTION_NOTICE_DAYS + 1} days',
+            event_date = NOW() - INTERVAL '${GRACE_PERIOD_DAYS + 12} days'
       WHERE id = $1`,
     [eventId]
   );

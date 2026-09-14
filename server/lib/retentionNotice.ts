@@ -82,6 +82,20 @@ export interface SendNoticeOptions {
  * so the album stays unstamped, stays undeletable, and stays visible in the
  * retention report's "past grace but NOT deletable" bucket until a person deals
  * with it. An album nobody can warn is not an album that may be destroyed.
+ *
+ * **The celebration must also have happened**, and that condition is doing real
+ * work rather than stating the obvious. The free tier's window is 7 days from
+ * the celebration, so `expires_at = event_date + 7`, while the notice lead is
+ * 14 days — which makes `expires_at < NOW() + 14 days` true from
+ * `event_date - 7` onward. Without the guard, a couple who set their album up a
+ * month ahead would be emailed "your album will be deleted on ..." a week
+ * before they got married, and every free album would do it.
+ *
+ * The longer tiers never reached this: celebration_pass warns 76 days after the
+ * wedding, deluxe_keepsake 351. It is specific to a retention window shorter
+ * than the notice lead, which today is only the free tier — but the guard is
+ * written against the celebration rather than against the free tier, so
+ * shortening any other window later cannot reintroduce it.
  */
 export async function findAlbumsNeedingNotice(
   limit = DEFAULT_BATCH_LIMIT,
@@ -92,6 +106,8 @@ export async function findAlbumsNeedingNotice(
        FROM events e
       WHERE e.expires_at IS NOT NULL
         AND e.retention_notified_at IS NULL
+        -- The celebration must have happened. See the note above this query.
+        AND e.event_date < NOW()
         AND e.expires_at < NOW() + ($1 || ' days')::interval
         AND NOT EXISTS (
               SELECT 1 FROM email_bounces b
