@@ -69,8 +69,19 @@ COPY scripts/ ./scripts/
 COPY database/ ./database/
 COPY tsconfig*.json ./
 
-# Create uploads directory with appropriate permissions
-RUN mkdir -p uploads && chown -R node:node uploads
+# Both storage roots, created and owned before the process drops to `node`.
+#
+# LocalStorageAdapter's constructor mkdir's whichever of these does not exist
+# (server/lib/storage.ts), and /app is owned by root while the process runs as
+# node — so a root this step misses is an EACCES at module load, before any
+# handler is reachable. Only `uploads` was created here, and QUARANTINE_DIR
+# defaults to a *sibling* (`uploads-quarantine`, config.ts:177) rather than a
+# child, so it was missed: the container could not start at all under
+# STORAGE_PROVIDER=local, which is what docker-compose.yml defaults to.
+#
+# Not reachable under STORAGE_PROVIDER=r2, where createStorageAdapter returns
+# the R2 adapter and never constructs the local one.
+RUN mkdir -p uploads uploads-quarantine && chown -R node:node uploads uploads-quarantine
 
 USER node
 
