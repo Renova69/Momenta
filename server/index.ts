@@ -5,6 +5,7 @@ import { createServer } from 'http';
 import path from 'path';
 import fs from 'fs';
 import { CONFIG } from './lib/config';
+import { pool } from './lib/db';
 import { wsManager } from './ws/wsServer';
 import { authRouter } from './routes/auth';
 import { eventsRouter } from './routes/events';
@@ -16,7 +17,7 @@ import { ingestRouter } from './routes/ingest';
 import { subscriptionsRouter } from './routes/subscriptions';
 import { billingRouter } from './routes/billing';
 import { handleStripeWebhook } from './routes/billingWebhook';
-import { startFtpServer } from './ftp/ftpServer';
+import { startFtpServer, stopFtpServer } from './ftp/ftpServer';
 import { apiLimiter } from './middleware/rateLimit';
 import { runMigrations } from './lib/migrate';
 
@@ -166,6 +167,83 @@ async function start() {
   startFtpServer();
 }
 
+/**
+ * Ordered shutdown.
+ *
+ * Without this the process was killed outright on every deploy, scale-down and
+ * `docker stop`, and that is not a cosmetic problem here: an upload writes its
+ * display, thumbnail and original to storage *before* the row that points at
+ * them can be committed. `photoWrite.savePhotoVariants` cleans that up when a
+ * request fails, but a SIGKILL mid-request skips the cleanup and the database
+ * transaction alike — leaving objects in the bucket that no row references, no
+ * quota counts, and nothing will ever find again. This repository has recorded
+ * three separate instances of that failure class already.
+ *
+ * The budget matters as much as the sequence. An orchestrator sends SIGTERM,
+ * waits, then sends SIGKILL — Docker's default grace is 10 seconds. A drain
+ * longer than that is not a graceful shutdown, it is the same abrupt kill with
+ * extra logging, so this finishes comfortably inside the default and states the
+ * assumption rather than leaving it implied. Raise it only alongside the
+ * orchestrator's own timeout.
+ */
+const SHUTDOWN_BUDGET_MS = Number(process.env.SHUTDOWN_BUDGET_MS || 8000);
+
+let shuttingDown = false;
+
+async function shutdown(signal: string): Promise<void> {
+  // A second SIGTERM (an impatient operator, or a restart racing a stop) must
+  // not restart the sequence and double-close the pool.
+  if (shuttingDown) {
+    console.log(`[WedMoments Core Server] ${signal} received while already shutting down - ignoring.`);
+    return;
+  }
+  shuttingDown = true;
+  console.log(`[WedMoments Core Server] ${signal} received - draining (budget ${SHUTDOWN_BUDGET_MS}ms).`);
+
+  // Whatever happens below, the process must not outlive its budget: an
+  // orchestrator's SIGKILL is the worse version of this, so beat it.
+  const hardExit = setTimeout(() => {
+    console.error('[WedMoments Core Server] Drain exceeded its budget - exiting anyway.');
+    process.exit(1);
+  }, SHUTDOWN_BUDGET_MS);
+  hardExit.unref();
+
+  try {
+    // 1. Stop accepting new work. Existing requests keep running; the callback
+    //    fires once the last one has finished.
+    await new Promise<void>((resolve) => {
+      server.close(() => resolve());
+      // Nothing forces idle keep-alive sockets to close, and a browser holding
+      // one would stall server.close() for its full timeout.
+      server.closeIdleConnections?.();
+    });
+    console.log('[WedMoments Core Server] HTTP server closed; in-flight requests finished.');
+
+    // 2. Guests watching a feed get a close frame rather than a reset, so the
+    //    client reconnect logic sees a clean disconnect.
+    wsManager.shutdown();
+
+    // 3. The FTP listener holds its own socket and its own in-flight transfers.
+    stopFtpServer();
+
+    // 4. Release database connections last: steps 1-3 can still be using them.
+    await pool.end();
+    console.log('[WedMoments Core Server] Connections drained. Goodbye.');
+
+    clearTimeout(hardExit);
+    process.exit(0);
+  } catch (err) {
+    console.error('[WedMoments Core Server] Error during shutdown:', err);
+    clearTimeout(hardExit);
+    process.exit(1);
+  }
+}
+
+// SIGTERM is what an orchestrator sends; SIGINT is Ctrl+C in a terminal. Both
+// mean the same thing here.
+process.on('SIGTERM', () => void shutdown('SIGTERM'));
+process.on('SIGINT', () => void shutdown('SIGINT'));
+
 void start();
 
-export { app, server };
+export { app, server, shutdown, SHUTDOWN_BUDGET_MS };
