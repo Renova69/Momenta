@@ -4,6 +4,7 @@ import express from 'express';
 import sharp from 'sharp';
 import { CONFIG } from '../../server/lib/config';
 import { storageAdapter } from '../../server/lib/storage';
+import { purgeEventMedia } from '../../server/lib/retention';
 import { authRouter } from '../../server/routes/auth';
 import { photosRouter } from '../../server/routes/photos';
 import { query, pool } from '../../server/lib/db';
@@ -71,6 +72,21 @@ beforeAll(async () => {
 
 afterAll(async () => {
   // Leave the live bucket as we found it, even if assertions failed.
+  //
+  // Order matters, and getting it wrong is this repository's most-repeated
+  // bug. `writtenPaths` only holds objects this file saved directly; the
+  // upload test posts through the API, so the server writes those variants and
+  // the `photos` rows are the only record of where they went. Deleting the
+  // event first cascades those rows away and strands the objects in a live
+  // bucket with nothing left that could ever find them — which is what was
+  // happening: a run left a photo and its thumbnail behind every time, and
+  // scheduling this lane nightly would have made that a standing leak.
+  //
+  // purgeEventMedia is the same function the retention sweep uses. Called
+  // before the rows go, not after.
+  for (const eventId of createdEvents) {
+    await purgeEventMedia(eventId).catch(() => undefined);
+  }
   await Promise.allSettled(writtenPaths.map((p) => storageAdapter.delete(p)));
   if (createdEvents.length > 0) {
     await query('DELETE FROM events WHERE id = ANY($1::uuid[])', [createdEvents]).catch(() => undefined);

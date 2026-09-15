@@ -5,6 +5,13 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  # For the live-storage job below only. It writes to a real Cloudflare bucket,
+  # so it is deliberately not on the pull_request path: a fork's PR cannot read
+  # repository secrets anyway, and a job that silently skips on every external
+  # contribution is worse than one that never claimed to run.
+  schedule:
+    - cron: '17 4 * * *'
+  workflow_dispatch:
 
 # A second push to the same branch makes the first run's answer irrelevant.
 # Cancelling it frees the runner instead of paying for a result nobody reads.
@@ -220,3 +227,96 @@ jobs:
       # permanent exemptions.
       - name: Audit production dependencies
         run: npm run audit:ci
+
+  # ------------------------------------------------------------------------
+  # The only tests that touch the storage provider production actually uses.
+  #
+  # Everything above runs with STORAGE_PROVIDER=local — vitest.config.ts pins
+  # it for the unit run and the `test` job pins it for e2e. That is correct for
+  # a per-commit gate: R2 makes timing-sensitive specs flaky and costs a network
+  # round trip per object. The consequence, though, was that 1351 unit tests and
+  # 27 e2e tests could all pass while the R2 adapter was broken, because nothing
+  # automated ever exercised it. A regression in key construction, content type,
+  # the public-URL fallback or presigning would have reached production
+  # unopposed.
+  #
+  # So this runs on a schedule rather than per commit: slower feedback, but
+  # feedback that exists. It is deliberately NOT in the required checks — a
+  # network blip against a third-party API should not block a merge, and this
+  # needs to earn its reliability before it can gate anything.
+  #
+  # The suite namespaces every key it writes and deletes them in afterAll.
+  # Point the secrets at a dedicated test bucket if you have one: the cleanup
+  # is careful, but "careful" and "operating on the bucket holding customers'
+  # weddings" are not a combination worth choosing when a second bucket costs
+  # nothing.
+  live-storage:
+    name: Live R2 storage
+    runs-on: ubuntu-latest
+    # Not on pull_request at all, and skipped rather than failed when the
+    # credentials are absent — a fork, or a clone that has never configured
+    # them, should see "skipped", not a red run it cannot fix.
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: wedmoments_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d wedmoments_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/wedmoments_test
+      # Unlike every other job: this one is the point.
+      STORAGE_PROVIDER: r2
+      R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+      R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      R2_BUCKET_NAME: ${{ secrets.R2_TEST_BUCKET_NAME || secrets.R2_BUCKET_NAME }}
+      R2_PUBLIC_URL: ${{ secrets.R2_PUBLIC_URL }}
+      JWT_SECRET: ${{ github.run_id }}-ci-only-not-a-real-secret-${{ github.run_attempt }}-${{ github.sha }}
+      TRUST_PROXY: 'false'
+      NODE_ENV: test
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      # Checked before installing anything: a run that cannot possibly work
+      # should say so in two seconds, not after a build and a migration.
+      - name: Check R2 credentials are configured
+        id: creds
+        run: |
+          if [ -z "$R2_ACCOUNT_ID" ] || [ -z "$R2_ACCESS_KEY_ID" ] || \
+             [ -z "$R2_SECRET_ACCESS_KEY" ] || [ -z "$R2_PUBLIC_URL" ]; then
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::R2 secrets are not configured - skipping the live storage lane."
+            echo "Set R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_PUBLIC_URL"
+            echo "and optionally R2_TEST_BUCKET_NAME (strongly preferred over the production bucket)."
+          else
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install dependencies
+        if: steps.creds.outputs.configured == 'true'
+        run: npm ci
+
+      - name: Run migrations
+        if: steps.creds.outputs.configured == 'true'
+        run: npm run migrate
+
+      - name: Live R2 storage tests
+        if: steps.creds.outputs.configured == 'true'
+        run: npm run test:storage:r2
