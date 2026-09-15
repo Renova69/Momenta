@@ -23,6 +23,7 @@
     "notify:send": "cross-env NOTICE_SEND=true tsx scripts/retention-notify.ts",
     "retention:report": "tsx scripts/retention-sweep.ts",
     "retention:sweep": "cross-env RETENTION_ENFORCED=true tsx scripts/retention-sweep.ts",
+    "retention:rehearse": "tsx scripts/retention-rehearsal.ts",
     "maintenance": "tsx scripts/maintenance-scheduler.ts",
     "maintenance:once": "tsx scripts/maintenance-scheduler.ts --once",
     "db:purge-test-data": "tsx scripts/purge-test-data.ts",

@@ -48,6 +48,38 @@ A notice that bounces does not count as a warning — `npm run bounce:list`
 shows addresses that have hard-bounced, and those albums stay undeletable
 rather than being deleted on the strength of mail nobody received.
 
+### Rehearse it before you point it at anyone
+
+```bash
+npm run retention:rehearse
+```
+
+Creates its own throwaway albums covering each case the chain distinguishes —
+past grace and warned, past grace and never warned, warned only yesterday,
+still inside grace, indefinite retention, a wedding that has not happened yet,
+a hard-bounced host — runs the notices and an *enforced* sweep against them,
+asserts what survived and what did not, and removes everything it made.
+
+Every query it issues is scoped to the ids it just created (`sendRetentionNotices`
+and `sweepExpiredAlbums` both take an `eventIds` filter), so it cannot touch an
+album it did not create. It refuses to run with `NODE_ENV=production`, and
+refuses to start at all without SMTP, because a notice that cannot be sent
+leaves every album unstamped and proves nothing.
+
+Point SMTP at a capture service (Mailtrap, MailHog) rather than a real
+provider. A burst of "your album will be deleted" from a domain without
+SPF/DKIM is how a sending reputation is spent before the first real message.
+
+The value is that this is free while there is nothing you would mind losing.
+Once real weddings exist, the delete path can never again be tested against
+anything expendable.
+
+**What a retention sweep actually does:** it purges an album's *media* and
+leaves the album row. A host following an old link after their window closes
+reaches an empty album, not a 404 that reads as "your wedding is gone".
+Removing the album itself is a separate, host-initiated act
+(`DELETE /api/events/:id`), and only that one is recorded in `event_deletions`.
+
 ### Enforcement is opt-in
 
 Both default to **report-only**. Deleting irreplaceable wedding photos, or
