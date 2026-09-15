@@ -93,12 +93,14 @@ export const PLANS: Record<PlanTier, PlanDetails> = {
     price: '49 €',
     period: 'plan.pro.period',
     description: 'plan.pro.tagline',
+    // f2 (white-label), f4 (custom subdomains) and f5 (archive hand-off) were
+    // listed here and rendered at the point of sale with no implementation
+    // behind any of them. Removed rather than reworded: a plan's feature list
+    // is a description of what the money buys, and these are tracked as
+    // unbuilt work in MASTER_AUDIT.md §5 until they exist.
     features: [
       'plan.pro.f1',
-      'plan.pro.f2',
       'plan.pro.f3',
-      'plan.pro.f4',
-      'plan.pro.f5',
       'plan.pro.f6'
     ],
     maxPhotos: 'plan.celebration.limit_photos',

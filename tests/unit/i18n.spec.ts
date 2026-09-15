@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { i18n, TRANSLATIONS, SUPPORTED_LANGUAGES } from '../../src/i18n';
+import { PLANS } from '../../src/config/plans';
 
 describe('i18n Specification', () => {
   beforeEach(() => {
@@ -97,5 +98,49 @@ describe('i18n Specification', () => {
 
     unsub();
     i18n.setLanguage('bg');
+  });
+});
+
+/**
+ * The plan catalogue is rendered at the point of sale.
+ *
+ * `PricingPlansModal` maps each plan's `features` array straight to `i18n.t()`,
+ * so a key in that array with no translation renders the raw key — the literal
+ * string `plan.pro.f4` — to someone deciding whether to pay. That is the exact
+ * failure mode of removing a feature from the translation tables and forgetting
+ * the array, which is how three unbuilt capabilities (white-label, custom
+ * subdomains, archive hand-off) came to be advertised on a €49/mo plan.
+ *
+ * The assertion is over the whole catalogue rather than those three strings, so
+ * it holds for the next feature added or withdrawn.
+ */
+describe('plan catalogue', () => {
+  it('renders every advertised feature in both languages', () => {
+    const missing: string[] = [];
+
+    for (const [planId, plan] of Object.entries(PLANS)) {
+      for (const key of plan.features) {
+        for (const lang of ['bg', 'en'] as const) {
+          const table = TRANSLATIONS[lang] || {};
+          if (!(key in table)) missing.push(`${planId}.${key} [${lang}]`);
+        }
+      }
+    }
+
+    expect(missing).toEqual([]);
+  });
+
+  it('names every plan, badge and tagline in both languages', () => {
+    const missing: string[] = [];
+
+    for (const [planId, plan] of Object.entries(PLANS)) {
+      for (const key of [plan.name, plan.badge, plan.description].filter(Boolean)) {
+        for (const lang of ['bg', 'en'] as const) {
+          if (!(key in (TRANSLATIONS[lang] || {}))) missing.push(`${planId}.${key} [${lang}]`);
+        }
+      }
+    }
+
+    expect(missing).toEqual([]);
   });
 });
