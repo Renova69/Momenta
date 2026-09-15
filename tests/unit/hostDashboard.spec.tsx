@@ -1,8 +1,9 @@
-import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, fireEvent, cleanup, screen } from '@testing-library/react';
+import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
+import { render, fireEvent, cleanup, screen, act } from '@testing-library/react';
 import React from 'react';
 import { HostDashboard } from '../../src/components/host/HostDashboard';
 import { WeddingEvent, QRCanvasConfig } from '../../src/types';
+import { i18n } from '../../src/i18n';
 
 /**
  * FE-05 — adjusting the ceremony date/time in the host dashboard used to
@@ -93,5 +94,111 @@ describe('HostDashboard date picker does not mutate the slug (FE-05)', () => {
     const secondCall = onUpdateEvent.mock.calls[1][0];
     expect(new Date(secondCall.eventDate).getHours()).toBe(18);
     expect(new Date(secondCall.eventDate).getMinutes()).toBe(45);
+  });
+});
+
+/**
+ * Renaming the hosts, without overwriting a title they wrote themselves.
+ *
+ * The album title defaults to "Сватбата на <hosts>", derived from the names.
+ * So correcting a misspelt name should correct the title too — but only while
+ * the title is still that derived one. A host who has since written their own
+ * title must not lose it because they fixed a typo in a different field, and
+ * the two cases are indistinguishable from the outside once it has happened.
+ */
+describe('HostDashboard host-name edit and the derived title', () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  /**
+   * The name field is debounced (`useDebouncedField`, 500ms) so that typing a
+   * name does not fire one PUT per keystroke. Blur does not commit it — only
+   * the timer does — so the clock has to be advanced for the commit to happen
+   * at all.
+   */
+  function editHostName(value: string) {
+    const input = screen.getByPlaceholderText(i18n.t('host.hosts_example'));
+    fireEvent.change(input, { target: { value } });
+    act(() => {
+      vi.advanceTimersByTime(600);
+    });
+  }
+
+  it('updates the derived title when the title is still the default one', () => {
+    const onUpdateEvent = vi.fn();
+    render(
+      <HostDashboard
+        event={{ ...mockEvent, title: i18n.t('host.wedding_of_name', { name: 'Spec Host' }) }}
+        guests={[]}
+        photos={[]}
+        quests={[]}
+        audioEntries={[]}
+        qrConfig={mockQrConfig}
+        onUpdateEvent={onUpdateEvent}
+        onUpdateQRConfig={vi.fn()}
+        onSetPhotoStatus={vi.fn()}
+        onDeletePhoto={vi.fn()}
+        onAddQuest={vi.fn()}
+        onResetData={vi.fn()}
+      />
+    );
+
+    editHostName('Monika & Alexander');
+
+    const call = onUpdateEvent.mock.calls[0][0];
+    expect(call.hostName).toBe('Monika & Alexander');
+    expect(call.title).toBe(i18n.t('host.wedding_of_name', { name: 'Monika & Alexander' }));
+  });
+
+  it('leaves a title the host wrote themselves alone', () => {
+    const onUpdateEvent = vi.fn();
+    render(
+      <HostDashboard
+        event={{ ...mockEvent, title: 'Нашата сватба' }}
+        guests={[]}
+        photos={[]}
+        quests={[]}
+        audioEntries={[]}
+        qrConfig={mockQrConfig}
+        onUpdateEvent={onUpdateEvent}
+        onUpdateQRConfig={vi.fn()}
+        onSetPhotoStatus={vi.fn()}
+        onDeletePhoto={vi.fn()}
+        onAddQuest={vi.fn()}
+        onResetData={vi.fn()}
+      />
+    );
+
+    editHostName('Monika & Alexander');
+
+    const call = onUpdateEvent.mock.calls[0][0];
+    expect(call.hostName).toBe('Monika & Alexander');
+    expect(call.title).toBe('Нашата сватба');
+  });
+
+  it('derives a title for an album that has none', () => {
+    const onUpdateEvent = vi.fn();
+    render(
+      <HostDashboard
+        event={{ ...mockEvent, title: '' }}
+        guests={[]}
+        photos={[]}
+        quests={[]}
+        audioEntries={[]}
+        qrConfig={mockQrConfig}
+        onUpdateEvent={onUpdateEvent}
+        onUpdateQRConfig={vi.fn()}
+        onSetPhotoStatus={vi.fn()}
+        onDeletePhoto={vi.fn()}
+        onAddQuest={vi.fn()}
+        onResetData={vi.fn()}
+      />
+    );
+
+    editHostName('Monika & Alexander');
+
+    expect(onUpdateEvent.mock.calls[0][0].title).toBe(
+      i18n.t('host.wedding_of_name', { name: 'Monika & Alexander' })
+    );
   });
 });

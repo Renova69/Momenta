@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, cleanup } from '@testing-library/react';
+import { render, cleanup, fireEvent } from '@testing-library/react';
 import React from 'react';
 import { LiveProjectorScreen } from '../../src/components/projector/LiveProjectorScreen';
 import { storageService } from '../../src/services/storageService';
@@ -119,5 +119,124 @@ describe('sort robustness', () => {
     ]);
 
     expect(container.textContent).toContain('Official Photographer');
+  });
+});
+
+/**
+ * Keeping the wall awake.
+ *
+ * This runs unattended on a television for the length of a reception. A screen
+ * that sleeps is the most visible failure this app has — every guest sees it,
+ * and nobody in the room knows how to wake it without the host's laptop. The
+ * Screen Wake Lock API is what prevents it, and it is unevenly supported and
+ * revocable by the browser at any time, so all three of "ask", "ask again" and
+ * "carry on without it" have to work.
+ */
+describe('the screen wake lock', () => {
+  function stubWakeLock(result: 'granted' | 'rejected' | 'unsupported') {
+    const release = vi.fn().mockResolvedValue(undefined);
+    const request = vi.fn(() =>
+      result === 'rejected'
+        ? Promise.reject(new Error('NotAllowedError'))
+        : Promise.resolve({ release })
+    );
+    Object.defineProperty(navigator, 'wakeLock', {
+      configurable: true,
+      value: result === 'unsupported' ? undefined : { request },
+    });
+    return { request, release };
+  }
+
+  function setVisibility(state: 'visible' | 'hidden') {
+    Object.defineProperty(document, 'visibilityState', { configurable: true, value: state });
+  }
+
+  afterEach(() => {
+    setVisibility('visible');
+    Object.defineProperty(navigator, 'wakeLock', { configurable: true, value: undefined });
+  });
+
+  it('asks for one as soon as the wall opens', async () => {
+    const { request } = stubWakeLock('granted');
+    setVisibility('visible');
+
+    renderWall([photo()]);
+
+    await vi.waitFor(() => expect(request).toHaveBeenCalledWith('screen'));
+  });
+
+  it('releases it when the wall closes', async () => {
+    const { release } = stubWakeLock('granted');
+    setVisibility('visible');
+
+    const { unmount } = renderWall([photo()]);
+    await vi.waitFor(() => expect(release).not.toHaveBeenCalled());
+
+    unmount();
+
+    await vi.waitFor(() => expect(release).toHaveBeenCalled());
+  });
+
+  it('asks again when the wall comes back to the foreground', async () => {
+    // The browser drops the lock whenever the tab is hidden — switching away
+    // to check something and back would otherwise leave the screen free to
+    // sleep for the rest of the night.
+    const { request } = stubWakeLock('granted');
+    setVisibility('visible');
+
+    renderWall([photo()]);
+    await vi.waitFor(() => expect(request).toHaveBeenCalledTimes(1));
+
+    document.dispatchEvent(new Event('visibilitychange'));
+
+    await vi.waitFor(() => expect(request).toHaveBeenCalledTimes(2));
+  });
+
+  it('does not ask while the wall is in the background', async () => {
+    const { request } = stubWakeLock('granted');
+    setVisibility('hidden');
+
+    renderWall([photo()]);
+    document.dispatchEvent(new Event('visibilitychange'));
+
+    await vi.waitFor(() => expect(request).not.toHaveBeenCalled());
+  });
+
+  it('still shows the wall on a browser that has no wake lock at all', async () => {
+    // Firefox had none for years. The photos matter more than the lock.
+    stubWakeLock('unsupported');
+
+    const { container } = renderWall([photo({ guestName: 'Silvia' })]);
+
+    expect(container.textContent).toContain('Silvia');
+  });
+
+  it('carries on when the browser refuses the lock', async () => {
+    // A rejected request is a promise rejection inside an effect; unhandled, it
+    // would surface as an uncaught error rather than a screen without a lock.
+    const { request } = stubWakeLock('rejected');
+
+    const { container } = renderWall([photo({ guestName: 'Silvia' })]);
+
+    await vi.waitFor(() => expect(request).toHaveBeenCalled());
+    expect(container.textContent).toContain('Silvia');
+  });
+});
+
+describe('an empty wall', () => {
+  it('does not break when the chevrons are pressed with nothing to show', () => {
+    // displayPhotos.length is the modulus for both directions, so without the
+    // guard this is a division by zero and the index becomes NaN — the wall
+    // then renders nothing at all until someone reloads it.
+    const { container } = renderWall([photo({ status: 'pending' })]);
+
+    const buttons = Array.from(container.querySelectorAll('button'));
+    const next = buttons.find((b) => b.querySelector('svg.lucide-chevron-right'));
+    const prev = buttons.find((b) => b.querySelector('svg.lucide-chevron-left'));
+
+    expect(() => {
+      if (next) fireEvent.click(next);
+      if (prev) fireEvent.click(prev);
+    }).not.toThrow();
   });
 });

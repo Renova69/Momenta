@@ -262,3 +262,36 @@ describe('minting a ticket', () => {
     expect([403, 404]).toContain(res.status);
   });
 });
+
+describe('rows whose stored path never got written', () => {
+  it('skips them and still delivers everything else', async () => {
+    // `storage_path` and `audio_url` are NOT NULL but not non-empty: a write
+    // that failed partway can leave the row with an empty string. The export
+    // is the one place a host ever notices, and it must skip the row rather
+    // than abort the archive — one broken row cannot cost them the wedding.
+    const host = await registerHost();
+    await query("UPDATE subscriptions SET tier = 'deluxe_keepsake' WHERE user_id = $1", [
+      host.userId,
+    ]);
+    const guest = await addGuest(host.eventId);
+    const good = await saveFile(host.eventId, 'intact.jpg');
+
+    await pool.query(
+      `INSERT INTO photos (event_id, guest_id, storage_path, full_url, created_at)
+       VALUES ($1, $2, '', '', '2026-01-01T00:00:01Z'), ($1, $2, $3, $3, '2026-01-01T00:00:02Z')`,
+      [host.eventId, guest, good]
+    );
+    await pool.query(
+      `INSERT INTO audio_guestbook (event_id, guest_id, audio_url, duration_seconds)
+       VALUES ($1, $2, '', 5)`,
+      [host.eventId, guest]
+    );
+
+    const bytes = await downloadArchive(host);
+
+    expect(bytes.subarray(0, 2).toString('latin1')).toBe('PK');
+    expect(bytes.toString('latin1')).toContain('intact.jpg');
+
+    await query('DELETE FROM events WHERE id = $1', [host.eventId]).catch(() => undefined);
+  }, 40_000);
+});

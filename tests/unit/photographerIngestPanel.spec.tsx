@@ -142,3 +142,114 @@ describe('PhotographerIngestPanel', () => {
     expect(screen.queryByText(i18n.t('ingest.copied'))).not.toBeInTheDocument();
   });
 });
+
+/**
+ * What the key list draws when a field is absent.
+ *
+ * These rows are read by a host who is about to hand a credential to a
+ * photographer they are paying, so a row that says "undefined" next to a key
+ * is not a cosmetic problem — it is the moment they stop trusting the screen.
+ */
+describe('a key row with missing fields', () => {
+  it('shows an ellipsis rather than nothing when the server sent no mask', async () => {
+    vi.spyOn(ingestApi, 'listKeys').mockResolvedValue([
+      keyInfo({ label: 'No Mask', masked: undefined }),
+    ]);
+
+    render(<PhotographerIngestPanel event={EVENT} />);
+
+    await waitFor(() => expect(screen.getByText('No Mask')).toBeInTheDocument());
+    expect(document.body.textContent).not.toContain('undefined');
+  });
+
+  it('says nothing about last use for a key nobody has used yet', async () => {
+    vi.spyOn(ingestApi, 'listKeys').mockResolvedValue([
+      keyInfo({ label: 'Never Used', lastUsedAt: undefined }),
+    ]);
+
+    render(<PhotographerIngestPanel event={EVENT} />);
+
+    await waitFor(() => expect(screen.getByText('Never Used')).toBeInTheDocument());
+    expect(document.body.textContent).not.toContain(i18n.t('ingest.last_used'));
+  });
+
+  it('shows when a key was last used once it has been', async () => {
+    vi.spyOn(ingestApi, 'listKeys').mockResolvedValue([
+      keyInfo({ label: 'In Use', lastUsedAt: '2026-02-03T10:00:00.000Z' }),
+    ]);
+
+    render(<PhotographerIngestPanel event={EVENT} />);
+
+    await waitFor(() => expect(screen.getByText('In Use')).toBeInTheDocument());
+    expect(document.body.textContent).toContain(i18n.t('ingest.last_used'));
+  });
+
+  it('tells the host the list is empty rather than leaving a blank panel', async () => {
+    vi.spyOn(ingestApi, 'listKeys').mockResolvedValue([]);
+
+    render(<PhotographerIngestPanel event={EVENT} />);
+
+    await waitFor(() => expect(screen.getByText(i18n.t('ingest.no_keys'))).toBeInTheDocument());
+  });
+});
+
+describe('when something fails', () => {
+  it('reports a failed revoke instead of appearing to have worked', async () => {
+    // The key stays live on the server. A host who believes they revoked it
+    // has handed out a credential they think is dead.
+    vi.spyOn(ingestApi, 'listKeys').mockResolvedValue([keyInfo({ label: 'Studio X' })]);
+    vi.spyOn(ingestApi, 'revokeKey').mockRejectedValue(new Error('Revoke failed upstream'));
+
+    const { container } = render(<PhotographerIngestPanel event={EVENT} />);
+    await waitFor(() => expect(screen.getByText('Studio X')).toBeInTheDocument());
+
+    const revoke = Array.from(container.querySelectorAll('button')).find((b) =>
+      b.querySelector('svg.lucide-trash-2')
+    )!;
+    fireEvent.click(revoke);
+
+    await waitFor(() => expect(screen.getByText('Revoke failed upstream')).toBeInTheDocument());
+  });
+
+  it('still says something when the failure carries no message', async () => {
+    // An Error with an empty message renders as a blank red box otherwise,
+    // which reads as a rendering bug rather than as a failure.
+    vi.spyOn(ingestApi, 'listKeys').mockRejectedValue(new Error(''));
+
+    render(<PhotographerIngestPanel event={EVENT} />);
+
+    await waitFor(() =>
+      expect(screen.getByText(i18n.t('ingest.err_load'))).toBeInTheDocument()
+    );
+  });
+
+  it('still says something when what was thrown is not an Error at all', async () => {
+    vi.spyOn(ingestApi, 'listKeys').mockRejectedValue('a bare string');
+
+    render(<PhotographerIngestPanel event={EVENT} />);
+
+    await waitFor(() =>
+      expect(screen.getByText(i18n.t('ingest.err_load'))).toBeInTheDocument()
+    );
+  });
+});
+
+describe('copying on a browser that will not allow it', () => {
+  it('does not throw when the clipboard API is unavailable', async () => {
+    // Clipboard access is blocked on a plain http:// origin, which is exactly
+    // how this app is reached on a venue LAN.
+    const clipboard = navigator.clipboard;
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: undefined });
+    vi.spyOn(ingestApi, 'listKeys').mockResolvedValue([]);
+
+    const { container } = render(<PhotographerIngestPanel event={EVENT} />);
+    await waitFor(() => expect(screen.getByText(i18n.t('ingest.no_keys'))).toBeInTheDocument());
+
+    const copyButton = Array.from(container.querySelectorAll('button')).find((b) =>
+      b.querySelector('svg.lucide-copy')
+    );
+    expect(() => copyButton && fireEvent.click(copyButton)).not.toThrow();
+
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: clipboard });
+  });
+});
