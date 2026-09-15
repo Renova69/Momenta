@@ -6,7 +6,10 @@
 # --------------------------------------------------------------------
 # Stage 1: Build Frontend SPA & Verify Types
 # --------------------------------------------------------------------
-FROM node:22-alpine AS builder
+# Node major is pinned in .nvmrc, package.json engines and the CI workflow.
+# CI fails if any of those four disagree (see "Node version pins agree"),
+# which is what stops this image drifting back to a version nothing tests.
+FROM node:24-alpine AS builder
 
 WORKDIR /app
 
@@ -31,7 +34,7 @@ RUN npm run build
 # --------------------------------------------------------------------
 # Stage 2: Minimal Production Runtime
 # --------------------------------------------------------------------
-FROM node:22-alpine AS runner
+FROM node:24-alpine AS runner
 
 WORKDIR /app
 
