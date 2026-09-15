@@ -49,6 +49,12 @@ This schema is designed for PostgreSQL 14+ and is 100% compatible with local Doc
 - `created_at`, `updated_at` (TIMESTAMPTZ)
 - `company_name` (VARCHAR(150), Nullable): Agency or studio name, for the
   Pro Planner tier where the account is a business rather than a couple.
+- `email` is stored lowercased, and `idx_users_email_lower` enforces
+  uniqueness on `lower(email)` (migration 026). The handlers normalise on the
+  way in; the index is what makes that a guarantee rather than a convention.
+  Before both existed, one person could hold two accounts that differed only
+  by capitalisation, and a host who registered on a phone could be unable to
+  sign in from a laptop.
 
 ### `subscriptions`
 - `id` (UUID, PK): `gen_random_uuid()`
@@ -301,6 +307,13 @@ the strength of mail nobody received.
 | 017 | `017_stripe_webhook_events.sql` | `stripe_webhook_events` table — idempotency ledger so a Stripe re-delivery of an already-applied event is a no-op. |
 | 018 | `018_subscription_grace.sql` | `subscriptions.past_due_grace_expiry` — dunning grace window, so a failed charge does not cut off a paying customer mid-event. |
 | 019 | `019_session_revocation.sql` | `users.token_version` — server-side session revocation, so signing out invalidates the JWT instead of only clearing localStorage. |
+| 020 | `020_storage_trigger_bulk_purge_guard.sql` | Lets a bulk purge skip per-row storage accounting without DDL (H5) — the purge fired one `UPDATE events` per deleted photo, thousands of row-locked writes against the same row. |
+| 021 | `021_photos_is_quarantined.sql` | `photos.is_quarantined`, indexed — makes "is this photo still withheld?" a question the reveal sweep can ask cheaply (H4). |
+| 022 | `022_event_public_showcase_optin.sql` | `events.is_public` — the public showcase becomes opt-in (H6). It returned the six newest albums to anyone before this. |
+| 023 | `023_guest_token_revocation.sql` | `guests.token_version` — a revocation path for guest tokens, which are bearer credentials with a 400-day life and previously had none (M10). |
+| 024 | `024_retention_notice_and_event_deletion.sql` | `events.retention_notified_at` and the `event_deletions` log — notice before deletion (D1) and a real erasure path (D2). |
+| 025 | `025_email_bounces.sql` | `email_bounces` — a warning that bounced is not a warning, so an album whose host cannot be reached stays undeletable. |
+| 026 | `026_case_insensitive_emails.sql` | Lowercases `users.email` and adds a unique index on `lower(email)`. `users_email_key` was case-sensitive, so `Ana@…` and `ana@…` were two accounts — and a host who signed up on a phone (whose keyboard capitalises the first character) could not sign in from a laptop. |
 
 Full detail on the security/architecture-motivated migrations (009-019) is in
 `OPEN_ITEMS.md`, which is kept current as the working audit log for this kind

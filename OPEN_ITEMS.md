@@ -41,6 +41,13 @@ photos**. The only thing still making it a no-op is that `SMTP_HOST` is unset.
 Read `npm run notify:report` as well as `npm run retention:report` before
 deciding.
 
+One correction landed while this was still undecided (2026-09-14): notices
+now require the celebration to have happened. The free tier's window is 7
+days from the wedding and the notice lead is 14, so without that guard every
+free album would have emailed its host a deletion warning a week *before* they
+got married. Nothing had been sent — SMTP is unconfigured — but the behaviour
+had to be right before a provider exists, not after.
+
 To turn on:
 
 1. `npm run retention:report` — read what it would delete. Do this first, and
@@ -324,6 +331,70 @@ when the bug is reintroduced** — not merely written and observed to pass.
 | Load test deleted its event without purging storage | `scripts/load-test.ts` | The source of the 15 GB of orphans. Each run now purges first and reports what it freed. |
 
 Tests live in `tests/unit/purgeAndOrigin.spec.ts` (6 tests).
+
+---
+
+## Fixed (2026-09-14/15, coverage pass — two defects nothing else would have found)
+
+Both were found by writing tests for modules that were merely under-covered,
+not suspected. Neither produced an error anywhere, which is why they had
+survived.
+
+### Retention notices warned couples before their own wedding
+
+`findAlbumsNeedingNotice` sends 14 days before `expires_at`. The free tier's
+window is 7 days *from the celebration*, so `expires_at = event_date + 7`, and
+`expires_at < NOW() + 14 days` is therefore true from `event_date - 7`. Every
+free album would have emailed its host "your album will be deleted on ..." a
+week before the wedding.
+
+celebration_pass warns 76 days after the wedding and deluxe_keepsake 351, so
+only a retention window shorter than the notice lead reaches it — today, only
+free. The query now also requires `event_date < NOW()`, written against the
+celebration rather than against the tier so shortening another window later
+cannot reintroduce it.
+
+Nine existing tests failed on the change, which was the finding rather than a
+problem with it: their helper moved `expires_at` and left `event_date` 30 days
+out, so all nine had been exercising the pre-wedding path. Two new tests pin
+the rule directly — a pre-wedding album is not warned and not stamped; the same
+album is warned once the date passes, because withholding the notice forever
+would make it undeletable rather than protected.
+
+### Email addresses were case-sensitive
+
+`users.email` is a plain varchar and `users_email_key` is therefore
+case-sensitive; neither the register nor the login handler lowered the input.
+Mobile keyboards capitalise the first character of a field, so:
+
+- a host who signed up on their phone as `Ana@...` and typed `ana@...` on a
+  laptop was told "Invalid email or password" — correct, from the database's
+  point of view, and indistinguishable from a real wrong password; and
+- `Ana@...` and `ana@...` could both register, giving one person two accounts
+  and two separate albums.
+
+Fixed in both halves: the handlers normalise via a transform on a shared
+`EmailSchema` (`validateBody` replaces `req.body`, so every reader gets the
+same value), and migration 026 lowercases stored rows plus adds a unique index
+on `lower(email)` so the guarantee survives a future write path that forgets.
+Verified independently by a direct `INSERT` with the handlers bypassed.
+
+The migration is a no-op on current data. On a deployment holding a collided
+pair the index build fails and the migration aborts rather than silently
+merging two people's accounts — which of them is the real host, and what
+becomes of the other's album, is not a schema change's decision.
+
+`server/lib/emailBounces.ts` already normalised addresses this way; this is
+auth catching up with it.
+
+### Also fixed: a CI failure in which every test passed
+
+`storageAdapter.spec.ts` opened a read stream, never consumed it, then deleted
+the file. `fs.createReadStream` opens asynchronously, so on Linux the unlink
+won and the open failed with ENOENT — with no `error` listener, an uncaught
+exception that fails the run while all 1297 tests report as passing. It had
+been losing that race quietly on Windows, where an open handle blocks the
+unlink. Both that spec and one of ours now read their streams to the end.
 
 ---
 

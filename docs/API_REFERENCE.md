@@ -9,6 +9,15 @@ All endpoints are served from the API root (Default: `http://localhost:6501` or 
 ### `POST /api/auth/register`
 Creates a host account, generates an initial wedding event, seeds default scavenger quests, and returns a signed JWT.
 - **Rate Limit**: 25 requests / 15 minutes
+- **Email is case-insensitive.** It is trimmed and lowercased before anything
+  is looked up or stored, and `idx_users_email_lower` enforces uniqueness on
+  `lower(email)` (migration 026). `Ana@example.com` and `ana@example.com` are
+  the same account, which matters because mobile keyboards capitalise the
+  first character of a field: before this, one person could end up with two
+  accounts and two separate albums.
+- `409` — the address is already registered. Returned both by the pre-check
+  and, for two simultaneous registrations that both passed it, by the unique
+  constraint (M8) — the same condition either way, so never a 500.
 - **Request Body**:
 ```json
 {
@@ -32,6 +41,13 @@ Creates a host account, generates an initial wedding event, seeds default scaven
 Authenticates host by email and password, returns user profile, wedding event, and signed JWT.
 - **Request Body**: `{ "email": "host@example.com", "password": "your-password" }`
 - **Response** `200 OK`: `{ "user": {...}, "event": {...}, "token": "..." }`
+- Email is normalised as on register, so the address may be typed in any case.
+- `401` covers an unknown address, a wrong password, and an account with no
+  password set — deliberately indistinguishable, and each runs a real bcrypt
+  comparison (against a fixed decoy hash where there is no stored one) so the
+  three cannot be told apart by response time either (SEC-A6).
+- A host who has no event yet gets one created here, with a real `expires_at`
+  rather than a null retention deadline.
 
 ### `GET /api/auth/me`
 Fetches authenticated host profile and linked event.

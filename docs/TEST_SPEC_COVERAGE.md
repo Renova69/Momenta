@@ -20,7 +20,7 @@ specs register throwaway hosts and clean up after themselves.
 
 ## 1. Test Architecture
 
-**118 files in `tests/unit/`, 1241 tests, as of 2026-09-13** (57 on
+**122 files in `tests/unit/`, 1345 tests, as of 2026-09-15** (57 on
 2026-09-05; 23 before the nine-phase security/architecture pass). Grouped by
 what they actually exercise, since a flat alphabetical list goes stale the
 moment the next file is added.
@@ -29,10 +29,12 @@ Coverage clears the project's 80% standard on all four metrics:
 
 | Metric | Value |
 | :--- | :--- |
-| Statements | 85.68% |
-| Branches | 80.46% |
-| Functions | 82.26% |
-| Lines | 87.43% |
+| Statements | 86.93% |
+| Branches | 82.01% |
+| Functions | 83.31% |
+| Lines | 88.55% |
+
+No single file sits below 68.8% on branches.
 
 Two guards keep the suite honest about itself. `testPortAllocation.spec.ts`
 fails if two spec files bind the same TCP port — including ports reached by
@@ -82,6 +84,17 @@ QRCanvasStudio), `feedComponents.spec.tsx` (LiveFeed, ScavengerHunt),
 `hostEventsList.spec.tsx`, `photographerIngestPanel.spec.tsx`,
 `landingHomePage.spec.tsx`, `navbar.spec.tsx`, `bottomNav.spec.tsx`,
 `weddingHero.spec.tsx`, `eventNotFound.spec.tsx`, `loadingSpinner.spec.tsx`.
+
+**The shared photo write path** — `photoWrite.spec.ts` (100% of statements,
+branches and functions). Every photo in the product ends here, guest capture
+and photographer frame alike, and the module holds three rules that are
+invisible when they break: nothing is orphaned (DB-05), the quota is
+re-checked under a lock (SEC-D1), and a quarantined photo is never broadcast
+with its real URLs (MED-03/SEC-M5).
+
+**Account lifecycle** — `authAccountLifecycle.spec.ts`: the concurrent
+duplicate-registration race (M8), an account whose `password_hash` is NULL,
+and the case-insensitivity rule that migration 026 made a guarantee.
 
 **Paywall** — `tierGatingEndToEnd.spec.ts` drives every server-enforced gate
 over real HTTP at every tier, asserting each is refused below its threshold and

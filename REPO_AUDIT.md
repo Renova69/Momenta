@@ -1689,6 +1689,128 @@ and the answer then is to ask rather than to edit quietly.
 
 ---
 
+## 21. Two defects found by writing tests — 14-15 September 2026
+
+The remaining coverage work turned up two bugs that nothing else would have
+found, because neither produces an error anywhere. Both are fixed.
+
+### Retention notices were warning couples before their own wedding
+
+A notice is due 14 days before an album expires. The free tier's window is 7
+days *from the celebration*, so `expires_at = event_date + 7` — which makes
+`expires_at < NOW() + 14 days` true from `event_date - 7` onward. Every free
+album would have emailed its host "your album will be deleted on ..." a week
+before they got married.
+
+The longer tiers never reached it: celebration_pass warns 76 days after the
+wedding, deluxe_keepsake 351. It is specific to a retention window shorter than
+the notice lead, which today is only the free tier.
+
+`findAlbumsNeedingNotice` now also requires `event_date < NOW()`. The guard is
+written against the celebration rather than against the free tier, so
+shortening any other window later cannot reintroduce it.
+
+**Nine existing tests failed on that change, and that was the finding.** Their
+helper moved `expires_at` and left `event_date` 30 days out, so every one of
+them had been exercising the pre-wedding path. The helpers now put the
+celebration behind the album, which is the only situation a retention notice
+describes.
+
+Nothing had been sent, because SMTP is unconfigured — the point was to get the
+behaviour right before it could reach anyone.
+
+### Email addresses were case-sensitive
+
+`users.email` is a plain varchar, so `users_email_key` distinguished
+`Ana@example.com` from `ana@example.com`, and neither handler lowered the
+input. No mail server on the public internet treats those as different
+mailboxes. Two consequences, both of which a phone produces unprompted, since
+mobile keyboards capitalise the first character of a field:
+
+- A host who signed up on their phone as `Ana@...` and later typed `ana@...`
+  on a laptop got **"Invalid email or password."** Not a confusing error — a
+  correct one. There was no such account. Locked out of their own wedding
+  album, with the obvious next step being to register again, producing:
+- **Two accounts for one person**, each with its own album, plan and storage,
+  the unique constraint satisfied throughout.
+
+Fixed in two halves, both needed. The handlers normalise on the way in, via a
+transform on a shared `EmailSchema` rather than per-handler — `validateBody`
+replaces `req.body` with the parsed value, so every reader gets the same form
+and no future handler has to remember. Migration 026 lowercases stored rows and
+adds a unique index on `lower(email)`, so the guarantee does not depend on
+every future write path going through that schema. Verified independently: a
+direct `INSERT` of the mixed-case pair is refused by the index with the
+handlers bypassed entirely.
+
+The migration is a no-op on current data — checked first that no row differs
+from its own lowercase form and no two collide when lowered. On a deployment
+that *does* hold a collided pair, the index build fails and the migration
+aborts rather than silently merging two people's accounts. Which of them is the
+real host, and what becomes of the other's album, is not a decision a schema
+change gets to make.
+
+`server/lib/emailBounces.ts` already normalised addresses this way. This is
+auth catching up with a convention the rest of the system had settled on.
+
+### Coverage, and what it was spent on
+
+| Metric | §18 | Now |
+|---|---|---|
+| Statements | 85.66% | **86.93%** |
+| Branches | 80.29% | **82.01%** |
+| Functions | 82.26% | **83.31%** |
+| Lines | 87.41% | **88.55%** |
+
+1187 → 1345 tests. No file now sits below 68.8% on branches. Modules were
+still chosen by stakes rather than by percentage:
+
+| Module | Was | Why |
+|---|---|---|
+| `server/lib/photoWrite.ts` | 81.3% | Every photo in the product ends here. Now 100% of statements, branches and functions — the orphan cleanup on a partial write, the locked quota re-check, and the quarantined broadcast. |
+| `server/routes/auth.ts` | 66.7% | Where the two defects above were found. |
+| `src/services/storageSyncService.ts` | 64.0% | Everything it gets wrong looks like the app working, just showing less. |
+| `server/routes/billingWebhook.ts` | 83.1% | Stripe sends a related object as an id string *or* an expanded object, and reading only one loses the subscription id — the webhook returns 200, Stripe never retries, and a paying customer stays on free. |
+| `src/components/projector/LiveProjectorScreen.tsx` | 72.5% | The wake lock. A screen that sleeps mid-reception is the most visible failure this app has. |
+| `PhotoCard`, `HostDashboard`, `PhotographerIngestPanel`, `events/export.ts` | 64-70% | Disposable-mode lock, the derived-title rule, key rows with absent fields, empty stored paths. |
+
+### Three tests that passed for the wrong reason
+
+Worth recording as a pattern rather than as three incidents, because all three
+were caught the same way — by breaking the source and finding the test still
+green:
+
+- A demo-seeding test used `vi.waitFor` on a *negative* assertion, which
+  succeeds instantly, before the fire-and-forget seed could have run. It would
+  have passed with the guard deleted.
+- A billing renewal test asserted the tier was still `pro_planner` — which it
+  already was before the event arrived.
+- A storage-adapter promote test was named for a guard that the earlier resolve
+  step makes unreachable; it now says what it actually proves.
+
+A green first run is the least informative outcome a new test has.
+
+### A CI failure with every test passing
+
+One run failed while reporting 1297 passed. `storageAdapter.spec.ts` opened a
+read stream, never consumed it, then deleted the file —
+`fs.createReadStream` opens asynchronously, so on Linux the unlink won, the
+open then failed with ENOENT, and with nothing listening for `error` Node
+raised it as an uncaught exception. It had been losing that race quietly on
+Windows, where an open handle blocks the unlink. Both that spec and a newer one
+of ours now read their streams to the end, which also makes them check what
+their names claim.
+
+### Documentation
+
+`API_REFERENCE.md` was missing seven live endpoints — including creating an
+album, deleting one (the GDPR erasure path) and the quarantine preview.
+`DATABASE_SCHEMA.md` was missing two tables, 23 columns, and every migration
+after 019. Both were found by diffing the docs against the code mechanically
+rather than by reading them, and both diffs now report zero drift.
+
+---
+
 ## Appendix A — Dependency inventory
 
 Refreshed 13 September 2026, after the upgrade pass in §15 and the first
