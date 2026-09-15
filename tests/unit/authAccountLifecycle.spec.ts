@@ -171,3 +171,106 @@ describe('the capitalisation a phone keyboard adds', () => {
     expect(upper.status).toBe(409);
   }, 30_000);
 });
+
+/**
+ * The account after its album is gone.
+ *
+ * `DELETE /api/events/:id` shipped as the GDPR erasure path, and it made a
+ * state reachable that previously was not: a signed-in host with no event at
+ * all. Both of the endpoints the dashboard calls on load have to survive it,
+ * and they answer differently on purpose — `GET /me` reports the absence,
+ * while signing in again provisions a fresh album rather than leaving the host
+ * staring at an empty app with no way forward.
+ */
+describe('a host whose album has been deleted', () => {
+  async function deleteTheirEvent(userId: string): Promise<void> {
+    await query('DELETE FROM events WHERE host_user_id = $1', [userId]);
+  }
+
+  it('is still described by /me, with no event rather than an error', async () => {
+    const email = uniqueEmail('noevent');
+    const { body } = await register(email);
+    const token = body.token as string;
+    await deleteTheirEvent((body.user as { id: string }).id);
+
+    const res = await fetch(`${BASE_URL}/api/auth/me`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+
+    expect(res.status).toBe(200);
+    const me = await res.json();
+    expect(me.event).toBeNull();
+    expect(me.user.email).toBe(email);
+  }, 30_000);
+
+  it('gets a fresh album when they sign in again', async () => {
+    // Otherwise deleting an album is a one-way door out of the product.
+    const email = uniqueEmail('relogin');
+    const { body } = await register(email);
+    await deleteTheirEvent((body.user as { id: string }).id);
+
+    const res = await login(email);
+
+    expect(res.status).toBe(200);
+    const session = await res.json();
+    expect(session.event).toBeTruthy();
+    expect(session.event.id).not.toBe((body.event as { id: string }).id);
+    createdEvents.push(session.event.id);
+  }, 30_000);
+
+  it('gives that fresh album a real retention deadline', async () => {
+    // An event created outside the registration path once left expires_at
+    // NULL, which means indefinite — the album would never have been swept.
+    const email = uniqueEmail('relogin-expiry');
+    const { body } = await register(email);
+    await deleteTheirEvent((body.user as { id: string }).id);
+
+    const session = await (await login(email)).json();
+    createdEvents.push(session.event.id);
+
+    const { rows } = await query<{ expires_at: string | null }>(
+      'SELECT expires_at FROM events WHERE id = $1',
+      [session.event.id]
+    );
+    expect(rows[0].expires_at).not.toBeNull();
+  }, 30_000);
+});
+
+describe('GET /api/auth/me', () => {
+  it('reports the album with the plan resolved from the subscription', async () => {
+    // Not from events.plan_tier, which is denormalised and writable — the
+    // dashboard gates its own tabs on this value.
+    const { body } = await register(uniqueEmail('me-tier'));
+    const token = body.token as string;
+    await query("UPDATE subscriptions SET tier = 'deluxe_keepsake' WHERE user_id = $1", [
+      (body.user as { id: string }).id,
+    ]);
+    await query("UPDATE events SET plan_tier = 'free' WHERE id = $1", [
+      (body.event as { id: string }).id,
+    ]);
+
+    const me = await (
+      await fetch(`${BASE_URL}/api/auth/me`, { headers: { Authorization: `Bearer ${token}` } })
+    ).json();
+
+    expect(me.event.planTier).toBe('deluxe_keepsake');
+  }, 30_000);
+
+  it('never includes the password hash', async () => {
+    const { body } = await register(uniqueEmail('me-safe'));
+    const token = body.token as string;
+
+    const res = await fetch(`${BASE_URL}/api/auth/me`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+
+    const text = await res.text();
+    expect(text).not.toContain('password_hash');
+    expect(text).not.toContain('$2b$');
+  }, 30_000);
+
+  it('refuses a caller with no session', async () => {
+    const res = await fetch(`${BASE_URL}/api/auth/me`);
+    expect(res.status).toBe(401);
+  });
+});
