@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { storageService, ReactionKind } from '../../services/storageService';
 import { i18n } from '../../i18n';
 
@@ -31,6 +31,26 @@ const REACTIONS: { kind: ReactionKind; glyph: string; labelKey: string }[] = [
 export const ReactionBar: React.FC<ReactionBarProps> = ({ guestName }) => {
   const [justSent, setJustSent] = useState<ReactionKind | null>(null);
   const sendTimestamps = useRef<number[]>([]);
+  /**
+   * The pending "un-bounce" timer.
+   *
+   * Tracked so it can be cancelled. Left untracked, the callback still runs
+   * 600ms after the bar unmounts and calls setJustSent on a component that is
+   * gone — a React warning in a browser, and in a test worker a hard
+   * `ReferenceError: window is not defined`, because jsdom has been torn down
+   * by the time it fires. That failed CI while passing locally: the callback
+   * usually wins the race against teardown, and only usually.
+   *
+   * Cancelling the previous timer on each send also stops rapid taps stacking
+   * timers that each try to clear a bounce a later tap has already replaced.
+   */
+  const bounceTimer = useRef<number | undefined>(undefined);
+
+  useEffect(() => {
+    return () => {
+      if (bounceTimer.current !== undefined) window.clearTimeout(bounceTimer.current);
+    };
+  }, []);
 
   const send = (kind: ReactionKind) => {
     const now = Date.now();
@@ -40,7 +60,11 @@ export const ReactionBar: React.FC<ReactionBarProps> = ({ guestName }) => {
 
     storageService.sendReaction(kind, guestName);
     setJustSent(kind);
-    window.setTimeout(() => setJustSent((current) => (current === kind ? null : current)), 600);
+    if (bounceTimer.current !== undefined) window.clearTimeout(bounceTimer.current);
+    bounceTimer.current = window.setTimeout(
+      () => setJustSent((current) => (current === kind ? null : current)),
+      600
+    );
   };
 
   return (

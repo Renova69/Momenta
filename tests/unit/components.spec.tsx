@@ -136,6 +136,47 @@ describe('ReactionBar', () => {
     }
   });
 
+  it('cancels its pending bounce timer when the bar unmounts', () => {
+    // The timer calls setJustSent 600ms after a tap. Left running past
+    // unmount it fires against a component that is gone — a React warning in
+    // a browser, and in a test worker a hard "ReferenceError: window is not
+    // defined", because jsdom has been torn down by the time it lands. That
+    // failed CI while passing locally: the callback usually wins the race
+    // against teardown, and only usually.
+    vi.useFakeTimers();
+    try {
+      const clearSpy = vi.spyOn(window, 'clearTimeout');
+      const { unmount } = render(<ReactionBar guestName="Silvia" />);
+      fireEvent.click(screen.getByLabelText(i18n.t('reaction.heart')));
+
+      unmount();
+
+      expect(clearSpy).toHaveBeenCalled();
+      // Nothing left to fire: advancing past the bounce window must not throw.
+      expect(() => vi.advanceTimersByTime(1000)).not.toThrow();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('does not stack a timer per tap', () => {
+    // Five rapid taps previously left five timers pending, each racing to
+    // clear a bounce a later tap had already replaced.
+    vi.useFakeTimers();
+    try {
+      const clearSpy = vi.spyOn(window, 'clearTimeout');
+      render(<ReactionBar guestName="Silvia" />);
+      const heart = screen.getByLabelText(i18n.t('reaction.heart'));
+
+      for (let i = 0; i < 3; i++) fireEvent.click(heart);
+
+      // Taps 2 and 3 each cancel the timer the previous tap set.
+      expect(clearSpy).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('offers every reaction the server accepts', () => {
     render(<ReactionBar />);
 
