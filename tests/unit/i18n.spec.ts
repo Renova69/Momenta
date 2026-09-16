@@ -1,6 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { i18n, TRANSLATIONS, SUPPORTED_LANGUAGES } from '../../src/i18n';
+import fs from 'fs';
+import path from 'path';
 import { PLANS } from '../../src/config/plans';
+import { ERROR_CODE_KEYS } from '../../src/api/apiClient';
 
 describe('i18n Specification', () => {
   beforeEach(() => {
@@ -142,5 +145,80 @@ describe('plan catalogue', () => {
     }
 
     expect(missing).toEqual([]);
+  });
+});
+
+/**
+ * Error codes are a translation surface, and nobody was treating them as one.
+ *
+ * The server writes its error text in English and attaches a machine-readable
+ * `code`; `apiClient` swaps in the translation for the active language when the
+ * code is mapped, and shows the server's English otherwise. Five of the
+ * fourteen codes were mapped. The other nine reached a Bulgarian host as
+ * English — a guest told "Join the wedding before commenting", a host told
+ * their subscription was "still active with our payment provider" (M-2).
+ *
+ * This reads the codes out of `server/` rather than listing them, so the tenth
+ * one fails the build on the commit that adds it instead of surfacing in front
+ * of a couple on their wedding day. Adding a code to the server now means
+ * adding a line to ERROR_CODE_KEYS and a string to both tables.
+ */
+describe('server error codes', () => {
+  /** Every `code: 'SOME_CODE'` literal under server/. */
+  function emittedCodes(): string[] {
+    const root = path.join(process.cwd(), 'server');
+    const found = new Set<string>();
+
+    const walk = (dir: string): void => {
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+          walk(full);
+        } else if (entry.name.endsWith('.ts')) {
+          const source = fs.readFileSync(full, 'utf8');
+          for (const match of source.matchAll(/code: *'([A-Z][A-Z0-9_]*)'/g)) {
+            found.add(match[1]);
+          }
+        }
+      }
+    };
+
+    walk(root);
+    return [...found].sort();
+  }
+
+  it('finds the codes it is supposed to be checking', () => {
+    // If the regex or the layout ever stops matching, every assertion below
+    // passes over an empty list and this suite quietly stops testing anything.
+    const codes = emittedCodes();
+
+    expect(codes.length).toBeGreaterThanOrEqual(14);
+    expect(codes).toContain('TIER_REQUIRED');
+  });
+
+  it('maps every code the server emits to a translation key', () => {
+    const unmapped = emittedCodes().filter((code) => !(code in ERROR_CODE_KEYS));
+
+    expect(unmapped).toEqual([]);
+  });
+
+  it('resolves every mapped key in both languages', () => {
+    const missing: string[] = [];
+
+    for (const [code, key] of Object.entries(ERROR_CODE_KEYS)) {
+      for (const lang of ['bg', 'en'] as const) {
+        if (!(key in (TRANSLATIONS[lang] || {}))) missing.push(`${code} -> ${key} [${lang}]`);
+      }
+    }
+
+    expect(missing).toEqual([]);
+  });
+
+  it('gives each code its own message rather than one shared line', () => {
+    // A table that maps nine codes onto one generic string would satisfy the
+    // assertions above while telling the reader nothing about what went wrong.
+    const keys = Object.values(ERROR_CODE_KEYS);
+
+    expect(new Set(keys).size).toBe(keys.length);
   });
 });

@@ -24,16 +24,36 @@ export class ApiError extends Error {
 }
 
 /**
- * Server error messages are written once, in Bulgarian. When the server sends a
+ * Server error messages are written once, in English. When the server sends a
  * machine-readable `code`, prefer the translated text for the active language and
  * fall back to whatever the server said.
+ *
+ * Every `code:` the server emits belongs here. Five of the fourteen were mapped
+ * and the other nine reached a Bulgarian host as untranslated English — a
+ * guest told to "Join the wedding before commenting", a host told their
+ * subscription was "still active with our payment provider". Anything in the
+ * product that a person reads has both languages or it has neither, so
+ * `tests/unit/i18n.spec.ts` now greps `server/` for code strings and fails if
+ * one is missing from this table or from either translation.
  */
-const ERROR_CODE_KEYS: Record<string, string> = {
+export const ERROR_CODE_KEYS: Record<string, string> = {
   TIER_REQUIRED: 'error.tier_required',
   TIER_LIMIT_REACHED: 'error.tier_limit_reached',
   STORAGE_LIMIT_REACHED: 'error.storage_limit_reached',
   EVENT_LIMIT_REACHED: 'error.event_limit_reached',
   INVALID_UUID: 'error.invalid_uuid',
+  SESSION_REVOKED: 'error.session_revoked',
+  GUEST_TOKEN_REQUIRED: 'error.guest_token_required',
+  GUEST_IDENTITY_REQUIRED: 'error.guest_identity_required',
+  CHECKOUT_REQUIRED: 'error.checkout_required',
+  ALREADY_SUBSCRIBED: 'error.already_subscribed',
+  MANAGE_SUBSCRIPTION_IN_PORTAL: 'error.manage_subscription_in_portal',
+  NO_STRIPE_CUSTOMER: 'error.no_stripe_customer',
+  CONFIRMATION_MISMATCH: 'error.confirmation_mismatch',
+  // Translating this does not disturb `isStripeNotConfigured`, which reads
+  // `ApiError.code` and never the message: the pre-Stripe upgrade route still
+  // takes over silently.
+  STRIPE_NOT_CONFIGURED: 'error.stripe_not_configured',
 };
 
 /** Broadcast so the auth layer can clear the session without a circular import. */
