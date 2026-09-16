@@ -4,11 +4,6 @@ import { i18n } from '../i18n';
 /** Arbitrary JSON the server may attach to an error, such as Zod field issues. */
 export type ApiErrorDetails = unknown;
 
-export interface ApiErrorResponse {
-  error: string;
-  details?: ApiErrorDetails;
-}
-
 export class ApiError extends Error {
   public status: number;
   public details?: ApiErrorDetails;

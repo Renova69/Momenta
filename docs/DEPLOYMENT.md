@@ -67,6 +67,13 @@ Cloud Run will output your live HTTPS backend URL (e.g. `https://wedmoments-api-
 
 Vercel automatically detects Vite and deploys your SPA to a global Edge Network with instant SSL.
 
+> **What `vercel.json` in the repository root is for.** One rewrite, sending
+> every path to `/index.html` so client-side routes survive a page refresh —
+> nothing else. It configures the SPA preview only. The API is **not** deployed
+> through it: the server runs as the Docker image built from the `Dockerfile`
+> (section 2 above), and Vercel never serves an `/api` route. If you deploy the
+> backend somewhere other than Cloud Run, that file does not change (L-1).
+
 > **Hobby plan is non-commercial only.** Vercel's Hobby tier terms restrict
 > it to personal, non-commercial projects — it also caps at 1M function
 > invocations and 100 GB data transfer per month, not "unlimited." This app

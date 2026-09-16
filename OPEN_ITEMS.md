@@ -2841,17 +2841,22 @@ outstanding**.
 
 ### Not done
 
-**M10 — guest tokens are long-lived and cannot be revoked.** Real, and left
-open deliberately: it needs a decision, not a patch. The 400-day TTL has a
-sound justification (a Deluxe album lives a year, and a guest returning weeks
-later should not be treated as a stranger), and there is no `guests` equivalent
-of `users.token_version` because there is no guest logout to bump it. Every
-half-measure available is worse than the gap: shortening the TTL breaks the
-Deluxe tier it was sized for; binding expiry to the album's `expires_at` costs
-a query on a hot path; adding a `token_version` column with nothing that ever
-increments it is machinery with no user. What it actually needs is a decision
-about what guest revocation *means* here — most likely a host-facing "reset
-guest sessions" action — and that is a product question.
+**M10 — guest tokens are long-lived and cannot be revoked.** ~~Not done.~~
+**Resolved since this was written**, and the product question it was waiting on
+was answered the way the entry predicted — a host-facing "reset guest sessions"
+action:
+
+- `guests.token_version` exists (migration `023_guest_token_revocation.sql`),
+  mirroring `users.token_version` from migration 019.
+- `issueGuestToken` stamps the version into the token and `verifyGuestToken`
+  refuses one minted at an older version (`server/lib/guestAuth.ts`).
+- `POST /api/events/:id/guest-sessions/reset` bumps every guest's version for
+  one album (`server/routes/events/crud.ts:466`), surfaced in the host
+  dashboard via `eventsApi.resetGuestSessions`.
+
+The 400-day TTL is unchanged, which was always the right call — the revocation
+path is what was missing, not a shorter expiry. Left in the "Not done" section
+until an audit read it as a shipped control still missing (L-6).
 
 **M13 — `amount_paid_cents` is overwritten rather than accumulated.** The
 original finding called this an accounting bug. On checking, that was
@@ -3397,6 +3402,18 @@ notices" — is better served by noticing than by blind deletion. The maintenanc
 scheduler now writes a dated report file per sweep per run; reports that stop
 appearing are the signal, and they arrive before anything is lost rather than
 after.
+
+**Update — the safe subset now exists as a script.** `scripts/r2-lifecycle.ts`
+(`npm run r2:lifecycle` to read the bucket's current rules,
+`npm run r2:lifecycle:apply` to write them) encodes exactly what is defensible
+above: a long window on `quarantine/`, nothing on `events/`. The `events/`
+constraint is still binding and the script carries the reasoning in its own
+header so it is not rediscovered by whoever next thinks a prefix rule would be
+tidy.
+
+Applying it is an **owner action** and deliberately not automated: it needs a
+Cloudflare token with bucket-settings permission, and a lifecycle policy that
+deletes the wrong prefix is not recoverable. See FIX_PLAN.md Fix 5.1 (H-4a).
 
 Also worth noting for whoever picks this up: the orphan sweep is **not** on the
 maintenance scheduler. Only the retention and grace sweeps are. Adding it would

@@ -92,20 +92,3 @@ export function formatTimeAgo(dateVal: string | Date | undefined | null): string
   const days = Math.floor(hours / 24);
   return i18n.t('feed.days_ago', { n: days });
 }
-
-/** Date and time in the active language: '18.09.2026, 16:30'. */
-export function formatEuDateTime(dateVal: string | Date | undefined | null): string {
-  if (!dateVal) return '';
-
-  const d = toDate(dateVal);
-  if (isNaN(d.getTime())) {
-    return formatEuDate(dateVal);
-  }
-
-  const dateFormatted = formatEuDate(d);
-  const hours = String(d.getHours()).padStart(2, '0');
-  const mins = String(d.getMinutes()).padStart(2, '0');
-  const suffix = i18n.getLanguage() === 'bg' ? ' ч.' : '';
-
-  return `${dateFormatted}, ${hours}:${mins}${suffix}`;
-}

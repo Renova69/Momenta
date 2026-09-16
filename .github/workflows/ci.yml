@@ -167,10 +167,11 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # The schema is 25 sequential SQL migrations, and the suite asserts
+      # The schema is a sequence of SQL migrations, and the suite asserts
       # against real tables, triggers and partial indexes. Applying them is
       # setup, not a test — if this step fails, every test failure after it
-      # would be noise.
+      # would be noise. (The count used to be written out here and went
+      # stale by one on every migration added.)
       - name: Run migrations
         run: npm run migrate
 

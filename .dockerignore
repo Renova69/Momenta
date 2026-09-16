@@ -15,3 +15,10 @@ yarn-error.log*
 tmp_test_*
 uploads/*
 !uploads/.gitkeep
+# Nothing below is COPYd into the image; they only inflate the context sent
+# to the daemon. The quarantine directory in particular holds full-size
+# photos awaiting moderation.
+uploads-quarantine/
+.claude/
+.remember/
+.serena/

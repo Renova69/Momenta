@@ -84,13 +84,3 @@ export async function buildDerivatives(original: Buffer): Promise<PhotoDerivativ
     height: metadata.autoOrient?.height ?? metadata.height ?? 0,
   };
 }
-
-/** True when sharp can decode the buffer as an image. */
-export async function isDecodableImage(buffer: Buffer): Promise<boolean> {
-  try {
-    const metadata = await sharp(buffer, { failOn: 'none', limitInputPixels: MAX_INPUT_PIXELS }).metadata();
-    return !!metadata.width && !!metadata.height;
-  } catch {
-    return false;
-  }
-}
