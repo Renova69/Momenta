@@ -20,6 +20,7 @@ import { handleStripeWebhook } from './routes/billingWebhook';
 import { startFtpServer, stopFtpServer } from './ftp/ftpServer';
 import { apiLimiter } from './middleware/rateLimit';
 import { runMigrations } from './lib/migrate';
+import { healthHandler } from './lib/health';
 
 const app = express();
 const server = createServer(app);
@@ -120,15 +121,8 @@ app.use('/api/ingest', ingestRouter);
 app.use('/api/subscriptions', subscriptionsRouter);
 app.use('/api/billing', billingRouter);
 
-// 7. Health check — [FIX M-15] No internal paths exposed
-app.get('/api/health', (_req, res) => {
-  res.json({
-    status: 'ok',
-    connectedSockets: wsManager.getConnectedClientsCount(),
-    storageProvider: CONFIG.STORAGE_PROVIDER,
-    timestamp: new Date().toISOString(),
-  });
-});
+// 6b. Health check — see server/lib/health.ts for why it probes the database.
+app.get('/api/health', healthHandler());
 
 // 7. Serve Built Frontend in Production & Handle SPA Routing Fallback
 const DIST_DIR = path.join(process.cwd(), 'dist');
