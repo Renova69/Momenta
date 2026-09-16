@@ -18,8 +18,15 @@ list. Sources reconciled:
 **Where reports disagreed, the code decided.** Three disagreements were resolved
 by inspection, not by preference; each is recorded with its evidence in §6 or §4.
 
-**Totals:** Critical 0 · High 4 · Medium 6 · Low 8 · Unfinished 4 · False
+**Totals:** Critical 0 · High 4 · Medium 8 · Low 8 · Unfinished 4 · False
 positives 3 · Needs manual verification 5 · Production blockers 3.
+
+Two of those Medium findings, **N-1** and **N-2**, were not produced by the
+audit passes. They were found while implementing the fixes, by running things
+the audit only read: the container, and the test suite under CI's conditions.
+Both are recorded in §3 with that provenance, because it is the more useful
+finding — an audit that reads code does not catch a container that cannot
+start.
 
 ---
 
@@ -177,6 +184,35 @@ exempted) — local disk only, never committed.
 Developer-machine disk only. Listed because these are invisible to
 `storage:orphans` in R2 mode (H-4) and to the R2 lifecycle rules.
 **Regression test required** No
+
+### N-1 — The container could not start: `uploads-quarantine/` was never created
+**Status** CONFIRMED · **Feature** Deploy / container
+**Files** `Dockerfile`, `docker-compose.yml`
+Found while verifying the fix for H-2, not by the audit passes — nothing in
+those passes ran the image. The Dockerfile created and chowned `uploads/` but
+not `uploads-quarantine/`, and `QUARANTINE_DIR` defaults to a *sibling* of
+the uploads directory rather than a child, so it was never covered by the
+existing `mkdir`. The process runs as `node`, not root, and could not create it
+at runtime.
+**Production impact** The container exits on start under the default
+configuration. `docker compose up` was broken for the same reason plus a
+second: Compose defaults `STORAGE_PROVIDER=local`, so the quarantine path is
+actually used there.
+**Regression test required** No — fixed in the same commit as H-2; the gate
+that would have caught it is running the image at all, which the `docker`
+job now does.
+
+### N-2 — `ReactionBar` leaked a timer across component unmount
+**Status** CONFIRMED · **Feature** Gallery / reactions
+**Files** `src/components/gallery/ReactionBar.tsx`
+A `window.setTimeout` scheduled on send was never cleared on unmount. Under
+jsdom the callback fires after teardown and throws
+`ReferenceError: window is not defined`, which fails CI as an unhandled error
+while every test reports passing.
+**Production impact** In a browser the leak is benign — a `setState` on an
+unmounted component. The real cost was a CI failure mode that does not name
+the test responsible.
+**Regression test required** No — the failure is the test suite itself.
 
 ---
 
