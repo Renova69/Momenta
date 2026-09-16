@@ -1,11 +1,10 @@
 import { Router } from 'express';
 import multer from 'multer';
-import path from 'path';
 import { pool } from '../lib/db';
 import { CONFIG } from '../lib/config';
 import { saveBuffer, toAbsoluteUrl } from '../lib/storage';
 import { checkPhotoUploadTierLimit, getUploadContext, checkUploadAllowance, acquireEventUploadLock } from '../middleware/tierGate';
-import { isValidUuid, validateMagicBytes } from '../lib/validation';
+import { isValidUuid, detectAudioFormat } from '../lib/validation';
 import { uploadLimiter } from '../middleware/rateLimit';
 import { requireEventTier } from '../middleware/tierGate';
 import { issueGuestToken, verifyGuestToken } from '../lib/guestAuth';
@@ -23,14 +22,6 @@ const upload = multer({
   limits: { fileSize: CONFIG.MAX_UPLOAD_SIZE_MB * 1024 * 1024 },
 });
 
-function extFromMimetype(mimetype: string | undefined): string {
-  if (!mimetype) return '.webm';
-  if (mimetype.includes('mp4')) return '.mp4';
-  if (mimetype.includes('aac') || mimetype.includes('m4a')) return '.m4a';
-  if (mimetype.includes('ogg')) return '.ogg';
-  return '.webm';
-}
-
 // 1. POST /api/audio (Save Audio Recording & Broadcast — Gated to deluxe_keepsake and pro_planner)
 // multer runs first so requireEventTier (which reads req.body.eventId) sees
 // the parsed multipart fields, exactly like the JSON body it used to read.
@@ -46,8 +37,13 @@ audioRouter.post('/', uploadLimiter, upload.single('audio'), requireEventTier('d
       return res.status(400).json({ error: 'No audio file uploaded' });
     }
     // The actual bytes are checked, not the client-claimed MIME type or an
-    // already-hosted URL string handed straight through (SEC-M3).
-    if (!validateMagicBytes(req.file.buffer)) {
+    // already-hosted URL string handed straight through (SEC-M3). The check is
+    // audio-only: it used to share a validator with the image paths and so
+    // admitted a JPEG or an iPhone HEIC posted here, which then counted
+    // against the event's quota and was broadcast to every guest as an audio
+    // message nothing could play (M-3).
+    const format = detectAudioFormat(req.file.buffer);
+    if (!format) {
       return res.status(400).json({ error: 'Invalid audio data.' });
     }
 
@@ -109,8 +105,18 @@ audioRouter.post('/', uploadLimiter, upload.single('audio'), requireEventTier('d
     }
 
     // Save audio file to storage partitioned by eventId
-    const ext = extFromMimetype(req.file.mimetype) || path.extname(req.file.originalname || '') || '.webm';
-    const saved = await saveBuffer(req.file.buffer, 'audio-message', ext, req.file.mimetype || 'audio/webm', eventId);
+    // Both derived from the bytes that were just validated, never from the
+    // client. `req.file.mimetype` was previously written verbatim as the
+    // stored object's Content-Type, and the object is served from a public
+    // URL — genuine audio bytes declared as `text/html` were served back as a
+    // document.
+    const saved = await saveBuffer(
+      req.file.buffer,
+      'audio-message',
+      format.extension,
+      format.mimeType,
+      eventId
+    );
     const absoluteAudioUrl = toAbsoluteUrl(saved.storagePath);
 
     // Re-check the quota and insert atomically (DB-02, mirrors SEC-D1's fix

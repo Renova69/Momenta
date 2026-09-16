@@ -193,6 +193,67 @@ describe('Media validation (SEC-M2, SEC-M3, SEC-M4)', () => {
       // anything the client sent (SEC-A1's audio analog).
       expect(resBody.audioUrl).toContain('/uploads/');
     });
+
+    it('refuses an image posted to the audio guestbook', async () => {
+      // [M-3] The admission check used to be shared with the image paths, so
+      // a JPEG was accepted here: stored, counted against the event's media
+      // quota, and broadcast to every connected guest as an audio message
+      // that no player can play.
+      const jpeg = await sharp({
+        create: { width: 8, height: 8, channels: 3, background: { r: 200, g: 180, b: 160 } },
+      })
+        .jpeg()
+        .toBuffer();
+      const { body, contentType } = buildMultipartAudio(jpeg, baseFields());
+
+      const res = await fetch(`${BASE_URL}/api/audio`, {
+        method: 'POST',
+        headers: { 'Content-Type': contentType },
+        body,
+      });
+
+      expect(res.status).toBe(400);
+    });
+
+    it('refuses an iPhone photo, which shares its container with MP4', async () => {
+      // HEIC is an ftyp container, and the old check accepted every ftyp
+      // brand — which is how an image got through a check that was supposed
+      // to be about audio.
+      const heic = Buffer.concat([
+        Buffer.from([0x00, 0x00, 0x00, 0x18]),
+        Buffer.from('ftypheic'),
+        Buffer.from([0x00, 0x00, 0x00, 0x00]),
+      ]);
+      const { body, contentType } = buildMultipartAudio(heic, baseFields());
+
+      const res = await fetch(`${BASE_URL}/api/audio`, {
+        method: 'POST',
+        headers: { 'Content-Type': contentType },
+        body,
+      });
+
+      expect(res.status).toBe(400);
+    });
+
+    it('stores the type the bytes are, not the type the client claimed', async () => {
+      // The multipart part below declares `Content-Type: audio/webm` and a
+      // filename of test.webm; the bytes are Ogg. That string used to be
+      // written verbatim as the stored object's Content-Type, and the object
+      // is served from a public URL — so genuine audio declared as text/html
+      // came back from the bucket as a document.
+      const ogg = Buffer.from('OggS       ');
+      const { body, contentType } = buildMultipartAudio(ogg, baseFields());
+
+      const res = await fetch(`${BASE_URL}/api/audio`, {
+        method: 'POST',
+        headers: { 'Content-Type': contentType },
+        body,
+      });
+
+      expect(res.status).toBe(201);
+      const resBody = await res.json();
+      expect(resBody.audioUrl).toMatch(/\.ogg$/);
+    });
   });
 
   describe('buildDerivatives pixel cap (SEC-M2)', () => {

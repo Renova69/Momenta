@@ -31,6 +31,12 @@ let server: ReturnType<typeof createServer>;
 
 /** WebM/Matroska magic bytes, so the upload passes the content check. */
 const WEBM = Buffer.concat([Buffer.from([0x1a, 0x45, 0xdf, 0xa3]), Buffer.alloc(2048, 7)]);
+/** `....ftypM4A ` — what Safari's audio/mp4 recording starts with. */
+const MP4 = Buffer.concat([
+  Buffer.from([0x00, 0x00, 0x00, 0x18]),
+  Buffer.from('ftypM4A '),
+  Buffer.alloc(2048, 7),
+]);
 
 function multipartAudio(
   bytes: Buffer,
@@ -268,16 +274,31 @@ describe('the message itself', () => {
     expect((await res.json()).localId).toBe('temp-123');
   }, 20_000);
 
-  it('picks the file extension from the recording’s own type', async () => {
+  it('picks the file extension from the recording’s own bytes', async () => {
     // Safari records mp4 where Chrome records webm, and the stored object has
     // to keep an extension the browser will play back.
+    const res = await postAudio(MP4, { eventId: host.eventId, guestName: 'Ana' }, 'take.mp4', 'audio/mp4');
+
+    expect(res.status).toBe(201);
+    expect((await res.json()).audioUrl).toMatch(/\.m4a$/);
+  }, 20_000);
+
+  it('ignores a declared type that disagrees with the bytes', async () => {
+    // [M-3] This used to read `req.file.mimetype` — a client-supplied string —
+    // for both the extension and the Content-Type written onto the stored
+    // object, which is served from a public URL. WebM bytes announced as mp4
+    // were stored as an unplayable .mp4, and audio announced as text/html was
+    // served back by the bucket as a document.
     const res = await postAudio(WEBM, { eventId: host.eventId, guestName: 'Ana' }, 'take.mp4', 'audio/mp4');
 
     expect(res.status).toBe(201);
-    expect((await res.json()).audioUrl).toMatch(/\.mp4$/);
+    expect((await res.json()).audioUrl).toMatch(/\.webm$/);
   }, 20_000);
 
-  it('falls back to webm for a type it does not recognise', async () => {
+  it('still stores a recording whose type the client never declared', async () => {
+    // A blob rebuilt outside MediaRecorder — an offline queue item replayed
+    // from IndexedDB, say — can arrive with no usable type at all. The bytes
+    // are what matter, so this is admitted rather than refused.
     const res = await postAudio(
       WEBM,
       { eventId: host.eventId, guestName: 'Ana' },
