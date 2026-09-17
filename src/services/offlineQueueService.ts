@@ -116,6 +116,24 @@ export class OfflineQueueService {
     }
   }
 
+  /**
+   * The `localId` of every photo upload still waiting to be retried.
+   *
+   * An optimistic photo row survives in localStorage under this same id until
+   * its upload lands, so this is what tells a sync which temp-id rows are still
+   * genuinely on their way up and which have been abandoned.
+   */
+  public async getQueuedPhotoLocalIds(): Promise<Set<string>> {
+    const queued = await this.getQueue();
+    const ids = new Set<string>();
+    for (const item of queued) {
+      if (item.type !== 'photo') continue;
+      const localId = (item.payload as { localId?: unknown }).localId;
+      if (typeof localId === 'string' && localId) ids.add(localId);
+    }
+    return ids;
+  }
+
   public async enqueue(type: 'photo' | 'audio', payload: QueuedPayload): Promise<QueuedUpload | null> {
     if (!this.available) {
       console.warn('[OfflineQueue] IndexedDB unavailable — item dropped.');
@@ -190,7 +208,8 @@ export class OfflineQueueService {
 
       const apiHost = ENV.API_URL?.replace(/\/+$/, '') || '';
       if (!apiHost && typeof window !== 'undefined' && !window.location?.origin) return;
-      const baseUrl = apiHost || (typeof window !== 'undefined' && window.location?.origin ? window.location.origin : '');
+      const baseUrl =
+        apiHost || (typeof window !== 'undefined' && window.location?.origin ? window.location.origin : '');
       if (!baseUrl) return;
       const token = localStorage.getItem('wedmoments_host_token');
 

@@ -509,12 +509,19 @@ describe('Storage Service Spec', () => {
       ];
       localStorage.setItem('wedmoments_photos_event-fe03', JSON.stringify(photos));
 
+      // enqueue() kicks off its own un-awaited flushQueue() whenever it thinks
+      // it is online. That background flush races the explicit one below over
+      // the same item, and whichever wins decides whether the item is still
+      // there to flush — the assertions then pass or fail on timing rather than
+      // on behaviour. Enqueue as if offline so this test owns the only flush.
+      const offlineDuringEnqueue = vi.spyOn(offlineQueue, 'isOnline').mockReturnValue(false);
       await offlineQueue.enqueue('photo', {
         eventId: 'event-fe03',
         localId,
         guestId: 'guest-1',
         fullUrl: 'data:image/jpeg;base64,AA==',
       });
+      offlineDuringEnqueue.mockRestore();
       // Other tests in this file share the same singleton offlineQueue and
       // leave un-awaited background work in flight, so tolerate other items
       // being present — only this test's own item is asserted on.

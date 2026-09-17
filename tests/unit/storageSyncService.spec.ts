@@ -1,13 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import {
-  syncFromBackend,
-  initializeDefaults,
-  resetToDefaults,
-} from '../../src/services/storageSyncService';
+import { syncFromBackend, initializeDefaults, resetToDefaults } from '../../src/services/storageSyncService';
 import { photosApi } from '../../src/api/photosApi';
 import { questsApi } from '../../src/api/questsApi';
 import { audioApi } from '../../src/api/audioApi';
 import { eventsApi } from '../../src/api/eventsApi';
+import { offlineQueue } from '../../src/services/offlineQueueService';
 import { STORAGE_KEYS } from '../../src/services/storageKeys';
 import { ServiceContext } from '../../src/services/storageServiceContext';
 import { Photo } from '../../src/types';
@@ -102,10 +99,7 @@ describe('fetching an album larger than one page (H3)', () => {
       priority: 10,
       createdAt: '2026-02-03T04:05:06.000Z',
     });
-    const list = vi
-      .spyOn(photosApi, 'list')
-      .mockResolvedValueOnce(page)
-      .mockResolvedValueOnce([]);
+    const list = vi.spyOn(photosApi, 'list').mockResolvedValueOnce(page).mockResolvedValueOnce([]);
 
     await syncFromBackend(context(), EVENT);
 
@@ -182,9 +176,7 @@ describe('fetching an album larger than one page (H3)', () => {
 describe('when the network drops mid-album', () => {
   it('keeps the pages it already has rather than losing the lot', async () => {
     // 100 photos beats zero when the venue Wi-Fi goes.
-    vi.spyOn(photosApi, 'list')
-      .mockResolvedValueOnce(fullPage('a'))
-      .mockRejectedValueOnce(new Error('network down'));
+    vi.spyOn(photosApi, 'list').mockResolvedValueOnce(fullPage('a')).mockRejectedValueOnce(new Error('network down'));
 
     await syncFromBackend(context(), EVENT);
 
@@ -208,11 +200,40 @@ describe('merging with photos that have not reached the server', () => {
     // it was still waiting to upload.
     localPhotos = [photo('photo-local-1'), photo('server-1')];
     vi.spyOn(photosApi, 'list').mockResolvedValue([photo('server-1')]);
+    vi.spyOn(offlineQueue, 'getQueuedPhotoLocalIds').mockResolvedValue(new Set(['photo-local-1']));
 
     await syncFromBackend(context(), EVENT);
 
     const stored = JSON.parse(localStorage.getItem(STORAGE_KEYS.PHOTOS(EVENT)) || '[]');
     expect(stored.map((p: Photo) => p.id)).toContain('photo-local-1');
+  });
+
+  it('keeps a just-captured photo that has not had time to be queued yet', async () => {
+    // addPhoto writes the optimistic row first and only enqueues if the upload
+    // fails, so there is a window where a healthy capture is in neither place.
+    localPhotos = [photo('photo-local-1', { createdAt: new Date().toISOString() })];
+    vi.spyOn(photosApi, 'list').mockResolvedValue([]);
+    vi.spyOn(offlineQueue, 'getQueuedPhotoLocalIds').mockResolvedValue(new Set());
+
+    await syncFromBackend(context(), EVENT);
+
+    const stored = JSON.parse(localStorage.getItem(STORAGE_KEYS.PHOTOS(EVENT)) || '[]');
+    expect(stored.map((p: Photo) => p.id)).toContain('photo-local-1');
+  });
+
+  it('drops an abandoned upload the queue has given up on', async () => {
+    // The upload was refused outright, or retried to exhaustion and dropped
+    // from the queue. Keeping it left a phantom card in that one guest's feed
+    // forever — invisible to the server, so untouched by the host deleting the
+    // whole album.
+    localPhotos = [photo('photo-local-1', { createdAt: '2026-01-01T00:00:00.000Z' })];
+    vi.spyOn(photosApi, 'list').mockResolvedValue([]);
+    vi.spyOn(offlineQueue, 'getQueuedPhotoLocalIds').mockResolvedValue(new Set());
+
+    await syncFromBackend(context(), EVENT);
+
+    const stored = JSON.parse(localStorage.getItem(STORAGE_KEYS.PHOTOS(EVENT)) || '[]');
+    expect(stored).toHaveLength(0);
   });
 
   it('drops the temporary copy once the server has the photo under that id', async () => {
@@ -339,9 +360,7 @@ describe('demo fixtures', () => {
 
     initializeDefaults(ctx);
 
-    await vi.waitFor(() =>
-      expect(localStorage.getItem(STORAGE_KEYS.ACTIVE_EVENT_ID)).not.toBeNull()
-    );
+    await vi.waitFor(() => expect(localStorage.getItem(STORAGE_KEYS.ACTIVE_EVENT_ID)).not.toBeNull());
     await vi.waitFor(() => expect(ctx.notify).toHaveBeenCalled());
   });
 

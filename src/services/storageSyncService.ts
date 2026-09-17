@@ -6,7 +6,19 @@ import { Photo } from '../types';
 import { INITIAL_EVENT } from './defaultEvent';
 import { STORAGE_KEYS } from './storageKeys';
 import { persistPhotos } from './photoStore';
+import { offlineQueue } from './offlineQueueService';
 import { ServiceContext } from './storageServiceContext';
+
+/**
+ * How long a temp-id photo may sit in the cache without a queue entry backing
+ * it before a sync treats it as abandoned.
+ *
+ * `addPhoto` writes the optimistic row first and only enqueues if the upload
+ * actually fails, so there is a window — the length of one upload — where a
+ * perfectly healthy capture is in neither place. This has to comfortably
+ * outlast a slow upload on venue Wi-Fi, and it only ever delays a cleanup.
+ */
+const ABANDONED_UPLOAD_GRACE_MS = 5 * 60 * 1000;
 
 /** What GET /api/photos returns per request; also the server's own default. */
 const PHOTO_PAGE_SIZE = 100;
@@ -75,9 +87,25 @@ export async function syncFromBackend(ctx: ServiceContext, eventIdOverride?: str
     // 1. Photos for this specific event ONLY — every page of them.
     const serverPhotos = await fetchAllPhotos(targetEventId);
     if (Array.isArray(serverPhotos)) {
-      // Merge remote photos with locally pending un-synced photos to prevent offline data loss
+      // Merge remote photos with locally pending un-synced photos to prevent offline data loss.
+      //
+      // A temp-id row is kept only while its upload is still a live prospect:
+      // either the offline queue is still retrying it, or it is young enough to
+      // be in flight right now. Keeping every temp-id row unconditionally meant
+      // a capture whose upload was refused outright — or retried to exhaustion
+      // and dropped from the queue — stayed in that one guest's feed forever,
+      // invisible to the server and so untouched by the host deleting the
+      // album. Ten such rows on a guest's phone is what this fixes.
+      const queuedLocalIds = await offlineQueue.getQueuedPhotoLocalIds();
       const localPhotos = ctx.getPhotos(targetEventId);
-      const unsyncedLocal = localPhotos.filter((p) => p.id.startsWith('photo-'));
+      const stillPending = (photo: Photo) => {
+        if (queuedLocalIds.has(photo.id)) return true;
+        const createdAt = Date.parse(photo.createdAt);
+        // An unparseable timestamp is not evidence of abandonment — keep it.
+        if (Number.isNaN(createdAt)) return true;
+        return Date.now() - createdAt < ABANDONED_UPLOAD_GRACE_MS;
+      };
+      const unsyncedLocal = localPhotos.filter((p) => p.id.startsWith('photo-') && stillPending(p));
       const serverIds = new Set(serverPhotos.map((p) => p.id));
       const merged = [...unsyncedLocal.filter((p) => !serverIds.has(p.id)), ...serverPhotos];
       persistPhotos(targetEventId, merged);
@@ -155,8 +183,7 @@ export function initializeDefaults(ctx: ServiceContext): void {
   if (typeof window === 'undefined') return;
 
   const demoRequested =
-    new URLSearchParams(window.location.search).get('demo') === '1' ||
-    import.meta.env?.VITE_SEED_DEMO_DATA === 'true';
+    new URLSearchParams(window.location.search).get('demo') === '1' || import.meta.env?.VITE_SEED_DEMO_DATA === 'true';
 
   if (!demoRequested) return;
 
