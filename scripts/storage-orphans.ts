@@ -65,7 +65,7 @@ export function eventIdFromKey(key: string): string | null {
 
 const shouldDelete = process.argv.includes('--delete');
 
-interface OrphanDir {
+export interface OrphanDir {
   eventId: string;
   dir: string;
   files: number;
@@ -107,9 +107,7 @@ async function listAllObjects(s3: S3Client): Promise<BucketObject[]> {
   let pages = 0;
 
   do {
-    const page = await s3.send(
-      new ListObjectsV2Command({ Bucket: CONFIG.R2_BUCKET_NAME, ContinuationToken: token })
-    );
+    const page = await s3.send(new ListObjectsV2Command({ Bucket: CONFIG.R2_BUCKET_NAME, ContinuationToken: token }));
     for (const item of page.Contents ?? []) {
       if (item.Key) objects.push({ key: item.Key, bytes: item.Size ?? 0 });
     }
@@ -178,12 +176,8 @@ async function scanR2(): Promise<void> {
   const totalBytes = [...byEvent.values()].reduce((sum, e) => sum + e.bytes, 0);
   const totalFiles = [...byEvent.values()].reduce((sum, e) => sum + e.files, 0);
 
-  console.log(
-    `[orphans] ${known.size} event(s) in the database; ${live} object(s) belong to one.`
-  );
-  console.log(
-    `[orphans] ${byEvent.size} orphaned prefix(es), ${totalFiles} object(s), ${formatBytes(totalBytes)}.`
-  );
+  console.log(`[orphans] ${known.size} event(s) in the database; ${live} object(s) belong to one.`);
+  console.log(`[orphans] ${byEvent.size} orphaned prefix(es), ${totalFiles} object(s), ${formatBytes(totalBytes)}.`);
   if (unparseable > 0) {
     console.log(
       `[orphans] ${unparseable} object(s) (${formatBytes(unparseableBytes)}) are not in an event-scoped\n` +
@@ -219,6 +213,78 @@ async function scanR2(): Promise<void> {
   if (failed > 0) console.log(`[orphans] ${failed} object(s) could not be removed and remain.`);
 }
 
+/** One local tree of `events/<eventId>/` directories. */
+export interface LocalRoot {
+  label: string;
+  eventsRoot: string;
+}
+
+/**
+ * The local trees this sweep walks — both of them.
+ *
+ * `QUARANTINE_DIR` defaults to a *sibling* of the uploads directory rather than
+ * a child, so walking `UPLOADS_DIR` alone never saw a byte of it, and
+ * quarantine is where full-size photos sit awaiting moderation. On the machine
+ * this was found, the quarantine tree held 2,577 orphaned albums that every
+ * previous sweep had reported nothing about. The R2 branch has recognised the
+ * `quarantine/events/...` prefix since it was written; this is the local half
+ * catching up.
+ *
+ * A root that does not exist is dropped rather than reported: a deployment with
+ * moderation switched off has no quarantine directory and that is not a fault.
+ */
+export function localEventRoots(): LocalRoot[] {
+  return [
+    { label: 'uploads', eventsRoot: path.join(CONFIG.UPLOADS_DIR, 'events') },
+    { label: 'quarantine', eventsRoot: path.join(CONFIG.QUARANTINE_DIR, 'events') },
+  ].filter((root) => fs.existsSync(root.eventsRoot));
+}
+
+export interface RemovalResult {
+  removed: number;
+  failed: number;
+  /** Bytes actually reclaimed — only directories confirmed gone are counted. */
+  reclaimed: number;
+}
+
+/**
+ * Remove orphaned directories, and report only what actually went.
+ *
+ * The verify is the point. A real run reported 7,234 folders removed while 616
+ * were still on disk afterwards: `fs.rmSync` returned without throwing and
+ * without deleting, so the catch never fired and the summary was wrong in the
+ * one direction that matters — it said the bytes were reclaimed, so the
+ * operator stopped looking. A sweep that overstates what it freed is worse than
+ * one that fails loudly, because the second gets re-run.
+ */
+export function removeOrphanDirs(orphans: OrphanDir[]): RemovalResult {
+  let removed = 0;
+  let failed = 0;
+  let reclaimed = 0;
+
+  for (const orphan of orphans) {
+    try {
+      // maxRetries because this runs on Windows as often as Linux, where a
+      // directory with a handle still open fails transiently, not permanently.
+      fs.rmSync(orphan.dir, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
+
+      if (fs.existsSync(orphan.dir)) {
+        failed += 1;
+        console.warn(`[orphans] ${orphan.dir} survived removal and remains on disk.`);
+        continue;
+      }
+
+      removed += 1;
+      reclaimed += orphan.bytes;
+    } catch (err) {
+      failed += 1;
+      console.warn(`[orphans] could not remove ${orphan.dir}:`, err instanceof Error ? err.message : err);
+    }
+  }
+
+  return { removed, failed, reclaimed };
+}
+
 async function main() {
   if (CONFIG.STORAGE_PROVIDER === 'r2') {
     await scanR2();
@@ -226,36 +292,58 @@ async function main() {
     return;
   }
 
-  const eventsRoot = path.join(CONFIG.UPLOADS_DIR, 'events');
-  if (!fs.existsSync(eventsRoot)) {
-    console.log(`[orphans] Nothing to scan: ${eventsRoot} does not exist.`);
+  const roots = localEventRoots();
+
+  if (roots.length === 0) {
+    console.log(`[orphans] Nothing to scan: no events/ directory under ${CONFIG.UPLOADS_DIR}`);
     await pool.end();
     return;
   }
 
-  const onDisk = fs
-    .readdirSync(eventsRoot, { withFileTypes: true })
-    .filter((e) => e.isDirectory())
-    .map((e) => e.name);
-
   const { rows } = await pool.query<{ id: string }>('SELECT id FROM events');
   const known = new Set(rows.map((r) => r.id));
 
+  let onDiskCount = 0;
   const orphans: OrphanDir[] = [];
-  for (const eventId of onDisk) {
-    if (known.has(eventId)) continue;
-    const dir = path.join(eventsRoot, eventId);
-    const { files, bytes } = directorySize(dir);
-    orphans.push({ eventId, dir, files, bytes });
+  for (const root of roots) {
+    const onDisk = fs
+      .readdirSync(root.eventsRoot, { withFileTypes: true })
+      .filter((e) => e.isDirectory())
+      .map((e) => e.name);
+    onDiskCount += onDisk.length;
+
+    for (const eventId of onDisk) {
+      if (known.has(eventId)) continue;
+      const dir = path.join(root.eventsRoot, eventId);
+      const { files, bytes } = directorySize(dir);
+      // Labelled, because the same event id legitimately appears in both trees
+      // and an unlabelled report reads as a duplicate.
+      orphans.push({ eventId: `${root.label}/${eventId}`, dir, files, bytes });
+    }
+  }
+
+  // The same empty-database guard the R2 branch carries. No events at all while
+  // media is on disk reads as the wrong DATABASE_URL, not as a disk of orphans,
+  // and acting on that reading deletes everything.
+  if (known.size === 0 && onDiskCount > 0) {
+    console.error(
+      `[orphans] The events table is empty while ${onDiskCount} folder(s) exist on disk.\n` +
+        '[orphans] That is far more likely to be the wrong DATABASE_URL than a disk of\n' +
+        '[orphans] orphans, and acting on it would delete every one. Refusing.'
+    );
+    process.exitCode = 1;
+    await pool.end();
+    return;
   }
 
   const totalBytes = orphans.reduce((sum, o) => sum + o.bytes, 0);
   const totalFiles = orphans.reduce((sum, o) => sum + o.files, 0);
 
-  console.log(`[orphans] ${onDisk.length} event folder(s) on disk, ${known.size} event(s) in the database.`);
   console.log(
-    `[orphans] ${orphans.length} orphaned folder(s), ${totalFiles} file(s), ${formatBytes(totalBytes)}.`
+    `[orphans] ${onDiskCount} event folder(s) across ${roots.length} tree(s), ` +
+      `${known.size} event(s) in the database.`
   );
+  console.log(`[orphans] ${orphans.length} orphaned folder(s), ${totalFiles} file(s), ${formatBytes(totalBytes)}.`);
 
   for (const orphan of orphans.slice(0, 10)) {
     console.log(`    ${orphan.eventId}  ${String(orphan.files).padStart(5)} files  ${formatBytes(orphan.bytes)}`);
@@ -270,17 +358,14 @@ async function main() {
     return;
   }
 
-  let removed = 0;
-  for (const orphan of orphans) {
-    try {
-      fs.rmSync(orphan.dir, { recursive: true, force: true });
-      removed += 1;
-    } catch (err) {
-      console.warn(`[orphans] could not remove ${orphan.dir}:`, err instanceof Error ? err.message : err);
-    }
-  }
+  const { removed, failed, reclaimed } = removeOrphanDirs(orphans);
 
-  console.log(`\n[orphans] Removed ${removed} folder(s), reclaiming ${formatBytes(totalBytes)}.`);
+  // Reclaimed, not planned: the total above is what the scan hoped to free.
+  console.log(`\n[orphans] Removed ${removed} folder(s), reclaiming ${formatBytes(reclaimed)}.`);
+  if (failed > 0) {
+    console.log(`[orphans] ${failed} folder(s) could not be removed and remain. Re-run to retry.`);
+    process.exitCode = 1;
+  }
   await pool.end();
 }
 
@@ -296,8 +381,7 @@ async function main() {
  * not a design.
  */
 const invokedDirectly =
-  process.argv[1] !== undefined &&
-  path.resolve(process.argv[1]) === path.resolve(fileURLToPath(import.meta.url));
+  process.argv[1] !== undefined && path.resolve(process.argv[1]) === path.resolve(fileURLToPath(import.meta.url));
 
 if (invokedDirectly) {
   main().catch(async (err) => {

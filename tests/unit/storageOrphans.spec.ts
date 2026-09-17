@@ -1,5 +1,9 @@
-import { describe, it, expect } from 'vitest';
-import { eventIdFromKey } from '../../scripts/storage-orphans';
+import { describe, it, expect, afterEach, vi } from 'vitest';
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
+import { eventIdFromKey, localEventRoots, removeOrphanDirs } from '../../scripts/storage-orphans';
+import { CONFIG } from '../../server/lib/config';
 
 /**
  * Which stored object belongs to which album.
@@ -86,5 +90,115 @@ describe('the shape of the answer', () => {
     // comparison in one direction only, which is the hardest kind to notice.
     const mixed = 'A0EEBC99-9c0b-4ef8-bb6d-6bb9bd380a11';
     expect(eventIdFromKey(`events/${mixed}/photo.jpg`)).toBe(mixed);
+  });
+});
+
+/**
+ * What the sweep walks, and what it claims afterwards.
+ *
+ * Both of the behaviours below were added after running the thing on a real
+ * machine rather than reading it. Neither was visible from the source.
+ */
+
+const scratchDirs: string[] = [];
+
+function makeOrphan(
+  files: number,
+  bytes: number
+): { dir: string; entry: Parameters<typeof removeOrphanDirs>[0][number] } {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'orphan-spec-'));
+  scratchDirs.push(dir);
+  for (let i = 0; i < files; i += 1) {
+    fs.writeFileSync(path.join(dir, `wedding-photo-${i}.jpg`), Buffer.alloc(bytes / files || 1));
+  }
+  return { dir, entry: { eventId: path.basename(dir), dir, files, bytes } };
+}
+
+afterEach(() => {
+  vi.restoreAllMocks();
+  for (const dir of scratchDirs.splice(0)) {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+describe('which local trees get swept', () => {
+  it('walks the quarantine tree, not only uploads', () => {
+    // QUARANTINE_DIR defaults to a *sibling* of the uploads directory rather
+    // than a child, so a sweep that walks UPLOADS_DIR alone never sees a byte
+    // of it — and quarantine is where full-size photos sit awaiting
+    // moderation. On the machine where this was found it held 2,577 orphaned
+    // albums that every previous sweep had reported nothing about.
+    fs.mkdirSync(path.join(CONFIG.UPLOADS_DIR, 'events'), { recursive: true });
+    fs.mkdirSync(path.join(CONFIG.QUARANTINE_DIR, 'events'), { recursive: true });
+
+    const labels = localEventRoots().map((r) => r.label);
+
+    expect(labels).toContain('uploads');
+    expect(labels).toContain('quarantine');
+  });
+
+  it('points each root at events/, never at the directory above it', () => {
+    // A root one level too high would make the sweep treat `events` itself as
+    // an event id, and every real album under it as an orphan.
+    for (const root of localEventRoots()) {
+      expect(path.basename(root.eventsRoot)).toBe('events');
+    }
+  });
+
+  it('drops a root that does not exist rather than failing', () => {
+    // Moderation switched off means no quarantine directory, which is not a
+    // fault.
+    const missing = path.join(os.tmpdir(), `no-such-root-${Date.now()}`);
+    vi.spyOn(CONFIG, 'QUARANTINE_DIR', 'get').mockReturnValue(missing);
+
+    expect(localEventRoots().every((r) => fs.existsSync(r.eventsRoot))).toBe(true);
+  });
+});
+
+describe('what the sweep claims it removed', () => {
+  it('counts a directory only once it is actually gone', () => {
+    const a = makeOrphan(2, 200);
+    const b = makeOrphan(3, 300);
+
+    const result = removeOrphanDirs([a.entry, b.entry]);
+
+    expect(result).toEqual({ removed: 2, failed: 0, reclaimed: 500 });
+    expect(fs.existsSync(a.dir)).toBe(false);
+    expect(fs.existsSync(b.dir)).toBe(false);
+  });
+
+  it('reports a directory that survived removal instead of counting it', () => {
+    // The whole reason the verify exists. A real run reported 7234 folders
+    // removed while 616 were still on disk: rmSync returned without throwing
+    // and without deleting, so the catch never fired and the summary said the
+    // bytes were reclaimed. The operator stops looking at that point.
+    const survivor = makeOrphan(4, 400);
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    vi.spyOn(fs, 'rmSync').mockImplementation(() => undefined);
+
+    const result = removeOrphanDirs([survivor.entry]);
+
+    expect(result.removed).toBe(0);
+    expect(result.failed).toBe(1);
+    // Nothing was freed, so nothing may be reported as freed.
+    expect(result.reclaimed).toBe(0);
+  });
+
+  it('counts a throwing removal as failed and keeps going', () => {
+    const doomed = makeOrphan(1, 100);
+    const fine = makeOrphan(1, 100);
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const real = fs.rmSync;
+    vi.spyOn(fs, 'rmSync').mockImplementation(((target: fs.PathLike, options?: fs.RmOptions) => {
+      if (String(target) === doomed.dir) throw new Error('EBUSY: resource busy or locked');
+      return real(target, options);
+    }) as typeof fs.rmSync);
+
+    const result = removeOrphanDirs([doomed.entry, fine.entry]);
+
+    // One bad directory must not abandon the rest of the sweep.
+    expect(result.failed).toBe(1);
+    expect(result.removed).toBe(1);
+    expect(result.reclaimed).toBe(100);
   });
 });
