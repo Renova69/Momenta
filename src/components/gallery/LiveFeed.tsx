@@ -1,19 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Photo, Guest, PlanTier, PhotoReactionKind } from '../../types';
 import { PhotoCard } from './PhotoCard';
 import { ReactionBar } from './ReactionBar';
 import { i18n } from '../../i18n';
 import { FREE_TIER_MAX_PHOTOS } from '../../config/tierGating';
-import {
-  Sparkles,
-  Trophy,
-  User,
-  Layers,
-  Search,
-  Camera,
-  Crown,
-  AlertCircle
-} from 'lucide-react';
+import { Sparkles, Trophy, User, Layers, Search, Camera, Crown, AlertCircle } from 'lucide-react';
 
 interface LiveFeedProps {
   photos: Photo[];
@@ -29,6 +20,51 @@ interface LiveFeedProps {
 
 type FeedFilter = 'all' | 'featured' | 'quests' | 'mine';
 
+/**
+ * Widths at which the feed gains a masonry column, mirroring Tailwind's `sm`
+ * and `lg`. Ordered widest-first so the first match wins.
+ */
+const MASONRY_BREAKPOINTS = [
+  { minWidth: 1024, columns: 3 },
+  { minWidth: 640, columns: 2 },
+];
+
+function readColumnCount(): number {
+  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return 1;
+  return MASONRY_BREAKPOINTS.find((b) => window.matchMedia(`(min-width: ${b.minWidth}px)`).matches)?.columns ?? 1;
+}
+
+/** How many masonry columns the viewport currently shows. */
+function useMasonryColumnCount(): number {
+  const [count, setCount] = useState(readColumnCount);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return;
+    const queries = MASONRY_BREAKPOINTS.map((b) => window.matchMedia(`(min-width: ${b.minWidth}px)`));
+    const update = () => setCount(readColumnCount());
+    queries.forEach((q) => q.addEventListener?.('change', update));
+    return () => queries.forEach((q) => q.removeEventListener?.('change', update));
+  }, []);
+
+  return count;
+}
+
+/**
+ * Deal the photos across the columns round-robin, so photo 0 heads column one,
+ * photo 1 heads column two, and so on.
+ *
+ * The feed used to be a single `columns-*` element. CSS multi-column lays out
+ * column-major — it fills the first column top to bottom before starting the
+ * second — so a newest-first list read across the top row as the 1st, 4th and
+ * 7th newest rather than the newest three. Dealing them out keeps the ragged
+ * masonry heights while making reading order match chronology.
+ */
+function dealIntoColumns(photos: Photo[], columnCount: number): Photo[][] {
+  const columns: Photo[][] = Array.from({ length: columnCount }, () => []);
+  photos.forEach((photo, index) => columns[index % columnCount].push(photo));
+  return columns;
+}
+
 const LiveFeedComponent: React.FC<LiveFeedProps> = ({
   photos,
   currentGuest,
@@ -43,6 +79,7 @@ const LiveFeedComponent: React.FC<LiveFeedProps> = ({
   const [activeFilter, setActiveFilter] = useState<FeedFilter>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [renderedLimit, setRenderedLimit] = useState(20);
+  const columnCount = useMasonryColumnCount();
 
   // [FIX H-15] Match only by guestId — name-based matching leaks rejected/pending photos
   // to any guest who shares the same display name (privacy violation)
@@ -76,19 +113,20 @@ const LiveFeedComponent: React.FC<LiveFeedProps> = ({
 
   const displayedPhotos = filteredPhotos.slice(0, renderedLimit);
   const isFreeTier = eventPlanTier === 'free';
-  const isApproachingLimit = isFreeTier && photos.length >= (FREE_TIER_MAX_PHOTOS - 5);
+  const isApproachingLimit = isFreeTier && photos.length >= FREE_TIER_MAX_PHOTOS - 5;
   const isAtLimit = isFreeTier && photos.length >= FREE_TIER_MAX_PHOTOS;
 
   return (
     <section className="space-y-6">
-
       {/* Free Tier Limit Notification Banner */}
       {isApproachingLimit && (
-        <div className={`p-4 rounded-2xl border flex flex-col sm:flex-row items-center justify-between gap-3 ${
-          isAtLimit
-            ? 'bg-rosewood-950/80 border-rosewood-500/30 text-rosewood-200'
-            : 'bg-gold-950/60 border-gold-400/30 text-gold-200'
-        }`}>
+        <div
+          className={`p-4 rounded-2xl border flex flex-col sm:flex-row items-center justify-between gap-3 ${
+            isAtLimit
+              ? 'bg-rosewood-950/80 border-rosewood-500/30 text-rosewood-200'
+              : 'bg-gold-950/60 border-gold-400/30 text-gold-200'
+          }`}
+        >
           <div className="flex items-center gap-2.5">
             <AlertCircle className={`w-5 h-5 shrink-0 ${isAtLimit ? 'text-rosewood-400' : 'text-gold-400'}`} />
             <div className="text-xs">
@@ -99,8 +137,7 @@ const LiveFeedComponent: React.FC<LiveFeedProps> = ({
                       used: photos.length,
                       max: FREE_TIER_MAX_PHOTOS,
                     })}
-              </span>
-              {' '}
+              </span>{' '}
               <span className="opacity-80">{i18n.t('ui.live_feed.1')}</span>
             </div>
           </div>
@@ -117,14 +154,16 @@ const LiveFeedComponent: React.FC<LiveFeedProps> = ({
           )}
         </div>
       )}
-      
+
       {/* Controls Bar: Filters & Search */}
       <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 bg-noir-800/80 p-3 rounded-2xl border border-cream-400/10 backdrop-blur-md">
-        
         {/* Category Filter Tabs */}
         <div className="flex items-center gap-1.5 overflow-x-auto pb-1 md:pb-0 scrollbar-none">
           <button
-            onClick={() => { setActiveFilter('all'); setRenderedLimit(20); }}
+            onClick={() => {
+              setActiveFilter('all');
+              setRenderedLimit(20);
+            }}
             className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-all ${
               activeFilter === 'all'
                 ? 'bg-gold-400 text-noir-900 shadow-glow'
@@ -132,11 +171,16 @@ const LiveFeedComponent: React.FC<LiveFeedProps> = ({
             }`}
           >
             <Layers className="w-3.5 h-3.5" />
-            <span>{i18n.t('feed.all_moments')} ({visiblePhotos.length})</span>
+            <span>
+              {i18n.t('feed.all_moments')} ({visiblePhotos.length})
+            </span>
           </button>
 
           <button
-            onClick={() => { setActiveFilter('featured'); setRenderedLimit(20); }}
+            onClick={() => {
+              setActiveFilter('featured');
+              setRenderedLimit(20);
+            }}
             className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-all ${
               activeFilter === 'featured'
                 ? 'bg-gold-400 text-noir-900 shadow-glow'
@@ -144,7 +188,9 @@ const LiveFeedComponent: React.FC<LiveFeedProps> = ({
             }`}
           >
             <Sparkles className="w-3.5 h-3.5" />
-            <span>{i18n.t('feed.featured')} ({visiblePhotos.filter((p) => p.status === 'featured').length})</span>
+            <span>
+              {i18n.t('feed.featured')} ({visiblePhotos.filter((p) => p.status === 'featured').length})
+            </span>
           </button>
 
           <button
@@ -156,7 +202,9 @@ const LiveFeedComponent: React.FC<LiveFeedProps> = ({
             }`}
           >
             <Trophy className="w-3.5 h-3.5" />
-            <span>{i18n.t('feed.quests')} ({visiblePhotos.filter((p) => Boolean(p.questId)).length})</span>
+            <span>
+              {i18n.t('feed.quests')} ({visiblePhotos.filter((p) => Boolean(p.questId)).length})
+            </span>
           </button>
 
           <button
@@ -168,7 +216,9 @@ const LiveFeedComponent: React.FC<LiveFeedProps> = ({
             }`}
           >
             <User className="w-3.5 h-3.5" />
-            <span>{i18n.t('feed.my_snaps')} ({visiblePhotos.filter(isMyPhoto).length})</span>
+            <span>
+              {i18n.t('feed.my_snaps')} ({visiblePhotos.filter(isMyPhoto).length})
+            </span>
           </button>
         </div>
 
@@ -192,34 +242,25 @@ const LiveFeedComponent: React.FC<LiveFeedProps> = ({
 
       {/* Photo Grid / Masonry Layout */}
       {filteredPhotos.length > 0 ? (
-        <div className="columns-1 sm:columns-2 lg:columns-3 gap-5 space-y-5">
-          {displayedPhotos.map((photo) => (
-            <div key={photo.id} className="break-inside-avoid">
-              {/* M3 — handlers are passed through by reference, not wrapped in
-                  fresh arrows per render, so React.memo on PhotoCard can
-                  actually skip the cards whose photo did not change. */}
-              <PhotoCard
-                photo={photo}
-                currentGuest={currentGuest}
-                onLike={onLike}
-                onReact={onReact}
-                onOpenComments={onOpenComments}
-                onOpenLightbox={onOpenLightbox}
-              />
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 items-start">
+          {dealIntoColumns(displayedPhotos, columnCount).map((column, columnIndex) => (
+            <div key={columnIndex} className="space-y-5">
+              {column.map((photo) => (
+                /* M3 — handlers are passed through by reference, not wrapped in
+                     fresh arrows per render, so React.memo on PhotoCard can
+                     actually skip the cards whose photo did not change. */
+                <PhotoCard
+                  key={photo.id}
+                  photo={photo}
+                  currentGuest={currentGuest}
+                  onLike={onLike}
+                  onReact={onReact}
+                  onOpenComments={onOpenComments}
+                  onOpenLightbox={onOpenLightbox}
+                />
+              ))}
             </div>
           ))}
-          
-          {renderedLimit < filteredPhotos.length && (
-            <div className="flex justify-center pt-8 pb-4 break-inside-avoid w-full col-span-full">
-              <button
-                type="button"
-                onClick={() => setRenderedLimit(prev => prev + 20)}
-                className="px-6 py-2.5 rounded-full bg-noir-800 border border-cream-400/20 text-cream-200 text-sm font-semibold hover:bg-noir-700 transition-colors"
-              >
-                {i18n.t('feed.load_more')}
-              </button>
-            </div>
-          )}
         </div>
       ) : (
         /* Empty State */
@@ -228,12 +269,8 @@ const LiveFeedComponent: React.FC<LiveFeedProps> = ({
             <Camera className="w-8 h-8" />
           </div>
           <div className="max-w-md mx-auto space-y-1">
-            <h3 className="font-serif text-xl font-bold text-cream-100">
-              {i18n.t('feed.empty_title')}
-            </h3>
-            <p className="text-xs text-cream-300/80">
-              {i18n.t('feed.empty_subtitle')}
-            </p>
+            <h3 className="font-serif text-xl font-bold text-cream-100">{i18n.t('feed.empty_title')}</h3>
+            <p className="text-xs text-cream-300/80">{i18n.t('feed.empty_subtitle')}</p>
           </div>
           <button
             onClick={onOpenCapture}
@@ -244,6 +281,17 @@ const LiveFeedComponent: React.FC<LiveFeedProps> = ({
         </div>
       )}
 
+      {renderedLimit < filteredPhotos.length && (
+        <div className="flex justify-center pt-8 pb-4">
+          <button
+            type="button"
+            onClick={() => setRenderedLimit((prev) => prev + 20)}
+            className="px-6 py-2.5 rounded-full bg-noir-800 border border-cream-400/20 text-cream-200 text-sm font-semibold hover:bg-noir-700 transition-colors"
+          >
+            {i18n.t('feed.load_more')}
+          </button>
+        </div>
+      )}
     </section>
   );
 };
