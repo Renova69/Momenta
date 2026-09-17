@@ -1,6 +1,19 @@
 # MASTER AUDIT — Momenta / WedMoments
 
-**Date:** 2026-09-15 · **Mode:** read-only, no application code modified.
+**Audited:** 2026-09-15, read-only. **Fixes applied and recorded:** 2026-09-17.
+
+> **Read this first.** The audit below is preserved as written — each finding
+> still describes the code as it was on 2026-09-15, because a finding rewritten
+> to match the fix stops being evidence that the fix was needed. What changed is
+> that every confirmed finding now carries a **FIXED** line naming the commit,
+> and §9 records what is actually left.
+>
+> **State on 2026-09-17:** all three production blockers cleared in code. Of the
+> 20 confirmed findings (12 in §§2–3, 8 in §4): **18 fixed**, **1 partly** —
+> H-4, whose lifecycle rule is written and waiting on a credential — and **1
+> resolved as not a defect**: L-1's premise was wrong, `vercel.json` is genuinely
+> in use. What remains is operational (§9), plus V-5: the 84 spec files nobody
+> has read.
 
 Consolidates every completed audit and verification report into one authoritative
 list. Sources reconciled:
@@ -18,8 +31,13 @@ list. Sources reconciled:
 **Where reports disagreed, the code decided.** Three disagreements were resolved
 by inspection, not by preference; each is recorded with its evidence in §6 or §4.
 
-**Totals:** Critical 0 · High 4 · Medium 8 · Low 8 · Unfinished 4 · False
-positives 3 · Needs manual verification 5 · Production blockers 3.
+**Totals as audited:** Critical 0 · High 4 · Medium 8 · Low 8 · Unfinished 4 ·
+False positives 3 · Needs manual verification 5 · Production blockers 3.
+
+**Totals as of 2026-09-17:** 18 of 20 confirmed findings fixed · H-4 partly
+(lifecycle rule written, not applied) · L-1 resolved as not a defect ·
+production blockers 0 in code, 4 operational actions outstanding · the 4
+unfinished features and 5 verification items unchanged, none of them defects.
 
 Two of those Medium findings, **N-1** and **N-2**, were not produced by the
 audit passes. They were found while implementing the fixes, by running things
@@ -55,6 +73,11 @@ The absence of the capabilities is tracked separately in §5 as planned work.
 **Production impact** Commercial: a customer can pay €49/mo for a feature that
 cannot be delivered, with the marketing copy as evidence in a dispute.
 **Regression test required** No (copy decision) · **Blocker** Yes
+**FIXED** `35e19b4`. All three strings removed from `pro_planner.features` and
+from both translation tables, on the owner's instruction to remove rather than
+qualify them. `tests/unit/i18n.spec.ts` now asserts every advertised feature
+resolves in both languages, which catches the next one at authorship. The
+capabilities themselves remain unbuilt — see U-2, U-3.
 
 ### H-2 — Production container runs Node 22; every gate that tests it pins Node 24
 **Status** CONFIRMED · **Severity** High · **Feature** Build / runtime
@@ -67,6 +90,10 @@ is advisory and `npm ci` will not fail on the mismatch.
 version from the one every test, lint and typecheck runs on, and `engines` is
 false of the shipped image.
 **Regression test required** Yes — extend the existing CI pin step · **Blocker** Yes
+**FIXED** `a423a38`. Both Docker stages are `node:24-alpine`, and CI's pin step
+now reads the Dockerfile's `FROM` lines alongside the other three sources, so
+the gate can finally see the thing it exists to check. Building the image to
+verify that is what surfaced N-1.
 
 ### H-3 — No graceful shutdown, on a service whose defining failure is orphaned storage
 **Status** CONFIRMED · **Severity** High · **Feature** Runtime / data integrity
@@ -79,6 +106,12 @@ files-written-row-not-committed case *within a request*; an abrupt kill bypasses
 it. Every deploy or scale-down during live traffic can strand R2 objects that
 nothing references and nothing will reclaim — see H-4.
 **Regression test required** Yes · **Blocker** Yes
+**FIXED** `fadbd7c`. SIGTERM and SIGINT stop accepting connections, let
+in-flight requests finish inside an 8s budget (`SHUTDOWN_BUDGET_MS`), then
+close the WebSocket manager, the FTP listener and the pool before exiting. A
+second signal is ignored rather than restarting the sequence and double-closing
+the pool, and the hard-exit timer is `unref`'d so it cannot itself hold the
+process open.
 
 ### H-4 — Nothing reclaims orphaned R2 objects: all three safety nets are inoperative
 **Status** CONFIRMED · **Severity** High · **Feature** Storage lifecycle
@@ -105,6 +138,25 @@ capacity benchmark, so nothing has accumulated yet.
 **Regression test required** Partly — orphan detection needs an R2 path; the
 lifecycle application is an operational action.
 **Blocker** No (no data at risk today) — but blocks go-live with customers.
+**PARTLY FIXED.** Two of the three nets are up; the third needs a credential.
+
+1. **Orphan detection sees R2** — `bfbbcb7`. Paginated listing that aborts on a
+   truncated page rather than reporting a partial one as complete, an
+   unrecognised key never treated as an orphan, and a refusal to act when the
+   events table is empty while the bucket is not. Exercised against the live
+   bucket with four seeded objects (live / orphan / quarantined orphan /
+   unrecognised): correct on all four, and the empty-events guard refused to
+   delete. `bce0e6a` then fixed the local half, which had never walked the
+   quarantine tree at all and reported removals it had not performed.
+3. **Orphan production stopped** — `fadbd7c` (H-3).
+
+2. **Lifecycle rules are still not on the bucket.** `4bf398d` made the script
+   usable — it takes `R2_ADMIN_*` credentials instead of requiring you to
+   overwrite the app's token in `.env`, refuses to write over a configuration it
+   could not read, and names any rule on the bucket the policy would destroy
+   rather than dropping it silently. Applying it remains an **owner action**: it
+   needs an Admin Read & Write token, which is deliberately not what the
+   application carries.
 
 ---
 
@@ -119,6 +171,16 @@ Postgres or storage.
 **Production impact** Postgres dies, every request 500s, the orchestrator still
 reports healthy, keeps routing traffic, and never restarts or fails over.
 **Regression test required** Yes
+**FIXED** `5ff35e0`. Probes the database with `SELECT 1` behind a 2s deadline —
+deliberately inside the Dockerfile's `--timeout 5s`, so a slow answer is
+reported with a reason instead of being killed as a timeout — and returns 503
+`{status:'degraded', database:'unreachable'}`. `Promise.race` rather than a
+statement timeout, because the likeliest failure is pool exhaustion, where the
+query never starts and a statement timeout never fires. Readiness, not liveness:
+failing says "send me no work", not "restart me", which is safe here because
+nothing in this deployment acts on a failing HEALTHCHECK; the tradeoff is
+documented in `server/lib/health.ts` for orchestrators that do. `4bf398d` then
+cleared the deadline the race left armed on every healthy probe.
 
 ### M-2 — Nine server error codes surface untranslated English in a Bulgarian-default UI
 **Status** CONFIRMED · **Feature** i18n / error handling
@@ -133,6 +195,13 @@ documented fallback is the server's own message, and those are English:
 delete dialog gets "Type the album address exactly to confirm deletion." in
 English — in the one dialog where comprehension matters most.
 **Regression test required** Yes — a code-coverage completeness assertion
+**FIXED** `84c7753`. All nine mapped, with strings in both tables. The guard is
+the general form rather than nine assertions: it reads every `code:` literal out
+of `server/` and fails when one is missing from the map or from either language,
+so the tenth fails the build on the commit that adds it. A further assertion
+stops the map degenerating into nine codes pointing at one generic line, and a
+fifth guards the guard — if the regex or the directory layout stops matching,
+the suite would otherwise pass over an empty list and quietly test nothing.
 
 ### M-3 — `/api/audio` accepts image files as audio recordings
 **Status** CONFIRMED · **Feature** Audio guestbook
@@ -148,6 +217,22 @@ host's paid quota, broadcast as `AUDIO_ADDED`, and rendered as an entry whose
 `<audio>` element silently fails. Extension and content type disagree on the
 stored object.
 **Regression test required** Yes
+**FIXED** `1625fc3`. `validateMagicBytes` had one caller, so it was replaced
+rather than forked: `detectAudioFormat` admits WebM, Ogg, ISO-BMFF with an
+audio/video brand, and MP3. The `ftyp` brand allowlist mirrors what
+`isImageMagicBytes` already did on the image side — HEIC and AVIF share the
+container with MP4, which is how an iPhone photo passed a check about audio —
+and covers what `MediaRecorder` actually emits, including the `iso*`/`dash`
+brands Safari's fragmented output carries. MP3 frame-sync detection was
+`buf[1] & 0xE0`, which matches a great deal of arbitrary binary; it now also
+rejects the reserved version and layer values.
+
+It returns the format rather than a boolean because the route needed the same
+answer three times. The stored object's Content-Type and extension came from
+`req.file.mimetype`, a client-supplied string written verbatim onto an R2 object
+served from a public URL — genuine audio declared `text/html` was served back as
+a document. Both are now derived from the validated bytes, so the declared type
+cannot disagree with the content: it is no longer read.
 
 ### M-4 — No automated gate exercises the production storage adapter
 **Status** CONFIRMED · **Feature** CI / storage
@@ -160,6 +245,19 @@ R2 lane (`tests/integration/r2Storage.spec.ts`, 6 real tests) runs via
 adapter production uses. A regression in key construction, content type,
 public-URL fallback or presigning ships undetected.
 **Regression test required** No — the tests exist and need wiring
+**FIXED in code, pending a secret.** `211c14d` added a `live-storage` job on a
+nightly schedule plus `workflow_dispatch`, never on `pull_request` — a fork
+cannot read repository secrets, and a job that skips silently on every external
+contribution is worse than one that never claimed to run. It is deliberately not
+a required check: a blip against a third-party API should not block a merge. The
+same commit fixed the suite leaking two objects per run, which it did because it
+deleted the event rows before purging their media and the cascade took the photo
+rows with it.
+**Still an owner action:** without `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`,
+`R2_SECRET_ACCESS_KEY` and `R2_PUBLIC_URL` as repository secrets — and ideally
+`R2_TEST_BUCKET_NAME`, since a second bucket costs nothing and the alternative
+is a cleanup routine operating on customers' weddings — the job skips nightly
+and this gap is closed only on paper.
 
 ### M-5 — `amount_paid_cents` and `received_at` are written but never read
 **Status** CONFIRMED (dedupes OPEN_ITEMS **M13** with audit **F-12**)
@@ -191,6 +289,16 @@ exempted) — local disk only, never committed.
 Developer-machine disk only. Listed because these are invisible to
 `storage:orphans` in R2 mode (H-4) and to the R2 lifecycle rules.
 **Regression test required** No
+**FIXED** `bce0e6a`, and the sweep it exposed two bugs in. Running it found
+that the local scan had never walked the quarantine tree — `QUARANTINE_DIR`
+defaults to a *sibling* of the uploads directory, the same layout detail behind
+N-1 — and that the removal loop counted a directory as gone whenever `fs.rmSync`
+did not throw. It does not always throw: the first pass reported 7,234 folders
+removed while 616 were still on disk, silently. Both fixed and tested.
+~700 MB reclaimed across three passes on the development machine; both live
+albums and their 67 files untouched; a re-run reports zero. The owner's
+instruction was orphans only, not a wholesale delete of `uploads/`, because two
+albums still hold 12 photo rows pointing at local paths.
 
 ### N-1 — The container could not start: `uploads-quarantine/` was never created
 **Status** CONFIRMED · **Feature** Deploy / container
@@ -208,6 +316,7 @@ actually used there.
 **Regression test required** No — fixed in the same commit as H-2; the gate
 that would have caught it is running the image at all, which the `docker`
 job now does.
+**FIXED** `ae46774`.
 
 ### N-2 — `ReactionBar` leaked a timer across component unmount
 **Status** CONFIRMED · **Feature** Gallery / reactions
@@ -220,10 +329,19 @@ while every test reports passing.
 unmounted component. The real cost was a CI failure mode that does not name
 the test responsible.
 **Regression test required** No — the failure is the test suite itself.
+**FIXED** `d8606d7`. The same leak class later turned up in the health probe's
+`Promise.race` deadline (`4bf398d`), which is why that one now has a test.
 
 ---
 
 ## 4. Confirmed Low
+
+**All eight fixed in `9e6f239`**, except L-1, which was not a defect: `vercel.json`
+is genuinely used by the documented frontend deploy, so it was kept and what it
+is and is not for was written beside that section of `docs/DEPLOYMENT.md` —
+JSON cannot carry the comment itself. L-6 and L-7 were stale documentation
+claiming shipped work was missing, which is the same failure this refresh exists
+to correct.
 
 | ID | Finding | Feature | Files | Impact | Test? |
 |---|---|---|---|---|---|
@@ -349,15 +467,28 @@ Lines 88.55%. `npm run test:e2e` → 27 passed. No skipped or disabled suites.
 
 ## 9. Production Blockers
 
-| # | Finding | Why it blocks |
-|---|---|---|
-| 1 | **H-2** Node 22 in the container vs 24 everywhere else | The runtime serving production is untested at that version, and the guard built to catch this cannot see the Dockerfile. |
-| 2 | **H-3** No graceful shutdown | Every deploy under load can strand R2 objects, and with H-4 nothing will ever reclaim them. |
-| 3 | **H-1** Selling three unbuilt capabilities | Commercial, not technical: taking €49/mo for a feature that cannot be delivered. |
+**All three are cleared in code.** What remains is operational.
 
-**Close to blocking, not yet:** H-4 (no orphan reclamation — no data at risk
-*today* because the bucket is empty, but it blocks onboarding real customers) and
-M-1 (health check cannot detect a dead database).
+| # | Finding | Why it blocked | State |
+|---|---|---|---|
+| 1 | **H-2** Node 22 in the container vs 24 everywhere else | The runtime serving production was untested at that version, and the guard built to catch this could not see the Dockerfile. | **Cleared** `a423a38` |
+| 2 | **H-3** No graceful shutdown | Every deploy under load could strand R2 objects, and with H-4 nothing would ever reclaim them. | **Cleared** `fadbd7c` |
+| 3 | **H-1** Selling three unbuilt capabilities | Commercial, not technical: taking €49/mo for a feature that cannot be delivered. | **Cleared** `35e19b4` |
+
+**Remaining before customers, none of them code:**
+
+| # | Action | Why it matters |
+|---|---|---|
+| 1 | Apply the R2 lifecycle policy with an Admin Read & Write token | The last of H-4's three nets. The script is ready (`4bf398d`); it needs a credential the application deliberately does not carry. |
+| 2 | Add the R2 repository secrets | Without them the `live-storage` job skips nightly and M-4 is closed only on paper. |
+| 3 | Regenerate the exposed R2 keys | `.env` still carries the warning that the stored keys were exposed and must be replaced in the Cloudflare dashboard (OPEN_ITEMS M14). Not verifiable from the repository. |
+| 4 | Configure SMTP, then notices, then `RETENTION_ENFORCED=true` — in that order | U-1 and U-4. Nothing deletes until the third step; `npm run retention:rehearse` passes 24/24 against a local sink. |
+
+**Close to blocking, not yet:** V-5 — roughly 84 spec files have been executed
+but never read. Three of the ~38 that *were* read turned out to pass for the
+wrong reason, and none of the three was visible without breaking the source, so
+the rate over the remainder is not zero. The suite's size is not the same as its
+strength.
 
 **Explicitly not blockers:** U-1 through U-4. Unconfigured SMTP and disabled
 retention are safe resting states, not defects — the system fails closed in both.
