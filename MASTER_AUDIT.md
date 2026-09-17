@@ -174,6 +174,13 @@ than accumulating changes no behaviour.
 **Production impact** No revenue reporting is possible from the database as it
 stands. Billing correctness is unaffected.
 **Regression test required** No
+**Resolved — documented, not changed.** The owner's decision: both columns are
+write-only audit metadata and stay as they are. `docs/DATABASE_SCHEMA.md` now
+says so on each column, with the reason — Stripe is the authority on what a
+customer paid, and a revenue figure would need its own ledger keyed by payment
+rather than a column one cancellation can overwrite. Making it accumulate would
+have been inventing semantics for a field with no consumer, which is the
+conclusion OPEN_ITEMS M13 had already reached independently.
 
 ### M-6 — 157 MB of stale local uploads while running on R2
 **Status** CONFIRMED · **Feature** Storage hygiene

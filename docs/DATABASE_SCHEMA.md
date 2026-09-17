@@ -62,7 +62,16 @@ This schema is designed for PostgreSQL 14+ and is 100% compatible with local Doc
 - `tier` (VARCHAR(50)): `'free'`, `'celebration_pass'`, `'deluxe_keepsake'`, `'pro_planner'`
 - `status` (VARCHAR(50)): `'active'`, `'canceled'`, `'past_due'`
 - `billing_type` (VARCHAR(50)): `'one_time'`, `'monthly'`, `'annual'`
-- `amount_paid_cents` (INT): e.g. `4900` (49.00 €)
+- `amount_paid_cents` (INT): e.g. `4900` (49.00 €). **Write-only audit
+  metadata — nothing reads it, deliberately.** It records the price of *this*
+  subscription, overwritten on each upsert rather than accumulated, and no
+  charge is ever computed from it: Stripe is the authority on what a customer
+  paid, and `src/types/index.ts` declares the field on a type no component
+  renders. It is documented rather than removed because a per-subscription
+  price is a coherent thing for the row to carry and dropping the column would
+  cost a migration for nothing. If a revenue figure is ever wanted, it should
+  come from its own ledger keyed by payment, not from a column that one
+  cancellation can overwrite (MASTER_AUDIT M-5).
 - `currency` (VARCHAR(10)): `'EUR'`
 - `event_limit` (INT): Number of simultaneous active events
 - `storage_limit_gb` (INT): Storage quota
@@ -81,7 +90,11 @@ This schema is designed for PostgreSQL 14+ and is 100% compatible with local Doc
 Idempotency ledger for `POST /api/billing/webhook` (migration 017).
 - `event_id` (TEXT, PK): Stripe's own event id (`evt_…`)
 - `event_type` (TEXT): e.g. `checkout.session.completed`
-- `received_at` (TIMESTAMPTZ, default `NOW()`)
+- `received_at` (TIMESTAMPTZ, default `NOW()`). **Write-only audit metadata**
+  in the same sense: no code path reads it, and idempotency is decided by the
+  presence of the row, not its age. Its one consumer is the human running the
+  prune below, and `idx_stripe_webhook_events_received_at` exists for that
+  statement (MASTER_AUDIT M-5).
 - The handler claims a row here **before** doing any work and deletes it again
   if the work throws, so a duplicate delivery is a no-op while a genuine
   failure stays retryable. Stripe re-delivers on any non-2xx, and the handler
