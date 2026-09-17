@@ -102,8 +102,7 @@ describe('purgeEventMedia', () => {
     const original = await storageAdapter.save(bytes, 'spec-original.jpg', 'image/jpeg', eventId);
     const thumb = await storageAdapter.save(bytes, 'spec-thumb.jpg', 'image/jpeg', eventId);
 
-    const onDisk = (storagePath: string) =>
-      fs.existsSync(storagePath.replace('/uploads/', `${CONFIG.UPLOADS_DIR}/`));
+    const onDisk = (storagePath: string) => fs.existsSync(storagePath.replace('/uploads/', `${CONFIG.UPLOADS_DIR}/`));
 
     expect(onDisk(thumb.storagePath)).toBe(true);
 
@@ -115,15 +114,7 @@ describe('purgeEventMedia', () => {
     await pool.query(
       `INSERT INTO photos (event_id, guest_id, full_url, storage_path, original_storage_path, thumbnail_url, storage_bytes)
        VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-      [
-        eventId,
-        guestRows[0].id,
-        display.publicUrl,
-        display.storagePath,
-        original.storagePath,
-        thumb.publicUrl,
-        3072,
-      ]
+      [eventId, guestRows[0].id, display.publicUrl, display.storagePath, original.storagePath, thumb.publicUrl, 3072]
     );
 
     await purgeEventMedia(eventId);
@@ -132,6 +123,63 @@ describe('purgeEventMedia', () => {
     expect(onDisk(original.storagePath)).toBe(false);
     // The regression: this stayed true, forever.
     expect(onDisk(thumb.storagePath)).toBe(false);
+
+    await pool.query('DELETE FROM events WHERE id = $1', [eventId]);
+  });
+
+  it('reports the bytes it freed, counting audio as well as photos', async () => {
+    // `freedBytes` is the number the retention sweep reports and writes into
+    // its maintenance report — the only evidence anyone has that a purge
+    // actually reclaimed anything. Nothing asserted it, in either loop:
+    // replacing `Number(row.storage_bytes) || 0` with `&&`, so every row
+    // contributes zero, left the whole suite green in both the photo and the
+    // audio path. A purge that silently reported 0 MB forever would have
+    // looked exactly like a purge that worked.
+    //
+    // Audio matters separately because it is accumulated in its own loop over
+    // its own table, and the existing purge test inserts no audio at all.
+    const { pool } = await import('../../server/lib/db');
+    const { storageAdapter } = await import('../../server/lib/storage');
+    const { purgeEventMedia } = await import('../../server/lib/retention');
+
+    const { rows: eventRows } = await pool.query<{ id: string }>(
+      `INSERT INTO events (slug, title, host_name, host_email, event_date)
+       VALUES ($1, 'Freed Bytes Spec', 'Freed Spec Host', 'freed-spec@test.local', CURRENT_DATE)
+       RETURNING id`,
+      [`freed-spec-${Date.now()}`]
+    );
+    const eventId = eventRows[0].id;
+
+    const { rows: guestRows } = await pool.query<{ id: string }>(
+      `INSERT INTO guests (event_id, name) VALUES ($1, 'Freed Spec Guest') RETURNING id`,
+      [eventId]
+    );
+    const guestId = guestRows[0].id;
+
+    const bytes = Buffer.from('x'.repeat(256));
+    const display = await storageAdapter.save(bytes, 'freed-display.jpg', 'image/jpeg', eventId);
+    const voice = await storageAdapter.save(bytes, 'freed-message.webm', 'audio/webm', eventId);
+
+    const PHOTO_BYTES = 4096;
+    const AUDIO_BYTES = 1536;
+
+    await pool.query(
+      `INSERT INTO photos (event_id, guest_id, full_url, storage_path, storage_bytes)
+       VALUES ($1, $2, $3, $4, $5)`,
+      [eventId, guestId, display.publicUrl, display.storagePath, PHOTO_BYTES]
+    );
+    await pool.query(
+      `INSERT INTO audio_guestbook (event_id, guest_id, audio_url, duration_seconds, storage_bytes)
+       VALUES ($1, $2, $3, 5, $4)`,
+      [eventId, guestId, voice.publicUrl, AUDIO_BYTES]
+    );
+
+    const result = await purgeEventMedia(eventId);
+
+    // Exact, not "greater than zero": a sum that drops one of its two loops
+    // is still greater than zero.
+    expect(result.freedBytes).toBe(PHOTO_BYTES + AUDIO_BYTES);
+    expect(result.failedPaths).toEqual([]);
 
     await pool.query('DELETE FROM events WHERE id = $1', [eventId]);
   });
@@ -186,8 +234,7 @@ describe('DELETE /api/photos/:id', () => {
     const original = await storageAdapter.save(bytes, 'del-original.jpg', 'image/jpeg', eventId);
     const thumb = await storageAdapter.save(bytes, 'del-thumb.jpg', 'image/jpeg', eventId);
 
-    const onDisk = (storagePath: string) =>
-      fs.existsSync(storagePath.replace('/uploads/', `${CONFIG.UPLOADS_DIR}/`));
+    const onDisk = (storagePath: string) => fs.existsSync(storagePath.replace('/uploads/', `${CONFIG.UPLOADS_DIR}/`));
 
     const { rows: guestRows } = await pool.query<{ id: string }>(
       `INSERT INTO guests (event_id, name) VALUES ($1, 'Delete Spec Guest') RETURNING id`,
@@ -196,15 +243,7 @@ describe('DELETE /api/photos/:id', () => {
     const { rows: photoRows } = await pool.query<{ id: string }>(
       `INSERT INTO photos (event_id, guest_id, full_url, storage_path, original_storage_path, thumbnail_url, storage_bytes)
        VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
-      [
-        eventId,
-        guestRows[0].id,
-        display.publicUrl,
-        display.storagePath,
-        original.storagePath,
-        thumb.publicUrl,
-        3072,
-      ]
+      [eventId, guestRows[0].id, display.publicUrl, display.storagePath, original.storagePath, thumb.publicUrl, 3072]
     );
 
     const res = await fetch(`http://localhost:${PORT}/api/photos/${photoRows[0].id}`, {
@@ -244,9 +283,7 @@ describe('purgeEventMedia leak reporting', () => {
       [eventId]
     );
 
-    const saved = await saveBuffer(
-      Buffer.from('x'.repeat(512)), 'leak-spec', '.jpg', 'image/jpeg', eventId
-    );
+    const saved = await saveBuffer(Buffer.from('x'.repeat(512)), 'leak-spec', '.jpg', 'image/jpeg', eventId);
     await pool.query(
       `INSERT INTO photos (event_id, guest_id, storage_path, full_url, thumbnail_url, storage_bytes)
        VALUES ($1, $2, $3, $4, $4, 512)`,
@@ -254,9 +291,7 @@ describe('purgeEventMedia leak reporting', () => {
     );
 
     const realDelete = storageAdapter.delete.bind(storageAdapter);
-    const failing = vi
-      .spyOn(storageAdapter, 'delete')
-      .mockRejectedValue(new Error('R2 unavailable'));
+    const failing = vi.spyOn(storageAdapter, 'delete').mockRejectedValue(new Error('R2 unavailable'));
 
     try {
       const purge = await purgeEventMedia(eventId);

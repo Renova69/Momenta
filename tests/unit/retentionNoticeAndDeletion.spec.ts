@@ -77,10 +77,9 @@ async function uploadPhoto(eventId: string): Promise<string> {
 
 /** Push an album well past expiry and the grace period. */
 async function makeEligible(eventId: string): Promise<void> {
-  await query(
-    `UPDATE events SET expires_at = NOW() - INTERVAL '${GRACE_PERIOD_DAYS + 10} days' WHERE id = $1`,
-    [eventId]
-  );
+  await query(`UPDATE events SET expires_at = NOW() - INTERVAL '${GRACE_PERIOD_DAYS + 10} days' WHERE id = $1`, [
+    eventId,
+  ]);
 }
 
 async function photoCount(eventId: string): Promise<number> {
@@ -146,9 +145,7 @@ describe('retention notice and event deletion (D1, D2)', () => {
       const host = await registerHost();
       await uploadPhoto(host.eventId);
       await makeEligible(host.eventId);
-      await query('UPDATE events SET retention_notified_at = NOW() - INTERVAL \'1 day\' WHERE id = $1', [
-        host.eventId,
-      ]);
+      await query("UPDATE events SET retention_notified_at = NOW() - INTERVAL '1 day' WHERE id = $1", [host.eventId]);
 
       const result = await sweepExpiredAlbums(true, { eventIds: createdEvents });
 
@@ -169,6 +166,46 @@ describe('retention notice and event deletion (D1, D2)', () => {
 
       expect(result.deleted).toContain(host.eventId);
       expect(await photoCount(host.eventId)).toBe(0);
+    });
+
+    it('reports how much each album was holding, before and after it is deleted', async () => {
+      // Two byte figures, neither of them asserted anywhere until now, both
+      // reported to a human and nowhere else.
+      //
+      // `storageBytes` on a candidate is what the warning email tells a host is
+      // about to be destroyed. `freedBytes` on the result is the only evidence
+      // the sweep reclaimed anything. Both are built with
+      // `Number(row.storage_bytes) || 0`, and replacing that `||` with `&&` —
+      // so every row contributes zero — left the entire suite green. A sweep
+      // that warned "0 MB" and then reported freeing 0 MB would have looked
+      // exactly like one that worked.
+      const host = await registerHost();
+      await uploadPhoto(host.eventId);
+      await makeEligible(host.eventId);
+
+      const { rows } = await query<{ bytes: string }>(
+        'SELECT COALESCE(SUM(storage_bytes), 0)::text AS bytes FROM photos WHERE event_id = $1',
+        [host.eventId]
+      );
+      const stored = Number(rows[0].bytes);
+      // The fixture has to be worth counting, or the assertions below hold
+      // just as well against a function that always answers zero.
+      expect(stored).toBeGreaterThan(0);
+
+      const dryRun = await sweepExpiredAlbums(false, { eventIds: createdEvents });
+      const candidate = dryRun.awaitingNotice.find((c) => c.eventId === host.eventId);
+      expect(candidate).toBeDefined();
+      expect(candidate!.storageBytes).toBe(stored);
+
+      await query(
+        `UPDATE events SET retention_notified_at = NOW() - INTERVAL '${RETENTION_NOTICE_DAYS + 1} days' WHERE id = $1`,
+        [host.eventId]
+      );
+
+      const enforced = await sweepExpiredAlbums(true, { eventIds: [host.eventId] });
+
+      expect(enforced.deleted).toContain(host.eventId);
+      expect(enforced.freedBytes).toBe(stored);
     });
 
     it('means enabling enforcement today deletes nothing, because nothing sets the column', async () => {
