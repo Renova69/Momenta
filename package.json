@@ -106,6 +106,7 @@
     "js-yaml": "^4.3.2",
     "jsdom": "^30.0.1",
     "postcss": "^8.5.28",
+    "prettier": "3.9.7",
     "tailwindcss": "^3.4.17",
     "tsx": "^4.23.13",
     "typescript": "^5.7.3",
