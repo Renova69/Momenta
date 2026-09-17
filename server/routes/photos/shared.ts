@@ -18,32 +18,42 @@ import { RESERVED_DEVICE_FINGERPRINTS } from '../../lib/guestAuth';
 // real capture with a validation error. The caps below track the JSON body limit.
 export const DATA_URL_MAX = CONFIG.MAX_UPLOAD_SIZE_MB * 1024 * 1024;
 
-export const CreatePhotoSchema = z.object({
-  eventId: z.string().optional(),
-  guestId: z.string().max(100).optional(),
-  guestName: z.string().max(100).optional(),
-  guestAvatar: z.string().max(500).optional(),
-  guestTable: z.string().max(50).optional(),
-  // Must be a data: URL, never an already-stored path — otherwise a client can
-  // plant an arbitrary /uploads/... or R2 key as storage_path and exfiltrate
-  // another event's media through their own export-zip (SEC-A1).
-  fullUrl: z.string().min(1, 'fullUrl is required').max(DATA_URL_MAX, 'Image is too large')
-    .startsWith('data:', 'fullUrl must be a data: URL'),
-  thumbnailUrl: z.string().max(DATA_URL_MAX).optional(),
-  originalUrl: z.string().max(DATA_URL_MAX).optional(),
-  caption: z.string().max(500).optional(),
-  filterApplied: z.string().max(50).optional(),
-  questId: z.string().max(100).optional(),
-  questTitle: z.string().max(200).optional(),
-  localId: z.string().max(100).optional(),
-  deviceFingerprint: z.string().max(200).optional(),
-  // Proof of guest identity for a client-supplied guestId (SEC-A2). Absent for
-  // a first-time device, which is fine — that path mints a fresh guest.
-  guestToken: z.string().max(2000).optional(),
-}).refine(
-  (data) => !data.deviceFingerprint || !RESERVED_DEVICE_FINGERPRINTS.has(data.deviceFingerprint),
-  { message: 'deviceFingerprint is reserved', path: ['deviceFingerprint'] }
-);
+export const CreatePhotoSchema = z
+  .object({
+    eventId: z.string().optional(),
+    guestId: z.string().max(100).optional(),
+    guestName: z.string().max(100).optional(),
+    // `nullish`, not `optional`: a guest row's avatar_url and table_number are
+    // nullable columns, and the client echoes whatever registration returned
+    // straight back on every upload. `optional()` accepts undefined but rejects
+    // null, so a guest who never entered a table number had every photo they
+    // ever took refused with a 400 before the handler ran.
+    guestAvatar: z.string().max(500).nullish(),
+    guestTable: z.string().max(50).nullish(),
+    // Must be a data: URL, never an already-stored path — otherwise a client can
+    // plant an arbitrary /uploads/... or R2 key as storage_path and exfiltrate
+    // another event's media through their own export-zip (SEC-A1).
+    fullUrl: z
+      .string()
+      .min(1, 'fullUrl is required')
+      .max(DATA_URL_MAX, 'Image is too large')
+      .startsWith('data:', 'fullUrl must be a data: URL'),
+    thumbnailUrl: z.string().max(DATA_URL_MAX).optional(),
+    originalUrl: z.string().max(DATA_URL_MAX).optional(),
+    caption: z.string().max(500).optional(),
+    filterApplied: z.string().max(50).optional(),
+    questId: z.string().max(100).optional(),
+    questTitle: z.string().max(200).optional(),
+    localId: z.string().max(100).optional(),
+    deviceFingerprint: z.string().max(200).optional(),
+    // Proof of guest identity for a client-supplied guestId (SEC-A2). Absent for
+    // a first-time device, which is fine — that path mints a fresh guest.
+    guestToken: z.string().max(2000).optional(),
+  })
+  .refine((data) => !data.deviceFingerprint || !RESERVED_DEVICE_FINGERPRINTS.has(data.deviceFingerprint), {
+    message: 'deviceFingerprint is reserved',
+    path: ['deviceFingerprint'],
+  });
 
 export const LikePhotoSchema = z.object({
   guestId: z.string().min(1, 'guestId is required').max(100),
@@ -58,23 +68,25 @@ export const ReactPhotoSchema = z.object({
   guestToken: z.string().max(2000).optional(),
 });
 
-export const CommentPhotoSchema = z.object({
-  guestId: z.string().min(1, 'guestId is required').max(100),
-  guestName: z.string().max(100).optional(),
-  // .trim() before .min() so a whitespace-only comment ("   ") is rejected
-  // here instead of passing this check and then being trimmed to an empty
-  // string by the route handler right before insert.
-  commentText: z.string().trim().min(1, 'commentText cannot be empty').max(1000),
-  localId: z.string().max(100).optional(),
-  guestToken: z.string().max(2000).optional(),
-  // H8 — lets a guest with no token still be recognised as the device they
-  // already commented from, instead of minting a fresh row per request. Same
-  // reserved-value guard as the upload path (SEC-A2).
-  deviceFingerprint: z.string().max(200).optional(),
-}).refine(
-  (data) => !data.deviceFingerprint || !RESERVED_DEVICE_FINGERPRINTS.has(data.deviceFingerprint),
-  { message: 'deviceFingerprint is reserved', path: ['deviceFingerprint'] }
-);
+export const CommentPhotoSchema = z
+  .object({
+    guestId: z.string().min(1, 'guestId is required').max(100),
+    guestName: z.string().max(100).optional(),
+    // .trim() before .min() so a whitespace-only comment ("   ") is rejected
+    // here instead of passing this check and then being trimmed to an empty
+    // string by the route handler right before insert.
+    commentText: z.string().trim().min(1, 'commentText cannot be empty').max(1000),
+    localId: z.string().max(100).optional(),
+    guestToken: z.string().max(2000).optional(),
+    // H8 — lets a guest with no token still be recognised as the device they
+    // already commented from, instead of minting a fresh row per request. Same
+    // reserved-value guard as the upload path (SEC-A2).
+    deviceFingerprint: z.string().max(200).optional(),
+  })
+  .refine((data) => !data.deviceFingerprint || !RESERVED_DEVICE_FINGERPRINTS.has(data.deviceFingerprint), {
+    message: 'deviceFingerprint is reserved',
+    path: ['deviceFingerprint'],
+  });
 
 export const StatusPhotoSchema = z.object({
   status: z.enum(['pending', 'approved', 'rejected', 'featured']),
@@ -98,7 +110,6 @@ export const ListPhotosQuerySchema = z.object({
     }, 'cursor must be "priority:isoTimestamp"')
     .optional(),
 });
-
 
 // SEC-02: /upload/raw used to live here — a generic binary-upload endpoint
 // that saved directly to storage without ever creating a photos/audio row,
