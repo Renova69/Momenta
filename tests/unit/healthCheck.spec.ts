@@ -99,6 +99,51 @@ describe('when the database is unreachable', () => {
     expect(text).not.toContain('postgresql://');
   }, 20_000);
 
+  it('clears its own deadline once the probe has answered', async () => {
+    // The loser of a Promise.race is not cancelled. Without an explicit clear,
+    // every healthy probe left its timeout pending — on an endpoint an
+    // orchestrator calls every few seconds for the life of the container. The
+    // same leak in ReactionBar (N-2) failed CI with `window is not defined`
+    // after teardown, which is how that one was noticed at all.
+    //
+    // Tracked by its delay rather than by counting every live timer: the fetch
+    // below arms several of undici's own, and a test that counted those would
+    // fail for reasons that have nothing to do with this handler.
+    const DISTINCTIVE_MS = 7919;
+    // Handles are held as unknown deliberately: this file type-checks under a
+    // config that pulls in the DOM lib, where setTimeout returns a number,
+    // while the server's returns a Timeout. Identity is all the test needs.
+    const armed = new Set<unknown>();
+    const realSet = globalThis.setTimeout;
+    const realClear = globalThis.clearTimeout;
+
+    vi.spyOn(globalThis, 'setTimeout').mockImplementation(((fn: () => void, ms?: number, ...rest: unknown[]) => {
+      const handle = realSet(fn, ms, ...rest);
+      if (ms === DISTINCTIVE_MS) armed.add(handle);
+      return handle;
+    }) as typeof globalThis.setTimeout);
+
+    vi.spyOn(globalThis, 'clearTimeout').mockImplementation(((handle: never) => {
+      armed.delete(handle);
+      return realClear(handle);
+    }) as typeof globalThis.clearTimeout);
+
+    const app = express();
+    mountHealth(app, DISTINCTIVE_MS);
+    const own = createServer(app);
+    await new Promise<void>((resolve) => own.listen(TEST_PORT + 1, () => resolve()));
+
+    try {
+      const res = await fetch(`http://localhost:${TEST_PORT + 1}/api/health`);
+
+      expect(res.status).toBe(200);
+      // It armed one, and it is gone.
+      expect([...armed]).toEqual([]);
+    } finally {
+      own.close();
+    }
+  }, 20_000);
+
   it('gives up rather than hanging when the pool never answers', async () => {
     // The likeliest real failure is pool exhaustion: the query never starts
     // because no connection is free. A probe that waits forever is reported by

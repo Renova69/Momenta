@@ -63,6 +63,13 @@ export function healthHandler(timeoutMs: number = HEALTH_DB_TIMEOUT_MS) {
       timestamp: new Date().toISOString(),
     };
 
+    // Held outside the try so the deadline can be cleared whichever way the
+    // race settles. Leaving it pending is the leak that cost a CI run once
+    // already (N-2): the loser of a race is not cancelled, so a probe that
+    // answered in 5ms still left a 2s timer armed, on an endpoint an
+    // orchestrator calls every few seconds forever.
+    let deadline: NodeJS.Timeout | undefined;
+
     try {
       // Promise.race rather than a statement_timeout: the failure this is most
       // likely to catch is pool exhaustion, where the query never starts
@@ -70,9 +77,9 @@ export function healthHandler(timeoutMs: number = HEALTH_DB_TIMEOUT_MS) {
       // fire.
       await Promise.race([
         pool.query('SELECT 1'),
-        new Promise((_resolve, reject) =>
-          setTimeout(() => reject(new Error('timeout')), timeoutMs)
-        ),
+        new Promise((_resolve, reject) => {
+          deadline = setTimeout(() => reject(new Error('timeout')), timeoutMs);
+        }),
       ]);
     } catch (err) {
       body.status = 'degraded';
@@ -81,6 +88,8 @@ export function healthHandler(timeoutMs: number = HEALTH_DB_TIMEOUT_MS) {
       console.error('[Health] database probe failed:', errorLabel(err));
       res.status(503).json(body);
       return;
+    } finally {
+      if (deadline !== undefined) clearTimeout(deadline);
     }
 
     res.json(body);

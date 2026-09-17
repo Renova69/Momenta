@@ -80,20 +80,53 @@ const POLICY = [
   },
 ];
 
-function client(): S3Client {
+/**
+ * Credentials for this script, preferring a dedicated admin pair.
+ *
+ * The note below has always said to run this "with a separate admin token that
+ * is not the one the app carries" — and then gave you no way to pass one. The
+ * only route was editing R2_ACCESS_KEY_ID in `.env`, which means the app's own
+ * credentials are an admin token for as long as you forget to change them
+ * back. So the advice was sound and the script made it impossible to follow.
+ *
+ * `R2_ADMIN_ACCESS_KEY_ID` / `R2_ADMIN_SECRET_ACCESS_KEY` are read first and
+ * belong nowhere but the shell of whoever is running this:
+ *
+ *   R2_ADMIN_ACCESS_KEY_ID=... R2_ADMIN_SECRET_ACCESS_KEY=... npm run r2:lifecycle:apply
+ */
+function credentials(): { accessKeyId: string; secretAccessKey: string; source: string } {
+  const adminKey = process.env.R2_ADMIN_ACCESS_KEY_ID;
+  const adminSecret = process.env.R2_ADMIN_SECRET_ACCESS_KEY;
+
+  // Both or neither. Half a pair silently falling back to the runtime token is
+  // how you get a 403 you spend an afternoon on.
+  if (adminKey && adminSecret) {
+    return { accessKeyId: adminKey, secretAccessKey: adminSecret, source: 'R2_ADMIN_* (admin token)' };
+  }
+  if (adminKey || adminSecret) {
+    console.error(
+      '[r2-lifecycle] Only one half of R2_ADMIN_ACCESS_KEY_ID / R2_ADMIN_SECRET_ACCESS_KEY is set.\n' +
+        '[r2-lifecycle] Set both or neither — refusing to quietly fall back to the runtime token.'
+    );
+    process.exit(1);
+  }
+
+  return {
+    accessKeyId: CONFIG.R2_ACCESS_KEY_ID,
+    secretAccessKey: CONFIG.R2_SECRET_ACCESS_KEY,
+    source: "R2_* (the application's runtime token)",
+  };
+}
+
+function client(creds: { accessKeyId: string; secretAccessKey: string }): S3Client {
   return new S3Client({
     region: 'auto',
     endpoint: `https://${CONFIG.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
-    credentials: {
-      accessKeyId: CONFIG.R2_ACCESS_KEY_ID,
-      secretAccessKey: CONFIG.R2_SECRET_ACCESS_KEY,
-    },
+    credentials: { accessKeyId: creds.accessKeyId, secretAccessKey: creds.secretAccessKey },
   });
 }
 
-type RulesResult =
-  | { ok: true; rules: unknown[] }
-  | { ok: false; reason: 'forbidden' | 'error'; detail: string };
+type RulesResult = { ok: true; rules: unknown[] } | { ok: false; reason: 'forbidden' | 'error'; detail: string };
 
 /**
  * Read the bucket's rules, distinguishing "there are none" from "we are not
@@ -127,10 +160,14 @@ async function currentRules(s3: S3Client): Promise<RulesResult> {
 const PERMISSION_NOTE =
   'The runtime R2 token is Object Read & Write, which is the right scope for an\n' +
   'application: it can put, get and delete objects, and cannot reconfigure the\n' +
-  'bucket. Lifecycle rules need Admin Read & Write. Rather than widening the\n' +
-  "app's token, set this policy in the Cloudflare dashboard (R2 > bucket >\n" +
-  'Settings > Object lifecycle rules), or run this script once with a separate\n' +
-  'admin token that is not the one the app carries.';
+  "bucket. Lifecycle rules need Admin Read & Write. Do not widen the app's\n" +
+  'token. Either set this policy in the Cloudflare dashboard (R2 > bucket >\n' +
+  'Settings > Object lifecycle rules), or run this once with a separate admin\n' +
+  'token passed in the environment and nowhere else:\n\n' +
+  '  R2_ADMIN_ACCESS_KEY_ID=... R2_ADMIN_SECRET_ACCESS_KEY=... \\\n' +
+  '    npm run r2:lifecycle:apply\n\n' +
+  'Create it in Cloudflare under R2 > API > Manage API tokens, scoped Admin\n' +
+  'Read & Write, and delete it again once the policy is in place.';
 
 async function main(): Promise<void> {
   if (!CONFIG.R2_ACCOUNT_ID || !CONFIG.R2_ACCESS_KEY_ID || !CONFIG.R2_SECRET_ACCESS_KEY) {
@@ -138,8 +175,10 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  const s3 = client();
+  const creds = credentials();
+  const s3 = client(creds);
   console.log(`[r2-lifecycle] bucket: ${CONFIG.R2_BUCKET_NAME}`);
+  console.log(`[r2-lifecycle] credentials: ${creds.source}`);
 
   const before = await currentRules(s3);
   console.log('\nCurrent rules:');
@@ -165,6 +204,43 @@ async function main(): Promise<void> {
         '[r2-lifecycle] Note it REPLACES the whole configuration, so anything on the bucket\n' +
         '[r2-lifecycle] that is not in this file would be dropped.'
     );
+    return;
+  }
+
+  // Never write over a configuration that could not be read.
+  //
+  // The forbidden case returns above, but every other read failure — a network
+  // blip, an endpoint typo, an SDK error nobody anticipated — used to fall
+  // straight through to the Put below. PutBucketLifecycleConfiguration replaces
+  // the entire configuration, so that is a blind overwrite of rules this script
+  // never saw, which is precisely the mistake the orphan sweep's truncation
+  // guard exists to prevent one directory over.
+  if (!before.ok) {
+    console.error(
+      `\n[r2-lifecycle] Could not read the current configuration (${before.detail}).\n` +
+        '[r2-lifecycle] Applying would replace rules this script has not seen. Refusing.'
+    );
+    process.exitCode = 1;
+    return;
+  }
+
+  // A rule on the bucket that this file does not carry would be silently
+  // destroyed by the Put. Naming it and stopping is the only honest default:
+  // whoever added it in the dashboard is not necessarily whoever is running
+  // this, and "it replaces everything" in a report nobody read is not consent.
+  const policyIds = new Set(POLICY.map((rule) => rule.ID));
+  const unknown = before.rules
+    .map((rule) => (rule as { ID?: string }).ID ?? '(unnamed)')
+    .filter((id) => !policyIds.has(id));
+
+  if (unknown.length > 0 && process.env.LIFECYCLE_REPLACE_UNKNOWN !== 'true') {
+    console.error(
+      `\n[r2-lifecycle] The bucket carries ${unknown.length} rule(s) this policy does not:\n` +
+        unknown.map((id) => `[r2-lifecycle]   - ${id}`).join('\n') +
+        '\n[r2-lifecycle] Applying would delete them. Add them to POLICY in this file, or\n' +
+        '[r2-lifecycle] re-run with LIFECYCLE_REPLACE_UNKNOWN=true to drop them deliberately.'
+    );
+    process.exitCode = 1;
     return;
   }
 
