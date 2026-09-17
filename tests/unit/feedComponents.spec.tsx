@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, screen, fireEvent, cleanup, within } from '@testing-library/react';
+import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import React from 'react';
 
 import { LiveFeed } from '../../src/components/gallery/LiveFeed';
@@ -55,9 +55,7 @@ function renderFeed(photos: Photo[], guest: Guest = ME, extra: Record<string, un
 /** Click a filter tab by its translated label, ignoring the trailing count. */
 function clickFilter(key: string) {
   const label = i18n.t(key);
-  const button = screen
-    .getAllByRole('button')
-    .find((b) => (b.textContent || '').includes(label));
+  const button = screen.getAllByRole('button').find((b) => (b.textContent || '').includes(label));
   if (!button) throw new Error(`filter button not found: ${label}`);
   fireEvent.click(button);
 }
@@ -178,9 +176,7 @@ describe('ScavengerHunt', () => {
       quest({ iconName, title: `Quest ${iconName}` })
     );
 
-    const { container } = render(
-      <ScavengerHunt quests={quests} currentGuest={ME} onSelectQuestForCapture={vi.fn()} />
-    );
+    const { container } = render(<ScavengerHunt quests={quests} currentGuest={ME} onSelectQuestForCapture={vi.fn()} />);
 
     // Every quest renders, and each card carries an svg icon.
     for (const iconName of ['heart', 'music', 'smile', 'camera', 'wine', 'users']) {
@@ -200,17 +196,38 @@ describe('ScavengerHunt', () => {
   });
 
   it('asks to capture the quest the guest chose', () => {
+    // This test asserted nothing for its whole life. It walked from the title
+    // to `closest('div').parentElement` and took the first button it found
+    // there — which was nothing — then guarded the only assertion behind
+    // `if (button)`. Deleting the handler's body left it green. Verified by
+    // doing exactly that: replacing `onSelectQuestForCapture(quest.id)` with
+    // `undefined` still passed 17/17.
     const onSelect = vi.fn();
     const target = quest({ title: 'Champagne toast' });
 
     render(<ScavengerHunt quests={[target]} currentGuest={ME} onSelectQuestForCapture={onSelect} />);
 
-    const card = screen.getByText('Champagne toast').closest('div');
-    const button = card && within(card.parentElement as HTMLElement).queryAllByRole('button')[0];
-    if (button) {
-      fireEvent.click(button);
-      expect(onSelect).toHaveBeenCalledWith(target.id);
-    }
+    // Found by what the guest actually sees — the file's own convention for
+    // labels — so there is no DOM shape to silently stop matching.
+    fireEvent.click(screen.getByRole('button', { name: i18n.t('quests.snap_challenge') }));
+
+    expect(onSelect).toHaveBeenCalledWith(target.id);
+  });
+
+  it('offers no capture button on a quest already done', () => {
+    // The other half of the branch, and the reason the button lookup has to be
+    // specific: a query loose enough to match anything would pass here too.
+    const onSelect = vi.fn();
+    render(
+      <ScavengerHunt
+        quests={[quest({ title: 'Champagne toast', completedByGuestIds: [ME.id] })]}
+        currentGuest={ME}
+        onSelectQuestForCapture={onSelect}
+      />
+    );
+
+    expect(screen.queryByRole('button', { name: i18n.t('quests.snap_challenge') })).toBeNull();
+    expect(onSelect).not.toHaveBeenCalled();
   });
 });
 
@@ -241,7 +258,12 @@ describe('PhotoCard emoji reactions', () => {
   });
 
   it('shows an existing reaction as a counted pill, highlighted for the guest who used it', () => {
-    renderCard({ reactions: [{ reaction: 'clap', guestId: ME.id }, { reaction: 'clap', guestId: 'someone-else' }] });
+    renderCard({
+      reactions: [
+        { reaction: 'clap', guestId: ME.id },
+        { reaction: 'clap', guestId: 'someone-else' },
+      ],
+    });
 
     const pill = screen.getByTitle(i18n.t('reaction.clap'));
     expect(pill.textContent).toContain('2');
@@ -285,15 +307,32 @@ describe('PhotoCard comment preview', () => {
   it('shows nothing when there are no comments', () => {
     const p = photo({ comments: [], commentsCount: 0 });
     render(
-      <PhotoCard photo={p} currentGuest={ME} onLike={vi.fn()} onReact={vi.fn()} onOpenComments={vi.fn()} onOpenLightbox={vi.fn()} />
+      <PhotoCard
+        photo={p}
+        currentGuest={ME}
+        onLike={vi.fn()}
+        onReact={vi.fn()}
+        onOpenComments={vi.fn()}
+        onOpenLightbox={vi.fn()}
+      />
     );
     expect(screen.queryByText('Beautiful moment!')).not.toBeInTheDocument();
   });
 
   it('shows the latest comment inline without a "view all" link for exactly one comment', () => {
-    const p = photo({ comments: [comment({ guestName: 'Elena', commentText: 'So happy for you!' })], commentsCount: 1 });
+    const p = photo({
+      comments: [comment({ guestName: 'Elena', commentText: 'So happy for you!' })],
+      commentsCount: 1,
+    });
     render(
-      <PhotoCard photo={p} currentGuest={ME} onLike={vi.fn()} onReact={vi.fn()} onOpenComments={vi.fn()} onOpenLightbox={vi.fn()} />
+      <PhotoCard
+        photo={p}
+        currentGuest={ME}
+        onLike={vi.fn()}
+        onReact={vi.fn()}
+        onOpenComments={vi.fn()}
+        onOpenLightbox={vi.fn()}
+      />
     );
     expect(screen.getByText('Elena')).toBeInTheDocument();
     expect(screen.getByText(/So happy for you!/)).toBeInTheDocument();
@@ -309,7 +348,14 @@ describe('PhotoCard comment preview', () => {
       commentsCount: 2,
     });
     render(
-      <PhotoCard photo={p} currentGuest={ME} onLike={vi.fn()} onReact={vi.fn()} onOpenComments={vi.fn()} onOpenLightbox={vi.fn()} />
+      <PhotoCard
+        photo={p}
+        currentGuest={ME}
+        onLike={vi.fn()}
+        onReact={vi.fn()}
+        onOpenComments={vi.fn()}
+        onOpenLightbox={vi.fn()}
+      />
     );
     expect(screen.getByText(i18n.t('feed.view_all_comments', { n: 2 }))).toBeInTheDocument();
     // Only the most recent comment is previewed, not the earlier one.
@@ -321,7 +367,14 @@ describe('PhotoCard comment preview', () => {
     const onOpenComments = vi.fn();
     const p = photo({ comments: [comment()], commentsCount: 1 });
     render(
-      <PhotoCard photo={p} currentGuest={ME} onLike={vi.fn()} onReact={vi.fn()} onOpenComments={onOpenComments} onOpenLightbox={vi.fn()} />
+      <PhotoCard
+        photo={p}
+        currentGuest={ME}
+        onLike={vi.fn()}
+        onReact={vi.fn()}
+        onOpenComments={onOpenComments}
+        onOpenLightbox={vi.fn()}
+      />
     );
     fireEvent.click(screen.getByText(/Beautiful moment!/));
     expect(onOpenComments).toHaveBeenCalledWith(p);

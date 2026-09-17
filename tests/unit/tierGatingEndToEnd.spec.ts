@@ -72,10 +72,7 @@ async function registerHost(): Promise<Host> {
 }
 
 async function setTier(host: Host, tier: string): Promise<void> {
-  await query("UPDATE subscriptions SET tier = $2 WHERE user_id = $1 AND status = 'active'", [
-    host.userId,
-    tier,
-  ]);
+  await query("UPDATE subscriptions SET tier = $2 WHERE user_id = $1 AND status = 'active'", [host.userId, tier]);
 }
 
 /** Every server-enforced gate, as a request that only an entitled host may make. */
@@ -103,8 +100,7 @@ const GATES: Gate[] = [
   {
     name: 'download the ZIP export',
     required: 'celebration_pass',
-    call: (host) =>
-      fetch(`${BASE_URL}/api/events/${host.eventId}/export-zip`, { headers: authed(host) }),
+    call: (host) => fetch(`${BASE_URL}/api/events/${host.eventId}/export-zip`, { headers: authed(host) }),
   },
   {
     name: 'save a QR print-studio layout',
@@ -223,30 +219,36 @@ beforeAll(async () => {
 
 afterAll(async () => {
   if (server) server.close();
-  await query('DELETE FROM events WHERE id = ANY($1::uuid[])', [createdEvents]).catch(
-    () => undefined
-  );
+  await query('DELETE FROM events WHERE id = ANY($1::uuid[])', [createdEvents]).catch(() => undefined);
 });
 
 describe.each(GATES)('$name', (gate) => {
-  it.each(BELOW[gate.required])('is refused on %s', async (tier) => {
-    await setTier(shared, tier);
+  it.each(BELOW[gate.required])(
+    'is refused on %s',
+    async (tier) => {
+      await setTier(shared, tier);
 
-    const res = await gate.call(shared);
+      const res = await gate.call(shared);
 
-    expect(res.status).toBe(403);
-    expect((await res.json()).code).toBe('TIER_REQUIRED');
-  }, 30_000);
+      expect(res.status).toBe(403);
+      expect((await res.json()).code).toBe('TIER_REQUIRED');
+    },
+    30_000
+  );
 
-  it.each(ATOROVE[gate.required])('is allowed on %s', async (tier) => {
-    await setTier(shared, tier);
+  it.each(ATOROVE[gate.required])(
+    'is allowed on %s',
+    async (tier) => {
+      await setTier(shared, tier);
 
-    const res = await gate.call(shared);
+      const res = await gate.call(shared);
 
-    // Anything but a tier refusal: the point is that the gate let it through,
-    // not that every downstream validation also passed.
-    expect(res.status).not.toBe(403);
-  }, 30_000);
+      // Anything but a tier refusal: the point is that the gate let it through,
+      // not that every downstream validation also passed.
+      expect(res.status).not.toBe(403);
+    },
+    30_000
+  );
 });
 
 describe('the source of truth', () => {
@@ -380,7 +382,7 @@ describe('how many weddings a plan carries', () => {
     // and event_limit is written by the upgrade path rather than read from
     // PLAN_LIMITS — so this is checking that those two agree.
     await setTier(shared, 'pro_planner');
-    await query("UPDATE subscriptions SET event_limit = 10 WHERE user_id = $1", [shared.userId]);
+    await query('UPDATE subscriptions SET event_limit = 10 WHERE user_id = $1', [shared.userId]);
 
     const res = await fetch(`${BASE_URL}/api/events`, {
       method: 'POST',
@@ -398,12 +400,8 @@ describe('the client and the server agree', () => {
     // The client decides what to show behind a paywall; the server decides
     // what to allow. A disagreement either sells a feature that is then
     // refused, or hides one the customer has paid for.
-    expect(TIER_GATED_EVENT_FIELDS.isModerationEnabled).toBe(
-      FEATURE_GATES.photo_moderation.minimumTier
-    );
-    expect(TIER_GATED_EVENT_FIELDS.isDisposableMode).toBe(
-      FEATURE_GATES.disposable_camera.minimumTier
-    );
+    expect(TIER_GATED_EVENT_FIELDS.isModerationEnabled).toBe(FEATURE_GATES.photo_moderation.minimumTier);
+    expect(TIER_GATED_EVENT_FIELDS.isDisposableMode).toBe(FEATURE_GATES.disposable_camera.minimumTier);
   });
 
   it('gates the export, the QR studio, the quests and the guestbook at the tier the client advertises', () => {
@@ -416,6 +414,14 @@ describe('the client and the server agree', () => {
       'create a scavenger quest': FEATURE_GATES.scavenger_quests.minimumTier,
       'post to the audio guestbook': FEATURE_GATES.audio_guestbook.minimumTier,
     } as Record<string, string>;
+
+    // Every advertised name must be matched by a gate. Without this the loop
+    // below silently asserts nothing the moment a gate is renamed: `in` simply
+    // stops matching, no iteration body runs, and a test about what the
+    // customer is charged for goes green having checked none of it.
+    const gateNames = new Set(GATES.map((gate) => gate.name));
+    const unmatched = Object.keys(advertised).filter((name) => !gateNames.has(name));
+    expect(unmatched).toEqual([]);
 
     for (const gate of GATES) {
       if (gate.name in advertised) {
