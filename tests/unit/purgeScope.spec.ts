@@ -1,5 +1,5 @@
 import { describe, it, expect, afterAll } from 'vitest';
-import { purgeTestData } from '../../scripts/purge-test-data';
+import { purgeTestData, EVENT_SCOPE_SQL, USER_SCOPE_SQL } from '../../scripts/purge-test-data';
 import { query } from '../../server/lib/db';
 import { deleteEventFixtures } from '../helpers/cleanup';
 
@@ -62,6 +62,38 @@ async function countedForCutoff(cutoff: string): Promise<{ events: number; users
   return { events, users };
 }
 
+const DOMAINS = ['%@test.com', '%@test.local', '%@example.com'];
+
+/**
+ * Is this one event in the purge's reach?
+ *
+ * Asks the exact predicate the delete uses, restricted to a single id. Global
+ * counts are not usable here: sibling specs create and delete their own
+ * fixtures in parallel workers throughout, so a before/after comparison moves
+ * for reasons that have nothing to do with the row under test. That made the
+ * first version of this spec intermittently red — the very failure mode it
+ * exists to prevent.
+ */
+async function eventInReach(eventId: string, cutoff: string | null): Promise<boolean> {
+  const { rows } = await query<{ n: number }>(
+    `SELECT count(*)::int AS n
+       FROM events e
+       LEFT JOIN users u ON u.id = e.host_user_id
+      WHERE e.id = $3 AND ${EVENT_SCOPE_SQL}`,
+    [DOMAINS, cutoff, eventId]
+  );
+  return rows[0].n > 0;
+}
+
+/** The same question for one user. */
+async function userInReach(userId: string, cutoff: string | null): Promise<boolean> {
+  const { rows } = await query<{ n: number }>(
+    `SELECT count(*)::int AS n FROM users WHERE id = $3 AND ${USER_SCOPE_SQL}`,
+    [DOMAINS, cutoff, userId]
+  );
+  return rows[0].n > 0;
+}
+
 /**
  * The cutoff, read from Postgres.
  *
@@ -98,23 +130,13 @@ describe('a purge scoped to rows that predate the run', () => {
     // The whole fix. This row stands in for a fixture belonging to a suite that
     // is still running.
     const cutoff = await dbNow();
-    const baseline = await purgeTestData(true, { createdBefore: cutoff });
-
     const fresh = await seed('after', await dbNow());
 
-    const after = await purgeTestData(true, { createdBefore: cutoff });
-    const { rows } = await query<{ n: number }>(
-      'SELECT count(*)::int AS n FROM events WHERE id = $1 AND created_at >= $2',
-      [fresh.eventId, cutoff]
-    );
-
-    // The row exists and is newer than the cutoff...
-    expect(rows[0].n).toBe(1);
-    // ...and adding it did not widen the purge's reach by one. The absolute
-    // count is not the assertion: this database legitimately holds older
-    // fixtures, and sibling specs are creating newer ones as this runs. The
-    // delta is the only thing that means anything.
-    expect(after.events).toBe(baseline.events);
+    // Out of reach of this cutoff, and in reach of one taken after it — so the
+    // assertion is about the cutoff rather than about the row being unmatchable
+    // for some other reason.
+    expect(await eventInReach(fresh.eventId, cutoff)).toBe(false);
+    expect(await eventInReach(fresh.eventId, await dbNow())).toBe(true);
   });
 
   it('spares an old host who owns a new album', async () => {
@@ -123,7 +145,6 @@ describe('a purge scoped to rows that predate the run', () => {
     // worthless. This is the case the NOT EXISTS clause exists for.
     const cutoff = await dbNow();
     const stale = new Date(Date.now() - 60 * 60 * 1000).toISOString();
-    const baseline = await purgeTestData(true, { createdBefore: cutoff });
 
     const { rows: userRows } = await query<{ id: string }>(
       `INSERT INTO users (email, full_name, password_hash, role, created_at)
@@ -146,7 +167,6 @@ describe('a purge scoped to rows that predate the run', () => {
     );
     createdEvents.push(eventRows[0].id);
 
-    const after = await purgeTestData(true, { createdBefore: cutoff });
     const { rows } = await query<{ n: number }>(
       `SELECT count(*)::int AS n FROM users u
         WHERE u.id = $1
@@ -157,9 +177,10 @@ describe('a purge scoped to rows that predate the run', () => {
 
     // The fixture is the shape the guard is about — an old user, a new album...
     expect(rows[0].n).toBe(1);
-    // ...and neither it nor its owner widened the purge's reach.
-    expect(after.users).toBe(baseline.users);
-    expect(after.events).toBe(baseline.events);
+    // ...and neither the user nor the album is in the purge's reach, even
+    // though the user itself predates the cutoff.
+    expect(await userInReach(userId, cutoff)).toBe(false);
+    expect(await eventInReach(eventRows[0].id, cutoff)).toBe(false);
   });
 
   it('still reaches everything when no cutoff is given', async () => {
