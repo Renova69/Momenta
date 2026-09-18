@@ -37,7 +37,7 @@ vi.mock('../../server/lib/stripe', () => ({
 }));
 
 import { authRouter } from '../../server/routes/auth';
-import { handleStripeWebhook } from '../../server/routes/billingWebhook';
+import { handleStripeWebhook, eventCustomerId } from '../../server/routes/billingWebhook';
 import { applyTierUpgrade } from '../../server/lib/subscriptionUpgrade';
 import { CONFIG } from '../../server/lib/config';
 import { query } from '../../server/lib/db';
@@ -404,7 +404,10 @@ describe('invoice.paid — monthly renewal', () => {
           id: uniqueId('in'),
           billing_reason: 'subscription_cycle',
           amount_paid: 4900,
-          parent: { type: 'subscription_details', subscription_details: { subscription: subscriptionId, metadata: {} } },
+          parent: {
+            type: 'subscription_details',
+            subscription_details: { subscription: subscriptionId, metadata: {} },
+          },
         },
       },
     });
@@ -458,7 +461,10 @@ describe('invoice.paid — monthly renewal', () => {
           id: uniqueId('in'),
           billing_reason: 'subscription_create',
           amount_paid: 9999,
-          parent: { type: 'subscription_details', subscription_details: { subscription: subscriptionId, metadata: {} } },
+          parent: {
+            type: 'subscription_details',
+            subscription_details: { subscription: subscriptionId, metadata: {} },
+          },
         },
       },
     });
@@ -632,5 +638,52 @@ describe('events about subscriptions this app has never seen', () => {
     });
 
     expect(res.status).toBe(200);
+  });
+});
+
+/**
+ * Which customer a webhook event is about.
+ *
+ * `processEvent` takes a transaction-scoped advisory lock keyed on this id, so
+ * two concurrent deliveries for the same customer queue instead of racing their
+ * read-then-write. If the extractor returns nothing, `if (customerId)` is false
+ * and **no lock is taken at all** — the race is back, and nothing in the logs
+ * says so.
+ *
+ * Mutation testing found this: flipping the `typeof === 'string'` test made a
+ * bare-id event yield `('cus_x').id`, which is undefined, and all four spec
+ * files reaching this module stayed green. Stripe sends both shapes depending
+ * on the event type, so both have to work.
+ */
+describe('the customer an event is about', () => {
+  const asEvent = (customer: unknown) =>
+    ({ data: { object: { customer } } }) as unknown as Parameters<typeof eventCustomerId>[0];
+
+  it('reads a bare customer id', () => {
+    // checkout.session.completed and the invoice events send it this way.
+    expect(eventCustomerId(asEvent('cus_PlainString'))).toBe('cus_PlainString');
+  });
+
+  it('reads an expanded customer object', () => {
+    // Subscription events send the object. Both must key the same lock, or two
+    // deliveries about one customer take two different locks and neither waits.
+    expect(eventCustomerId(asEvent({ id: 'cus_Expanded' }))).toBe('cus_Expanded');
+  });
+
+  it('answers null when there is no customer to lock on', () => {
+    for (const absent of [null, undefined]) {
+      expect(eventCustomerId(asEvent(absent))).toBeNull();
+    }
+    expect(eventCustomerId({ data: { object: {} } } as unknown as Parameters<typeof eventCustomerId>[0])).toBeNull();
+  });
+
+  it('never answers undefined, which would silently skip the lock', () => {
+    // `processEvent` branches on truthiness, so undefined and null behave the
+    // same there — but null is the documented "nothing to lock on" and
+    // undefined is what a broken extractor returns. Keeping them distinct is
+    // what makes the first case a decision rather than an accident.
+    for (const shape of ['cus_x', { id: 'cus_y' }]) {
+      expect(eventCustomerId(asEvent(shape))).not.toBeUndefined();
+    }
   });
 });

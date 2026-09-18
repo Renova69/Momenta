@@ -6,13 +6,7 @@ import { CONFIG } from '../lib/config';
 import { errorLabel } from '../lib/errors';
 import { getStripeClient, isStripeConfigured } from '../lib/stripe';
 import { applyTierUpgrade, applyTierDowngradeToFree } from '../lib/subscriptionUpgrade';
-import {
-  PAID_TIER_PRICING,
-  PaidPlanTier,
-  isPaidTier,
-  isPriceMapConfigured,
-  tierForPriceId,
-} from '../lib/stripePlans';
+import { PAID_TIER_PRICING, PaidPlanTier, isPaidTier, isPriceMapConfigured, tierForPriceId } from '../lib/stripePlans';
 import { BackendPlanTier } from '../middleware/tierGate';
 
 /**
@@ -32,11 +26,7 @@ import { BackendPlanTier } from '../middleware/tierGate';
  * pointedly absent — it opens a grace window instead (see handleSubscriptionChange).
  * `paused` likewise: Stripe still considers that subscription live.
  */
-const ENDED_SUBSCRIPTION_STATUSES = new Set<Stripe.Subscription.Status>([
-  'canceled',
-  'unpaid',
-  'incomplete_expired',
-]);
+const ENDED_SUBSCRIPTION_STATUSES = new Set<Stripe.Subscription.Status>(['canceled', 'unpaid', 'incomplete_expired']);
 
 /** Statuses where the customer is paid up and any open dunning window is over. */
 const HEALTHY_SUBSCRIPTION_STATUSES = new Set<Stripe.Subscription.Status>(['active', 'trialing']);
@@ -66,8 +56,18 @@ async function lockStripeCustomer(db: PoolClient, customerId: string): Promise<v
   await db.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [`stripe_customer_${customerId}`]);
 }
 
-/** The Stripe customer every one of the handled event types carries, for locking. */
-function eventCustomerId(event: Stripe.Event): string | null {
+/**
+ * The Stripe customer every one of the handled event types carries, for locking.
+ *
+ * Stripe sends `customer` as a bare id string on some event types and as an
+ * expanded object on others, so both shapes have to yield the same id. Exported
+ * for testing because the consequence of getting it wrong is silent: a caller
+ * that returns undefined makes `processEvent`'s `if (customerId)` false, no
+ * advisory lock is taken, and two concurrent deliveries for the same customer
+ * interleave their read-then-write — the exact race the lock exists to prevent,
+ * with nothing in the logs to say the lock was skipped.
+ */
+export function eventCustomerId(event: Stripe.Event): string | null {
   const object = event.data.object as { customer?: string | { id: string } | null };
   if (!object?.customer) return null;
   return typeof object.customer === 'string' ? object.customer : object.customer.id;
@@ -100,10 +100,7 @@ async function activeSubscriptionRow(
  * cancellations silently did nothing at all. The stored id is the fallback,
  * which is what migration 016's index exists for.
  */
-async function resolveSubscriptionUserId(
-  db: PoolClient,
-  subscription: Stripe.Subscription
-): Promise<string | null> {
+async function resolveSubscriptionUserId(db: PoolClient, subscription: Stripe.Subscription): Promise<string | null> {
   return subscription.metadata?.userId || (await userIdForSubscriptionId(db, subscription.id));
 }
 
@@ -155,7 +152,9 @@ async function resolvePurchasedTier(session: Stripe.Checkout.Session): Promise<P
 
   if (!isPriceMapConfigured()) {
     if (!isPaidTier(metadataTier)) {
-      console.warn(`[Billing] session ${session.id} metadata.tier=${String(metadataTier)} is not a plan this app sells`);
+      console.warn(
+        `[Billing] session ${session.id} metadata.tier=${String(metadataTier)} is not a plan this app sells`
+      );
       return null;
     }
     return metadataTier;
@@ -168,7 +167,7 @@ async function resolvePurchasedTier(session: Stripe.Checkout.Session): Promise<P
   if (tiers.length !== 1) {
     console.warn(
       `[Billing] session ${session.id} resolved ${tiers.length} known tiers from prices [${priceIds.join(', ')}] — ` +
-      'refusing to guess which plan was bought'
+        'refusing to guess which plan was bought'
     );
     return null;
   }
@@ -177,7 +176,7 @@ async function resolvePurchasedTier(session: Stripe.Checkout.Session): Promise<P
   if (metadataTier != null && metadataTier !== tier) {
     console.error(
       `[Billing] session ${session.id} metadata.tier="${metadataTier}" contradicts the price it was paid against ` +
-      `("${tier}") — refusing to grant either. Check the STRIPE_PRICE_* mapping.`
+        `("${tier}") — refusing to grant either. Check the STRIPE_PRICE_* mapping.`
     );
     return null;
   }
@@ -212,7 +211,7 @@ async function grantTierFromSession(
   if (session.payment_status !== 'paid' && session.payment_status !== 'no_payment_required') {
     console.info(
       `[Billing] checkout session ${session.id} completed with payment_status=${session.payment_status} — ` +
-      'holding the tier until the payment settles'
+        'holding the tier until the payment settles'
     );
     return;
   }
@@ -247,14 +246,18 @@ async function handleInvoicePaid(db: PoolClient, invoice: Stripe.Invoice): Promi
 
   const subscriptionId = invoiceSubscriptionId(invoice);
   if (!subscriptionId) {
-    console.warn(`[Billing] invoice ${invoice.id} has billing_reason=subscription_cycle but no subscription id — ignoring`);
+    console.warn(
+      `[Billing] invoice ${invoice.id} has billing_reason=subscription_cycle but no subscription id — ignoring`
+    );
     return;
   }
 
   const userId =
     invoice.parent?.subscription_details?.metadata?.userId || (await userIdForSubscriptionId(db, subscriptionId));
   if (!userId) {
-    console.warn(`[Billing] no account matches subscription ${subscriptionId} for invoice ${invoice.id} — renewal not applied`);
+    console.warn(
+      `[Billing] no account matches subscription ${subscriptionId} for invoice ${invoice.id} — renewal not applied`
+    );
     return;
   }
 
@@ -263,7 +266,9 @@ async function handleInvoicePaid(db: PoolClient, invoice: Stripe.Invoice): Promi
   // renewal never changes the plan anyway.
   const current = await activeSubscriptionRow(db, userId);
   if (!isPaidTier(current?.tier)) {
-    console.warn(`[Billing] renewal for subscription ${subscriptionId} but user ${userId} is on tier=${current?.tier} — nothing to refresh`);
+    console.warn(
+      `[Billing] renewal for subscription ${subscriptionId} but user ${userId} is on tier=${current?.tier} — nothing to refresh`
+    );
     return;
   }
 
@@ -298,14 +303,15 @@ async function handleSubscriptionChange(
 ): Promise<void> {
   const isDeleted = eventType === 'customer.subscription.deleted';
   const hasEnded = isDeleted || ENDED_SUBSCRIPTION_STATUSES.has(subscription.status);
-  const needsWrite = hasEnded || subscription.status === 'past_due' || HEALTHY_SUBSCRIPTION_STATUSES.has(subscription.status);
+  const needsWrite =
+    hasEnded || subscription.status === 'past_due' || HEALTHY_SUBSCRIPTION_STATUSES.has(subscription.status);
   if (!needsWrite) return;
 
   const userId = await resolveSubscriptionUserId(db, subscription);
   if (!userId) {
     console.warn(
       `[Billing] subscription ${subscription.id} changed (status=${subscription.status}) but no account matches it ` +
-      '— no userId metadata and no stored stripe_subscription_id. Tier NOT changed; check this account by hand.'
+        '— no userId metadata and no stored stripe_subscription_id. Tier NOT changed; check this account by hand.'
     );
     return;
   }
@@ -342,11 +348,7 @@ async function handleSubscriptionChange(
   }
 }
 
-async function dispatchEvent(
-  db: PoolClient,
-  event: Stripe.Event,
-  prefetched: PrefetchedEventData
-): Promise<void> {
+async function dispatchEvent(db: PoolClient, event: Stripe.Event, prefetched: PrefetchedEventData): Promise<void> {
   switch (event.type) {
     case 'checkout.session.completed':
     case 'checkout.session.async_payment_succeeded':
