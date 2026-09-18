@@ -11,6 +11,7 @@ import { ingestRouter } from '../../server/routes/ingest';
 import { guestsRouter } from '../../server/routes/guests';
 import { query } from '../../server/lib/db';
 import { storageAdapter } from '../../server/lib/storage';
+import { deleteEventFixtures } from '../helpers/cleanup';
 
 /**
  * Regressions for the 2026-09-04 security pass (OPEN_ITEMS.md Phase 0):
@@ -146,7 +147,7 @@ describe('Cross-tenant security regressions (SEC-A1, SEC-M1, SEC-D3)', () => {
   });
 
   afterAll(async () => {
-    await query('DELETE FROM events WHERE id = ANY($1::uuid[])', [[eventAId, eventBId]]).catch(() => undefined);
+    await deleteEventFixtures([eventAId, eventBId]);
     if (server) server.close();
   });
 

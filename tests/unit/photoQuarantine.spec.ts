@@ -10,6 +10,7 @@ import { eventsRouter } from '../../server/routes/events';
 import { photosRouter } from '../../server/routes/photos';
 import { query } from '../../server/lib/db';
 import { CONFIG } from '../../server/lib/config';
+import { deleteEventFixtures } from '../helpers/cleanup';
 
 /**
  * Regression for OPEN_ITEMS.md MED-03/SEC-M5 — a photo pending moderation, or
@@ -87,7 +88,7 @@ describe('Photo quarantine (MED-03/SEC-M5)', () => {
   });
 
   afterAll(async () => {
-    await query('DELETE FROM events WHERE id = ANY($1::uuid[])', [createdEvents]).catch(() => undefined);
+    await deleteEventFixtures(createdEvents);
     if (server) server.close();
   });
 

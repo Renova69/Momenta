@@ -6,6 +6,7 @@ import { authRouter } from '../../server/routes/auth';
 import { photosRouter } from '../../server/routes/photos';
 import { query } from '../../server/lib/db';
 import { storageAdapter } from '../../server/lib/storage';
+import { deleteEventFixture } from '../helpers/cleanup';
 
 /**
  * Regression for OPEN_ITEMS.md DB-05 — display/thumbnail/original copies are
@@ -49,7 +50,7 @@ describe('Quota-rejected uploads clean up already-saved files (DB-05)', () => {
   });
 
   afterAll(async () => {
-    await query('DELETE FROM events WHERE id = $1', [eventId]).catch(() => undefined);
+    await deleteEventFixture(eventId);
     if (server) server.close();
   });
 

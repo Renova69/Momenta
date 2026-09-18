@@ -8,6 +8,7 @@ import { photosRouter } from '../../server/routes/photos';
 import { guestsRouter } from '../../server/routes/guests';
 import { audioRouter } from '../../server/routes/audio';
 import { query } from '../../server/lib/db';
+import { deleteEventFixture, deleteEventFixtures } from '../helpers/cleanup';
 
 /**
  * Regression for OPEN_ITEMS.md SEC-D1 — the free tier's 50-photo cap was
@@ -65,7 +66,7 @@ describe('Concurrent upload quota enforcement (SEC-D1)', () => {
   });
 
   afterAll(async () => {
-    await query('DELETE FROM events WHERE id = $1', [eventId]).catch(() => undefined);
+    await deleteEventFixture(eventId);
     if (server) server.close();
   });
 
@@ -174,7 +175,7 @@ describe('Concurrent audio upload quota enforcement (DB-02)', () => {
   });
 
   afterAll(async () => {
-    await query('DELETE FROM events WHERE id = $1', [eventId]).catch(() => undefined);
+    await deleteEventFixture(eventId);
     if (audioServer) audioServer.close();
   });
 
@@ -259,7 +260,7 @@ describe('Concurrent event creation never exceeds the plan event limit (DB-06)',
 
   afterAll(async () => {
     if (createdEventIds.length > 0) {
-      await query('DELETE FROM events WHERE id = ANY($1::uuid[])', [createdEventIds]).catch(() => undefined);
+      await deleteEventFixtures(createdEventIds);
     }
     if (eventsServer) eventsServer.close();
   });

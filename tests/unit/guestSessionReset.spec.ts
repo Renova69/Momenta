@@ -8,6 +8,7 @@ import { eventsRouter } from '../../server/routes/events';
 import { photosRouter } from '../../server/routes/photos';
 import { guestsRouter } from '../../server/routes/guests';
 import { query } from '../../server/lib/db';
+import { deleteEventFixtures } from '../helpers/cleanup';
 
 /**
  * M10 — guest tokens could not be revoked.
@@ -127,7 +128,7 @@ describe('host can revoke guest sessions (M10)', () => {
   });
 
   afterAll(async () => {
-    await query('DELETE FROM events WHERE id = ANY($1::uuid[])', [createdEvents]).catch(() => undefined);
+    await deleteEventFixtures(createdEvents);
     if (server) server.close();
   });
 

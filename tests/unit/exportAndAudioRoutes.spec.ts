@@ -5,6 +5,7 @@ import { authRouter } from '../../server/routes/auth';
 import { eventsRouter } from '../../server/routes/events';
 import { audioRouter } from '../../server/routes/audio';
 import { query } from '../../server/lib/db';
+import { deleteEventFixtures } from '../helpers/cleanup';
 
 const TEST_PORT = 6644;
 const BASE_URL = `http://localhost:${TEST_PORT}`;
@@ -73,9 +74,7 @@ describe('export and audio routes', () => {
 
   afterAll(async () => {
     if (server) server.close();
-    await query('DELETE FROM events WHERE id = ANY($1::uuid[])', [createdEvents]).catch(
-      () => undefined
-    );
+    await deleteEventFixtures(createdEvents);
   });
 
   describe('minting an export ticket', () => {

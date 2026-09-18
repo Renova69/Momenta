@@ -10,6 +10,7 @@ import { photosRouter } from '../../server/routes/photos';
 import { audioRouter } from '../../server/routes/audio';
 import { wsManager } from '../../server/ws/wsServer';
 import { query } from '../../server/lib/db';
+import { deleteEventFixtures } from '../helpers/cleanup';
 
 function buildMultipartAudio(bytes: Buffer, fields: Record<string, string>): { body: BodyInit; contentType: string } {
   const boundary = `----ModAudio${Date.now()}${Math.random().toString(36).slice(2, 6)}`;
@@ -172,9 +173,7 @@ describe('Moderation and disposable-camera reveal', () => {
   });
 
   afterAll(async () => {
-    await query('DELETE FROM events WHERE id = ANY($1::uuid[])', [createdEvents]).catch(
-      () => undefined
-    );
+    await deleteEventFixtures(createdEvents);
     if (server) server.close();
   });
 

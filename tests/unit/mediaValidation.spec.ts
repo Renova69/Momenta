@@ -7,6 +7,7 @@ import { photosRouter } from '../../server/routes/photos';
 import { audioRouter } from '../../server/routes/audio';
 import { query } from '../../server/lib/db';
 import { buildDerivatives } from '../../server/lib/images';
+import { deleteEventFixture } from '../helpers/cleanup';
 
 /**
  * A hand-built multipart body — Node's native fetch/FormData combination
@@ -84,7 +85,7 @@ describe('Media validation (SEC-M2, SEC-M3, SEC-M4)', () => {
   });
 
   afterAll(async () => {
-    await query('DELETE FROM events WHERE id = $1', [eventId]).catch(() => undefined);
+    await deleteEventFixture(eventId);
     if (server) server.close();
   });
 

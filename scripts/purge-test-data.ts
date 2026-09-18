@@ -37,7 +37,13 @@ export interface PurgeResult {
 }
 
 export async function purgeTestData(dryRun = false): Promise<PurgeResult> {
-  const countEvents = `SELECT COUNT(*)::int AS n FROM events WHERE host_email LIKE ANY($1::text[])`;
+  // Same reach as the delete below, so the preview cannot promise less than
+  // the run removes.
+  const countEvents = `SELECT COUNT(*)::int AS n
+                         FROM events e
+                         LEFT JOIN users u ON u.id = e.host_user_id
+                        WHERE e.host_email LIKE ANY($1::text[])
+                           OR u.email LIKE ANY($1::text[])`;
   const countUsers = `SELECT COUNT(*)::int AS n FROM users WHERE email LIKE ANY($1::text[])`;
 
   if (dryRun) {
@@ -54,8 +60,18 @@ export async function purgeTestData(dryRun = false): Promise<PurgeResult> {
   // to identify them. An earlier version of this script deleted the rows only,
   // and left 4,260 objects (200 MB) orphaned in R2 plus 4,018 directories on
   // local disk. purgeEventMedia is the same function the retention sweep uses.
+  //
+  // Matched two ways, not one. Selecting only on the event's own host_email
+  // missed every event whose owner is a doomed test user but whose host_email
+  // column holds something else — and the `DELETE FROM users` below cascades
+  // into exactly those, taking the photo rows with it and stranding the files
+  // anyway. The media purge has to see an event before the cascade does.
   const { rows: doomed } = await pool.query<{ id: string }>(
-    `SELECT id FROM events WHERE host_email LIKE ANY($1::text[])`,
+    `SELECT e.id
+       FROM events e
+       LEFT JOIN users u ON u.id = e.host_user_id
+      WHERE e.host_email LIKE ANY($1::text[])
+         OR u.email LIKE ANY($1::text[])`,
     [LIKE_PATTERNS]
   );
 
@@ -78,7 +94,7 @@ export async function purgeTestData(dryRun = false): Promise<PurgeResult> {
   // Events before users. Most hang off a user and would cascade anyway
   // (migration 011), but specs that insert an event directly leave it with a
   // NULL host_user_id and nothing to cascade from — those are only reachable here.
-  const events = await pool.query(`DELETE FROM events WHERE host_email LIKE ANY($1::text[])`, [LIKE_PATTERNS]);
+  const events = await pool.query(`DELETE FROM events WHERE id = ANY($1::uuid[])`, [doomed.map((e) => e.id)]);
   const users = await pool.query(`DELETE FROM users WHERE email LIKE ANY($1::text[])`, [LIKE_PATTERNS]);
 
   return { events: events.rowCount ?? 0, users: users.rowCount ?? 0, mediaBytes };

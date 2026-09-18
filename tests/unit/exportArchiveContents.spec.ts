@@ -7,6 +7,7 @@ import { eventsRouter } from '../../server/routes/events';
 import { pool, query } from '../../server/lib/db';
 import { storageAdapter } from '../../server/lib/storage';
 import { CONFIG } from '../../server/lib/config';
+import { deleteEventFixture, deleteEventFixtures } from '../helpers/cleanup';
 
 const TEST_PORT = 6645;
 const BASE_URL = `http://localhost:${TEST_PORT}`;
@@ -156,9 +157,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   if (server) server.close();
-  await query('DELETE FROM events WHERE id = ANY($1::uuid[])', [
-    [mine.eventId, theirs.eventId],
-  ]).catch(() => undefined);
+  await deleteEventFixtures([mine.eventId, theirs.eventId],);
 });
 
 describe('what the export archive contains', () => {
@@ -219,7 +218,7 @@ describe('an album with nothing in it', () => {
     const bytes = await downloadArchive(empty);
 
     expect(bytes.subarray(0, 2).toString('latin1')).toBe('PK');
-    await query('DELETE FROM events WHERE id = $1', [empty.eventId]).catch(() => undefined);
+    await deleteEventFixture(empty.eventId);
   }, 20_000);
 });
 
@@ -292,6 +291,6 @@ describe('rows whose stored path never got written', () => {
     expect(bytes.subarray(0, 2).toString('latin1')).toBe('PK');
     expect(bytes.toString('latin1')).toContain('intact.jpg');
 
-    await query('DELETE FROM events WHERE id = $1', [host.eventId]).catch(() => undefined);
+    await deleteEventFixture(host.eventId);
   }, 40_000);
 });

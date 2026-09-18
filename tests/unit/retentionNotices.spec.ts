@@ -26,6 +26,7 @@ import {
 } from '../../server/lib/retentionNotice';
 import { CONFIG } from '../../server/lib/config';
 import { query } from '../../server/lib/db';
+import { deleteEventFixtures } from '../helpers/cleanup';
 
 /**
  * Retention notices — the thing that was missing, and the one property that
@@ -114,7 +115,7 @@ describe('retention notices', () => {
   });
 
   afterAll(async () => {
-    await query('DELETE FROM events WHERE id = ANY($1::uuid[])', [createdEvents]).catch(() => undefined);
+    await deleteEventFixtures(createdEvents);
     if (server) server.close();
   });
 

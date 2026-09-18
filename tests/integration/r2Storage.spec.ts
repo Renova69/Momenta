@@ -8,6 +8,7 @@ import { purgeEventMedia } from '../../server/lib/retention';
 import { authRouter } from '../../server/routes/auth';
 import { photosRouter } from '../../server/routes/photos';
 import { query, pool } from '../../server/lib/db';
+import { deleteEventFixtures } from '../helpers/cleanup';
 
 /**
  * Live Cloudflare R2 integration — run with `npm run test:storage:r2`, never
@@ -89,7 +90,7 @@ afterAll(async () => {
   }
   await Promise.allSettled(writtenPaths.map((p) => storageAdapter.delete(p)));
   if (createdEvents.length > 0) {
-    await query('DELETE FROM events WHERE id = ANY($1::uuid[])', [createdEvents]).catch(() => undefined);
+    await deleteEventFixtures(createdEvents);
   }
   if (server) server.close();
   await pool.end().catch(() => undefined);

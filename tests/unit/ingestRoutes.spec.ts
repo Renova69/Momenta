@@ -4,8 +4,8 @@ import express from 'express';
 import { authRouter } from '../../server/routes/auth';
 import { ingestRouter } from '../../server/routes/ingest';
 import { photosRouter } from '../../server/routes/photos';
-import { query } from '../../server/lib/db';
 import sharp from 'sharp';
+import { deleteEventFixtures } from '../helpers/cleanup';
 
 const TEST_PORT = 6596;
 const BASE_URL = `http://localhost:${TEST_PORT}`;
@@ -93,6 +93,12 @@ describe('Photographer Ingest Routes Spec', () => {
 
   afterAll(async () => {
     if (server) server.close();
+    // Cleanup belongs here, not in an `it`. It used to be the last test in the
+    // file — which made the suite's own ordering load-bearing, and asserted
+    // `rowCount > 0`, so it reported on whether the fixtures had existed
+    // rather than on anything the ingest routes do. It also deleted the event
+    // rows outright, stranding their media (see tests/helpers/cleanup.ts).
+    await deleteEventFixtures([eventId, otherEventId]);
   });
 
   it('issues a key once, lists it masked, and never returns the plaintext again', async () => {
@@ -298,12 +304,5 @@ describe('Photographer Ingest Routes Spec', () => {
       }
     );
     expect(res.status).toBe(401);
-  });
-
-  it('cleans up the events created by this spec', async () => {
-    const deleted = await query('DELETE FROM events WHERE id = ANY($1::uuid[]) RETURNING id', [
-      [eventId, otherEventId],
-    ]);
-    expect(deleted.rowCount).toBeGreaterThan(0);
   });
 });

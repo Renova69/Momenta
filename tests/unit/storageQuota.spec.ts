@@ -9,6 +9,7 @@ import { query } from '../../server/lib/db';
 import { getStorageUsage, checkPhotoUploadTierLimit } from '../../server/middleware/tierGate';
 import { computeExpiry } from '../../server/lib/retention';
 import { limitsFor, formatBytes, PLAN_LIMITS } from '../../server/lib/planLimits';
+import { deleteEventFixture } from '../helpers/cleanup';
 
 const TEST_PORT = 6595;
 const BASE_URL = `http://localhost:${TEST_PORT}`;
@@ -54,7 +55,7 @@ describe('Storage accounting, quotas and retention', () => {
   });
 
   afterAll(async () => {
-    await query('DELETE FROM events WHERE id = $1', [eventId]).catch(() => undefined);
+    await deleteEventFixture(eventId);
     if (server) server.close();
   });
 

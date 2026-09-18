@@ -7,6 +7,7 @@ import { eventsRouter } from '../../server/routes/events';
 import { questsRouter } from '../../server/routes/quests';
 import { ingestRouter } from '../../server/routes/ingest';
 import { query } from '../../server/lib/db';
+import { deleteEventFixtures } from '../helpers/cleanup';
 
 /**
  * The MEDIUM validation and error-code findings from the 2026-09-11 review.
@@ -67,7 +68,7 @@ describe('input validation and error codes (MEDIUM)', () => {
   });
 
   afterAll(async () => {
-    await query('DELETE FROM events WHERE id = ANY($1::uuid[])', [createdEvents]).catch(() => undefined);
+    await deleteEventFixtures(createdEvents);
     if (server) server.close();
   });
 

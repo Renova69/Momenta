@@ -49,6 +49,7 @@ import { billingRouter } from '../../server/routes/billing';
 import { refreshExpiryDates, GRACE_PERIOD_DAYS } from '../../server/lib/retention';
 import { CONFIG } from '../../server/lib/config';
 import { query } from '../../server/lib/db';
+import { deleteEventFixtures } from '../helpers/cleanup';
 
 const TEST_PORT = 6638;
 const BASE_URL = `http://localhost:${TEST_PORT}`;
@@ -107,7 +108,7 @@ describe('downgrade guard (H7)', () => {
   });
 
   afterAll(async () => {
-    await query('DELETE FROM events WHERE id = ANY($1::uuid[])', [createdEvents]).catch(() => undefined);
+    await deleteEventFixtures(createdEvents);
     await query('DELETE FROM users WHERE id = ANY($1::uuid[])', [createdUsers]).catch(() => undefined);
     if (server) server.close();
     LIVE_SUBSCRIPTIONS.clear();

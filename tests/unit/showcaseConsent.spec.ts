@@ -5,6 +5,7 @@ import express from 'express';
 import { authRouter } from '../../server/routes/auth';
 import { eventsRouter } from '../../server/routes/events';
 import { query } from '../../server/lib/db';
+import { deleteEventFixtures } from '../helpers/cleanup';
 
 /**
  * H6 — the public showcase published every wedding, with no opt-in.
@@ -64,7 +65,7 @@ describe('showcase requires opt-in (H6)', () => {
   });
 
   afterAll(async () => {
-    await query('DELETE FROM events WHERE id = ANY($1::uuid[])', [createdEvents]).catch(() => undefined);
+    await deleteEventFixtures(createdEvents);
     if (server) server.close();
   });
 

@@ -6,7 +6,7 @@ import { authRouter } from '../../server/routes/auth';
 import { eventsRouter } from '../../server/routes/events';
 import { wsManager, WsEventManager } from '../../server/ws/wsServer';
 import { CONFIG } from '../../server/lib/config';
-import { query } from '../../server/lib/db';
+import { deleteEventFixture } from '../helpers/cleanup';
 
 /**
  * Regressions for the realtime slice of OPEN_ITEMS.md Phase 5:
@@ -84,7 +84,7 @@ describe('WebSocket message throttling (SEC-D6)', () => {
   });
 
   afterAll(async () => {
-    await query('DELETE FROM events WHERE id = $1', [eventId]).catch(() => undefined);
+    await deleteEventFixture(eventId);
     if (server) server.close();
   });
 
@@ -152,7 +152,7 @@ describe('Reaction batching (P6)', () => {
   });
 
   afterAll(async () => {
-    await query('DELETE FROM events WHERE id = $1', [eventId]).catch(() => undefined);
+    await deleteEventFixture(eventId);
     if (server) server.close();
   });
 
@@ -313,7 +313,7 @@ describe('WS AUTH rejects non-session tokens (SEC-01)', () => {
   });
 
   afterAll(async () => {
-    await query('DELETE FROM events WHERE id = $1', [eventId]).catch(() => undefined);
+    await deleteEventFixture(eventId);
     if (authServer) authServer.close();
   });
 

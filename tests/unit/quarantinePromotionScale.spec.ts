@@ -9,6 +9,7 @@ import { photosRouter } from '../../server/routes/photos';
 import { promoteEligiblePhotos } from '../../server/lib/photoQuarantine';
 import { storageAdapter } from '../../server/lib/storage';
 import { pool, query } from '../../server/lib/db';
+import { deleteEventFixtures } from '../helpers/cleanup';
 
 /**
  * H4 — the disposable-reveal stampede.
@@ -124,7 +125,7 @@ describe('quarantine promotion does not stampede (H4)', () => {
   });
 
   afterAll(async () => {
-    await query('DELETE FROM events WHERE id = ANY($1::uuid[])', [createdEvents]).catch(() => undefined);
+    await deleteEventFixtures(createdEvents);
     if (server) server.close();
   });
 

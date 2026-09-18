@@ -5,6 +5,7 @@ import { authRouter } from '../../server/routes/auth';
 import { purgeEventMedia, refreshExpiryDates, computeExpiry } from '../../server/lib/retention';
 import { query } from '../../server/lib/db';
 import { storageAdapter } from '../../server/lib/storage';
+import { deleteEventFixture } from '../helpers/cleanup';
 
 /**
  * Regression for OPEN_ITEMS.md DB-01 — purgeEventMedia deleted photos one
@@ -53,7 +54,7 @@ describe('purgeEventMedia trigger-disable is safe (DB-01)', () => {
   });
 
   afterAll(async () => {
-    await query('DELETE FROM events WHERE id = $1', [eventId]).catch(() => undefined);
+    await deleteEventFixture(eventId);
     if (server) server.close();
   });
 
@@ -142,7 +143,7 @@ describe('refreshExpiryDates batches its writes correctly (DB-09)', () => {
   });
 
   afterAll(async () => {
-    await query('DELETE FROM events WHERE id = $1', [eventId]).catch(() => undefined);
+    await deleteEventFixture(eventId);
     if (server) server.close();
   });
 

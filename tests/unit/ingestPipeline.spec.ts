@@ -1,8 +1,9 @@
 import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import sharp from 'sharp';
 import { ingestPhoto, ingestPhotoBuffer, IngestedPhoto } from '../../server/lib/ingestPipeline';
-import { pool, query } from '../../server/lib/db';
+import { pool } from '../../server/lib/db';
 import { isQuarantined } from '../../server/lib/storage';
+import { deleteEventFixtures } from '../helpers/cleanup';
 
 /**
  * The photographer ingest pipeline, called directly.
@@ -50,9 +51,7 @@ beforeAll(async () => {
 }, 30_000);
 
 afterAll(async () => {
-  await query('DELETE FROM events WHERE id = ANY($1::uuid[])', [createdEvents]).catch(
-    () => undefined
-  );
+  await deleteEventFixtures(createdEvents);
 });
 
 describe('what the pipeline refuses', () => {

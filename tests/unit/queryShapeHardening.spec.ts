@@ -45,6 +45,7 @@ import { photosRouter } from '../../server/routes/photos';
 import { handleStripeWebhook } from '../../server/routes/billingWebhook';
 import { CONFIG } from '../../server/lib/config';
 import { pool, query } from '../../server/lib/db';
+import { deleteEventFixtures } from '../helpers/cleanup';
 
 const TEST_PORT = 6636;
 const BASE_URL = `http://localhost:${TEST_PORT}`;
@@ -115,7 +116,7 @@ describe('query shape (MEDIUM)', () => {
   });
 
   afterAll(async () => {
-    await query('DELETE FROM events WHERE id = ANY($1::uuid[])', [createdEvents]).catch(() => undefined);
+    await deleteEventFixtures(createdEvents);
     await query('DELETE FROM users WHERE id = ANY($1::uuid[])', [createdUsers]).catch(() => undefined);
     if (server) server.close();
   });

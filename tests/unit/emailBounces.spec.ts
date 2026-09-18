@@ -24,6 +24,7 @@ import {
 import { sendRetentionNotices, NOTICE_LEAD_DAYS } from '../../server/lib/retentionNotice';
 import { sweepExpiredAlbums, GRACE_PERIOD_DAYS, RETENTION_NOTICE_DAYS } from '../../server/lib/retention';
 import { query } from '../../server/lib/db';
+import { deleteEventFixtures } from '../helpers/cleanup';
 
 /**
  * A bounced warning is not a warning.
@@ -107,7 +108,7 @@ describe('email bounces', () => {
   });
 
   afterAll(async () => {
-    await query('DELETE FROM events WHERE id = ANY($1::uuid[])', [createdEvents]).catch(() => undefined);
+    await deleteEventFixtures(createdEvents);
     await query('DELETE FROM email_bounces WHERE email = ANY($1::text[])', [createdEmails]).catch(
       () => undefined
     );

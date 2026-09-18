@@ -8,6 +8,7 @@ import { audioRouter } from '../../server/routes/audio';
 import { pool, query } from '../../server/lib/db';
 import { FEATURE_GATES } from '../../src/config/tierGating';
 import { TIER_GATED_EVENT_FIELDS } from '../../server/routes/events/shared';
+import { deleteEventFixtures } from '../helpers/cleanup';
 
 const TEST_PORT = 6648;
 const BASE_URL = `http://localhost:${TEST_PORT}`;
@@ -219,7 +220,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   if (server) server.close();
-  await query('DELETE FROM events WHERE id = ANY($1::uuid[])', [createdEvents]).catch(() => undefined);
+  await deleteEventFixtures(createdEvents);
 });
 
 describe.each(GATES)('$name', (gate) => {

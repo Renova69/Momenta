@@ -20,6 +20,7 @@ import { authRouter } from '../../server/routes/auth';
 import { eventsRouter } from '../../server/routes/events';
 import { subscriptionsRouter } from '../../server/routes/subscriptions';
 import { query } from '../../server/lib/db';
+import { deleteEventFixture } from '../helpers/cleanup';
 
 /**
  * Regression for OPEN_ITEMS.md DB-08 — both the qr-config PUT and the
@@ -82,7 +83,7 @@ describe('Concurrent upsert races do not 500 (DB-08)', () => {
     const rows = await query('SELECT COUNT(*)::int AS c FROM qr_canvas_configs WHERE event_id = $1', [host.eventId]);
     expect(rows.rows[0].c).toBe(1);
 
-    await query('DELETE FROM events WHERE id = $1', [host.eventId]).catch(() => undefined);
+    await deleteEventFixture(host.eventId);
     // Registration hashes a password with bcrypt and this then issues five
     // concurrent writes, all against a pool deliberately capped at 5 per
     // worker (vitest.config.ts). Vitest's 5s default is enough on its own and
@@ -117,7 +118,7 @@ describe('Concurrent upsert races do not 500 (DB-08)', () => {
     );
     expect(rows.rows[0].c).toBe(1);
 
-    await query('DELETE FROM events WHERE id = $1', [host.eventId]).catch(() => undefined);
+    await deleteEventFixture(host.eventId);
   }, 20_000);
 
   afterAll(() => {

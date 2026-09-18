@@ -8,7 +8,7 @@ import { eventsRouter } from '../../server/routes/events';
 import { photosRouter } from '../../server/routes/photos';
 import { guestsRouter } from '../../server/routes/guests';
 import { wsManager } from '../../server/ws/wsServer';
-import { query } from '../../server/lib/db';
+import { deleteEventFixture } from '../helpers/cleanup';
 
 /**
  * Regressions for the rest of the 2026-09-04 Phase 2 security pass:
@@ -110,7 +110,7 @@ describe('Guest identity & WebSocket auth (SEC-A2, SEC-A5)', () => {
   });
 
   afterAll(async () => {
-    await query('DELETE FROM events WHERE id = $1', [eventId]).catch(() => undefined);
+    await deleteEventFixture(eventId);
     if (server) server.close();
   });
 

@@ -4,8 +4,9 @@ import express from 'express';
 import sharp from 'sharp';
 import { authRouter } from '../../server/routes/auth';
 import { photosRouter } from '../../server/routes/photos';
-import { pool, query } from '../../server/lib/db';
+import { pool } from '../../server/lib/db';
 import { DEFAULT_MAX_PHOTOS_PER_GUEST } from '../../shared/planCaps';
+import { deleteEventFixtures } from '../helpers/cleanup';
 
 const TEST_PORT = 6647;
 const BASE_URL = `http://localhost:${TEST_PORT}`;
@@ -93,9 +94,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   if (server) server.close();
-  await query('DELETE FROM events WHERE id = ANY($1::uuid[])', [createdEvents]).catch(
-    () => undefined
-  );
+  await deleteEventFixtures(createdEvents);
 });
 
 describe('a host who sets the cap to zero', () => {

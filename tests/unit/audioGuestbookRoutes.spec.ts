@@ -4,6 +4,7 @@ import express from 'express';
 import { authRouter } from '../../server/routes/auth';
 import { audioRouter } from '../../server/routes/audio';
 import { pool, query } from '../../server/lib/db';
+import { deleteEventFixture } from '../helpers/cleanup';
 
 const TEST_PORT = 6646;
 const BASE_URL = `http://localhost:${TEST_PORT}`;
@@ -127,7 +128,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   if (server) server.close();
-  await query('DELETE FROM events WHERE id = $1', [host.eventId]).catch(() => undefined);
+  await deleteEventFixture(host.eventId);
 });
 
 describe('refusing a bad recording', () => {
@@ -231,7 +232,7 @@ describe('who a message is attributed to', () => {
     expect(res.status).toBe(201);
     expect((await res.json()).guestId).not.toBe(theirs.guestId);
 
-    await query('DELETE FROM events WHERE id = $1', [other.eventId]).catch(() => undefined);
+    await deleteEventFixture(other.eventId);
   }, 30_000);
 
   it('falls back to a generic name when none was given', async () => {
@@ -334,7 +335,7 @@ describe('who may hear the messages', () => {
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual([]);
 
-    await query('DELETE FROM events WHERE id = $1', [locked.eventId]).catch(() => undefined);
+    await deleteEventFixture(locked.eventId);
   }, 30_000);
 
   it('still shows them to the host, who set the reveal in the first place', async () => {
@@ -352,7 +353,7 @@ describe('who may hear the messages', () => {
     expect(res.status).toBe(200);
     expect((await res.json()).length).toBeGreaterThan(0);
 
-    await query('DELETE FROM events WHERE id = $1', [locked.eventId]).catch(() => undefined);
+    await deleteEventFixture(locked.eventId);
   }, 30_000);
 
   it('opens up once the reveal moment has passed', async () => {
@@ -367,7 +368,7 @@ describe('who may hear the messages', () => {
 
     expect((await res.json()).length).toBeGreaterThan(0);
 
-    await query('DELETE FROM events WHERE id = $1', [revealed.eventId]).catch(() => undefined);
+    await deleteEventFixture(revealed.eventId);
   }, 30_000);
 
   it('is a 404 for an album that does not exist', async () => {
@@ -387,6 +388,6 @@ describe('who may hear the messages', () => {
 
     expect(rows[0].note).toBe('two');
 
-    await query('DELETE FROM events WHERE id = $1', [ordered.eventId]).catch(() => undefined);
+    await deleteEventFixture(ordered.eventId);
   }, 30_000);
 });

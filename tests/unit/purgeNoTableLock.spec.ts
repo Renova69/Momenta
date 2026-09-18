@@ -4,6 +4,7 @@ import express from 'express';
 import { authRouter } from '../../server/routes/auth';
 import { purgeEventMedia } from '../../server/lib/retention';
 import { pool, query } from '../../server/lib/db';
+import { deleteEventFixture } from '../helpers/cleanup';
 
 /**
  * H5 — a retention purge must not lock the whole `photos` table.
@@ -119,7 +120,7 @@ describe('retention purge takes no table-wide lock (H5)', () => {
   });
 
   afterAll(async () => {
-    await query('DELETE FROM events WHERE id = $1', [eventId]).catch(() => undefined);
+    await deleteEventFixture(eventId);
     if (server) server.close();
   });
 

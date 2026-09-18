@@ -9,6 +9,7 @@ import { audioRouter } from '../../server/routes/audio';
 import { query } from '../../server/lib/db';
 import { issueDownloadToken, verifyDownloadToken } from '../../server/lib/downloadToken';
 import { storageAdapter } from '../../server/lib/storage';
+import { deleteEventFixture, deleteEventFixtures } from '../helpers/cleanup';
 
 const TEST_PORT = 6594;
 const BASE_URL = `http://localhost:${TEST_PORT}`;
@@ -89,9 +90,7 @@ describe('ZIP export download links', () => {
   });
 
   afterAll(async () => {
-    await query('DELETE FROM events WHERE id = ANY($1::uuid[])', [[eventId, otherEventId]]).catch(
-      () => undefined
-    );
+    await deleteEventFixtures([eventId, otherEventId]);
     if (server) server.close();
   });
 
@@ -232,7 +231,7 @@ describe('ZIP export download links', () => {
       expect(followUp.status).toBe(200);
     } finally {
       getStreamSpy.mockRestore();
-      await query('DELETE FROM events WHERE id = $1', [abortEventId]).catch(() => undefined);
+      await deleteEventFixture(abortEventId);
     }
   });
 

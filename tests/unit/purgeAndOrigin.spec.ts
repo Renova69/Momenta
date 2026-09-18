@@ -3,6 +3,7 @@ import { createServer } from 'http';
 import express from 'express';
 import fs from 'fs';
 import { WebSocket } from 'ws';
+import { deleteEventFixture } from '../helpers/cleanup';
 
 /**
  * Two regressions found by running the load test, both invisible to the
@@ -124,7 +125,7 @@ describe('purgeEventMedia', () => {
     // The regression: this stayed true, forever.
     expect(onDisk(thumb.storagePath)).toBe(false);
 
-    await pool.query('DELETE FROM events WHERE id = $1', [eventId]);
+    await deleteEventFixture(eventId);
   });
 
   it('reports the bytes it freed, counting audio as well as photos', async () => {
@@ -181,7 +182,7 @@ describe('purgeEventMedia', () => {
     expect(result.freedBytes).toBe(PHOTO_BYTES + AUDIO_BYTES);
     expect(result.failedPaths).toEqual([]);
 
-    await pool.query('DELETE FROM events WHERE id = $1', [eventId]);
+    await deleteEventFixture(eventId);
   });
 });
 
@@ -299,7 +300,7 @@ describe('purgeEventMedia leak reporting', () => {
     } finally {
       failing.mockRestore();
       await realDelete(saved.storagePath).catch(() => undefined);
-      await pool.query('DELETE FROM events WHERE id = $1', [eventId]);
+      await deleteEventFixture(eventId);
     }
   });
 });

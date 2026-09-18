@@ -18,6 +18,7 @@ import {
   type FtpConnectionLike,
 } from '../../server/ftp/ftpServer';
 import { generateIngestKey, hashIngestKey } from '../../server/lib/ingest';
+import { deleteEventFixture } from '../helpers/cleanup';
 
 /**
  * Regressions for OPEN_ITEMS.md's FTP hardening cluster:
@@ -125,7 +126,7 @@ describe('handleLogin (SEC-F2, SEC-F5 wired together)', () => {
   });
 
   afterAll(async () => {
-    await query('DELETE FROM events WHERE id = $1', [eventId]).catch(() => undefined);
+    await deleteEventFixture(eventId);
     fs.rmSync(stagingRoot, { recursive: true, force: true });
   });
 

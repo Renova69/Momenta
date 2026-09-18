@@ -9,6 +9,7 @@ import { photosRouter } from '../../server/routes/photos';
 import { questsRouter } from '../../server/routes/quests';
 import { guestsRouter } from '../../server/routes/guests';
 import { query } from '../../server/lib/db';
+import { deleteEventFixtures } from '../helpers/cleanup';
 
 /**
  * H8 — unauthenticated, unthrottled guest-row minting.
@@ -123,7 +124,7 @@ describe('guest rows are not minted per request (H8)', () => {
   });
 
   afterAll(async () => {
-    await query('DELETE FROM events WHERE id = ANY($1::uuid[])', [createdEvents]).catch(() => undefined);
+    await deleteEventFixtures(createdEvents);
     if (server) server.close();
   });
 

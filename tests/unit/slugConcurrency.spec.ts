@@ -5,6 +5,7 @@ import { authRouter } from '../../server/routes/auth';
 import { eventsRouter } from '../../server/routes/events';
 import { cleanSlug } from '../../server/lib/storage';
 import { query } from '../../server/lib/db';
+import { deleteEventFixtures } from '../helpers/cleanup';
 
 /**
  * Regression for OPEN_ITEMS.md P5 — event creation checked slug uniqueness
@@ -51,7 +52,7 @@ describe('Slug collision retry (P5)', () => {
 
   afterAll(async () => {
     if (createdEventIds.length > 0) {
-      await query('DELETE FROM events WHERE id = ANY($1::uuid[])', [createdEventIds]).catch(() => undefined);
+      await deleteEventFixtures(createdEventIds);
     }
     if (server) server.close();
   });

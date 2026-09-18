@@ -9,6 +9,7 @@ import { photosRouter } from '../../server/routes/photos';
 import { sweepExpiredAlbums, RETENTION_NOTICE_DAYS, GRACE_PERIOD_DAYS } from '../../server/lib/retention';
 import { query } from '../../server/lib/db';
 import { TEST_EMAIL_DOMAINS } from '../../scripts/purge-test-data';
+import { deleteEventFixtures } from '../helpers/cleanup';
 
 /**
  * D1 — notice before deletion. D2 — an erasure path that exists at all.
@@ -114,7 +115,7 @@ describe('retention notice and event deletion (D1, D2)', () => {
   });
 
   afterAll(async () => {
-    await query('DELETE FROM events WHERE id = ANY($1::uuid[])', [createdEvents]).catch(() => undefined);
+    await deleteEventFixtures(createdEvents);
     if (server) server.close();
   });
 

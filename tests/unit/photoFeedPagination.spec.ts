@@ -4,6 +4,7 @@ import express from 'express';
 import { authRouter } from '../../server/routes/auth';
 import { photosRouter } from '../../server/routes/photos';
 import { query } from '../../server/lib/db';
+import { deleteEventFixture } from '../helpers/cleanup';
 
 /**
  * Regression for OPEN_ITEMS.md DB-03 — the photo feed orders by
@@ -74,7 +75,7 @@ describe('Photo feed keyset pagination respects priority, not just created_at (D
   });
 
   afterAll(async () => {
-    await query('DELETE FROM events WHERE id = $1', [eventId]).catch(() => undefined);
+    await deleteEventFixture(eventId);
     if (server) server.close();
   });
 

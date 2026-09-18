@@ -3,6 +3,7 @@ import { createServer } from 'http';
 import express from 'express';
 import { authRouter } from '../../server/routes/auth';
 import { query } from '../../server/lib/db';
+import { deleteEventFixtures, deleteEventFixturesForHost } from '../helpers/cleanup';
 
 const TEST_PORT = 6649;
 const BASE_URL = `http://localhost:${TEST_PORT}`;
@@ -63,9 +64,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   if (server) server.close();
-  await query('DELETE FROM events WHERE id = ANY($1::uuid[])', [createdEvents]).catch(
-    () => undefined
-  );
+  await deleteEventFixtures(createdEvents);
   await query('DELETE FROM users WHERE id = ANY($1::uuid[])', [createdUsers]).catch(
     () => undefined
   );
@@ -184,7 +183,7 @@ describe('the capitalisation a phone keyboard adds', () => {
  */
 describe('a host whose album has been deleted', () => {
   async function deleteTheirEvent(userId: string): Promise<void> {
-    await query('DELETE FROM events WHERE host_user_id = $1', [userId]);
+    await deleteEventFixturesForHost(userId);
   }
 
   it('is still described by /me, with no event rather than an error', async () => {

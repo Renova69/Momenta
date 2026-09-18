@@ -6,6 +6,7 @@ import { Readable } from 'stream';
 import { Client } from 'basic-ftp';
 import { query } from '../../server/lib/db';
 import { generateIngestKey, hashIngestKey } from '../../server/lib/ingest';
+import { deleteEventFixture } from '../helpers/cleanup';
 
 /**
  * The FTP server, end to end, against a real client.
@@ -96,7 +97,7 @@ describe('FTP ingest, end to end', () => {
   afterAll(async () => {
     stopServer?.();
     vi.unstubAllEnvs();
-    await query('DELETE FROM events WHERE id = $1', [eventId]).catch(() => undefined);
+    await deleteEventFixture(eventId);
     fs.rmSync(stagingRoot, { recursive: true, force: true });
   });
 

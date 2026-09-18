@@ -5,6 +5,7 @@ import { WebSocket } from 'ws';
 import { authRouter } from '../../server/routes/auth';
 import { wsManager } from '../../server/ws/wsServer';
 import { query } from '../../server/lib/db';
+import { deleteEventFixture } from '../helpers/cleanup';
 
 /**
  * H9 — a signed-out host session must not keep WebSocket host privileges.
@@ -104,7 +105,7 @@ describe('WebSocket honours session revocation (H9)', () => {
 
   afterAll(async () => {
     for (const ws of sockets) ws.close();
-    await query('DELETE FROM events WHERE id = $1', [eventId]).catch(() => undefined);
+    await deleteEventFixture(eventId);
     await query('DELETE FROM users WHERE id = $1', [userId]).catch(() => undefined);
     if (server) server.close();
   });

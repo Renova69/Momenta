@@ -6,7 +6,7 @@ import sharp from 'sharp';
 import { authRouter } from '../../server/routes/auth';
 import { eventsRouter } from '../../server/routes/events';
 import { photosRouter } from '../../server/routes/photos';
-import { query } from '../../server/lib/db';
+import { deleteEventFixtures } from '../helpers/cleanup';
 
 /**
  * Per-photo emoji reactions — a guest can toggle several different emoji
@@ -94,7 +94,7 @@ describe('Per-photo emoji reactions', () => {
   });
 
   afterAll(async () => {
-    await query('DELETE FROM events WHERE id = ANY($1::uuid[])', [createdEvents]).catch(() => undefined);
+    await deleteEventFixtures(createdEvents);
     if (server) server.close();
   });
 
