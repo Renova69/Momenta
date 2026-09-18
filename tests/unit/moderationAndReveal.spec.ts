@@ -401,6 +401,48 @@ describe('Moderation and disposable-camera reveal', () => {
     });
   });
 
+  /**
+   * The one broadcast no test asserted.
+   *
+   * Every other type this server emits — PHOTO_ADDED, COMMENT_ADDED,
+   * QUEST_COMPLETED and the rest — is checked somewhere. `EVENT_DELETED` was
+   * emitted and never observed, which makes it the easiest of the set to lose:
+   * the REST response still returns `success`, the rows are still gone, and the
+   * only people who would notice are the guests sitting in front of a live
+   * screen that never tells them the album is over.
+   *
+   * It is also the most order-dependent. The broadcast goes out *after* the
+   * event row is deleted, and reaches clients through the in-memory room map
+   * rather than the database — so it works, but only because nothing clears the
+   * room first. That is exactly the kind of invariant worth pinning.
+   */
+  describe('deleting an album', () => {
+    it('tells the guests still watching', async () => {
+      const host = await registerHost();
+      createdEvents.push(host.eventId);
+
+      const uploaded = await uploadPhoto(host.eventId, 'about to be deleted');
+      expect(uploaded.status).toBe(201);
+
+      const guest = await RoomClient.join(host.eventId);
+
+      // The route requires the slug typed back as confirmation.
+      const { rows } = await query<{ slug: string }>('SELECT slug FROM events WHERE id = $1', [host.eventId]);
+
+      const res = await fetch(`${BASE_URL}/api/events/${host.eventId}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${host.token}` },
+        body: JSON.stringify({ confirmSlug: rows[0].slug }),
+      });
+      expect(res.status).toBe(200);
+
+      await arrives(() => expect(guest.of('EVENT_DELETED')).toHaveLength(1));
+      expect(guest.of('EVENT_DELETED')[0].payload.eventId).toBe(host.eventId);
+
+      guest.close();
+    });
+  });
+
   describe('disposable camera reveal', () => {
     async function enableDisposable(host: Session, revealAt: Date) {
       // Disposable mode is a Deluxe Keepsake feature.
