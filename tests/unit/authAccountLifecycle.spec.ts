@@ -65,9 +65,7 @@ beforeAll(async () => {
 afterAll(async () => {
   if (server) server.close();
   await deleteEventFixtures(createdEvents);
-  await query('DELETE FROM users WHERE id = ANY($1::uuid[])', [createdUsers]).catch(
-    () => undefined
-  );
+  await query('DELETE FROM users WHERE id = ANY($1::uuid[])', [createdUsers]).catch(() => undefined);
 });
 
 describe('registering the same address twice', () => {
@@ -94,10 +92,7 @@ describe('registering the same address twice', () => {
 
     expect(statuses).toEqual([201, 409]);
 
-    const { rows } = await query<{ c: number }>(
-      'SELECT COUNT(*)::int AS c FROM users WHERE email = $1',
-      [email]
-    );
+    const { rows } = await query<{ c: number }>('SELECT COUNT(*)::int AS c FROM users WHERE email = $1', [email]);
     expect(rows[0].c).toBe(1);
   }, 30_000);
 });
@@ -227,10 +222,9 @@ describe('a host whose album has been deleted', () => {
     const session = await (await login(email)).json();
     createdEvents.push(session.event.id);
 
-    const { rows } = await query<{ expires_at: string | null }>(
-      'SELECT expires_at FROM events WHERE id = $1',
-      [session.event.id]
-    );
+    const { rows } = await query<{ expires_at: string | null }>('SELECT expires_at FROM events WHERE id = $1', [
+      session.event.id,
+    ]);
     expect(rows[0].expires_at).not.toBeNull();
   }, 30_000);
 });
@@ -244,13 +238,9 @@ describe('GET /api/auth/me', () => {
     await query("UPDATE subscriptions SET tier = 'deluxe_keepsake' WHERE user_id = $1", [
       (body.user as { id: string }).id,
     ]);
-    await query("UPDATE events SET plan_tier = 'free' WHERE id = $1", [
-      (body.event as { id: string }).id,
-    ]);
+    await query("UPDATE events SET plan_tier = 'free' WHERE id = $1", [(body.event as { id: string }).id]);
 
-    const me = await (
-      await fetch(`${BASE_URL}/api/auth/me`, { headers: { Authorization: `Bearer ${token}` } })
-    ).json();
+    const me = await (await fetch(`${BASE_URL}/api/auth/me`, { headers: { Authorization: `Bearer ${token}` } })).json();
 
     expect(me.event.planTier).toBe('deluxe_keepsake');
   }, 30_000);
@@ -272,4 +262,77 @@ describe('GET /api/auth/me', () => {
     const res = await fetch(`${BASE_URL}/api/auth/me`);
     expect(res.status).toBe(401);
   });
+});
+
+/**
+ * What registration actually writes.
+ *
+ * Both of these were found by mutation, not by reading. Nothing anywhere in the
+ * suite mentioned `companyName`, so replacing `companyName || null` with `&&` —
+ * which discards it on every registration — changed nothing any test could
+ * see. And the slug-retry loop's condition, `attempt < MAX && !result`, could
+ * be flipped to `||` and still pass: the loop would keep going after it had
+ * already succeeded, attempting a second insert for the same account.
+ */
+describe('what a registration writes', () => {
+  it('stores the company name a planner signed up with', async () => {
+    const email = `company-${Date.now()}-${Math.random().toString(36).slice(2, 7)}@test.com`;
+    const res = await fetch(`${BASE_URL}/api/auth/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email,
+        fullName: 'Planner Spec Host',
+        password: 'Password123!',
+        companyName: 'Sofia Wedding Co.',
+      }),
+    });
+
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    if (body.event?.id) createdEvents.push(body.event.id);
+    if (body.user?.id) createdUsers.push(body.user.id);
+
+    // Returned to the client...
+    expect(body.user.companyName).toBe('Sofia Wedding Co.');
+
+    // ...and actually persisted, which is the half a response-shape assertion
+    // cannot tell you.
+    const { rows } = await query<{ company_name: string | null }>('SELECT company_name FROM users WHERE id = $1', [
+      body.user.id,
+    ]);
+    expect(rows[0].company_name).toBe('Sofia Wedding Co.');
+  }, 20_000);
+
+  it('leaves the company name null when none was given', async () => {
+    // `companyName || null` rather than `companyName`: an absent field must
+    // become NULL, not the empty string, or "has a company" stops being a
+    // question the column can answer.
+    const email = `nocompany-${Date.now()}-${Math.random().toString(36).slice(2, 7)}@test.com`;
+    const { body } = await register(email);
+
+    const { rows } = await query<{ company_name: string | null }>('SELECT company_name FROM users WHERE id = $1', [
+      (body.user as { id: string }).id,
+    ]);
+    expect(rows[0].company_name).toBeNull();
+  }, 20_000);
+
+  it('creates exactly one account and one album', async () => {
+    // The retry loop exists for slug collisions and must stop the moment it
+    // succeeds. Running on would insert a second account for the same address,
+    // which the unique index would then reject — turning a successful
+    // registration into a 500 for the next person who collides.
+    const email = `once-${Date.now()}-${Math.random().toString(36).slice(2, 7)}@test.com`;
+    const { status, body } = await register(email);
+
+    expect(status).toBe(201);
+
+    const users = await query<{ n: number }>('SELECT COUNT(*)::int AS n FROM users WHERE email = $1', [email]);
+    expect(users.rows[0].n).toBe(1);
+
+    const events = await query<{ n: number }>('SELECT COUNT(*)::int AS n FROM events WHERE host_user_id = $1', [
+      (body.user as { id: string }).id,
+    ]);
+    expect(events.rows[0].n).toBe(1);
+  }, 20_000);
 });

@@ -19,8 +19,16 @@ import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
  * storage allowance already bound how much any one wedding can store.
  */
 
-/** Per-guest fairness, falling back to the IP when no fingerprint is supplied. */
-function deviceKey(req: Request): string {
+/**
+ * Per-guest fairness, falling back to the IP when no fingerprint is supplied.
+ *
+ * Exported for testing. The fallback is the whole reason this function exists
+ * and the reason it has to be right: keying on the IP gives an entire wedding
+ * reception, behind one venue NAT, a single shared budget — twenty uploads
+ * between two hundred guests. Every branch that finds a fingerprint is a branch
+ * that avoids that, and none of them was asserted.
+ */
+export function deviceKey(req: Request): string {
   const body = req.body as { deviceFingerprint?: unknown } | undefined;
   const fingerprint =
     (typeof body?.deviceFingerprint === 'string' && body.deviceFingerprint) ||
