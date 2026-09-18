@@ -55,7 +55,10 @@ function buildMultipartAudio(bytes: Buffer, fields: Record<string, string>): { b
   parts.push(Buffer.from(`--${boundary}--\r\n`));
   // Node's fetch accepts a Buffer body at runtime; DOM's BodyInit type just
   // doesn't know about it (matches the multipart() helper below).
-  return { body: Buffer.concat(parts) as unknown as BodyInit, contentType: `multipart/form-data; boundary=${boundary}` };
+  return {
+    body: Buffer.concat(parts) as unknown as BodyInit,
+    contentType: `multipart/form-data; boundary=${boundary}`,
+  };
 }
 
 let server: ReturnType<typeof createServer>;
@@ -261,6 +264,139 @@ describe('Cross-tenant security regressions (SEC-A1, SEC-M1, SEC-D3)', () => {
     });
   });
 
+  /**
+   * Who an upload is attributed to.
+   *
+   * `resolveGuestForUpload` trusts a client-supplied guestId only when a
+   * matching token proves it. Mutation testing found four survivors in that
+   * one block — the weakest part of the upload hot path — and the worst of
+   * them turns the check inside out: with `&&` instead of `||`, an id is
+   * cleared only when the guest row is missing *and* the token is bad, so a
+   * real guestId harvested from the public feed plus any rubbish token is
+   * accepted as proven identity. That is SEC-A2 on the path that also mints
+   * the durable guestToken.
+   *
+   * Attribution is the observable: `identityProven` decides both which guest
+   * the photo counts against — their per-guest quota — and whether a signed
+   * token comes back.
+   */
+  describe('upload identity, when the guestId is supplied', () => {
+    let victim: { photoId: string; guestId: string; guestToken: string };
+
+    beforeAll(async () => {
+      victim = await uploadPhoto(eventAId);
+    });
+
+    async function uploadAs(body: Record<string, unknown>) {
+      const res = await fetch(`${BASE_URL}/api/photos`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          eventId: eventAId,
+          guestName: 'Claimed Guest',
+          fullUrl: JPEG_DATA_URL,
+          ...body,
+        }),
+      });
+      return { status: res.status, body: await res.json().catch(() => ({})) };
+    }
+
+    it('refuses to attribute an upload to a guestId whose token is wrong', async () => {
+      // The harvested-id attack. Every photo in the feed carries its guestId,
+      // so the id is public; the token is the only thing that is not.
+      const { status, body } = await uploadAs({
+        guestId: victim.guestId,
+        guestToken: 'not-a-real-token',
+        deviceFingerprint: `attacker-${Date.now()}`,
+      });
+
+      expect(status).toBe(201);
+      expect(body.guestId).not.toBe(victim.guestId);
+    });
+
+    it('refuses it with no token at all', async () => {
+      const { status, body } = await uploadAs({
+        guestId: victim.guestId,
+        deviceFingerprint: `attacker-none-${Date.now()}`,
+      });
+
+      expect(status).toBe(201);
+      expect(body.guestId).not.toBe(victim.guestId);
+    });
+
+    it('attributes it when the token does prove the identity', async () => {
+      // The other direction, and the one a blanket refusal would break: a
+      // returning guest must keep their own quota and their own name.
+      const { status, body } = await uploadAs({
+        guestId: victim.guestId,
+        guestToken: victim.guestToken,
+        deviceFingerprint: `returning-${Date.now()}`,
+      });
+
+      expect(status).toBe(201);
+      expect(body.guestId).toBe(victim.guestId);
+      // Proven identity is also what mints a durable credential.
+      expect(typeof body.guestToken).toBe('string');
+    });
+
+    it('answers 400 rather than 500 for a guestId that is not a uuid', async () => {
+      // The id reaches `WHERE id = $1` against a uuid column, so the shape
+      // check is what stands between a malformed value and 22P02.
+      const { status } = await uploadAs({
+        guestId: 'not-a-uuid',
+        deviceFingerprint: `malformed-${Date.now()}`,
+      });
+
+      expect([400, 201]).toContain(status);
+      expect(status).not.toBe(500);
+    });
+
+    it('mints a token carrying the row’s version, so a reset does not lock the guest out', async () => {
+      // `resolveGuestForUpload` returns `tokenVersion`, and upload.ts:501 feeds
+      // it to `issueGuestToken`. Forcing it to 0 — the mutation that survived
+      // here — means that after a host uses "reset guest sessions" (M10, which
+      // bumps every row to 1), a proven guest's upload mints a token at 0 that
+      // `verifyGuestToken` then rejects against the row's 1. For ever.
+      //
+      // The comment and quest paths resolve identity through
+      // `lib/guestIdentity.ts`; upload has its own copy of this logic, so the
+      // same gap existed twice and had to be closed twice.
+      const { issueGuestToken, verifyGuestToken } = await import('../../server/lib/guestAuth');
+      const { query } = await import('../../server/lib/db');
+
+      await query('UPDATE guests SET token_version = token_version + 1 WHERE id = $1', [victim.guestId]);
+      const { rows } = await query<{ token_version: number }>('SELECT token_version FROM guests WHERE id = $1', [
+        victim.guestId,
+      ]);
+      const current = Number(rows[0].token_version);
+      expect(current).toBeGreaterThan(0);
+
+      const { status, body } = await uploadAs({
+        guestId: victim.guestId,
+        guestToken: issueGuestToken(victim.guestId, eventAId, current),
+        deviceFingerprint: `after-reset-${Date.now()}`,
+      });
+
+      expect(status).toBe(201);
+      expect(body.guestId).toBe(victim.guestId);
+      // The token it handed back has to still work on the next request.
+      expect(verifyGuestToken(body.guestToken, victim.guestId, eventAId, current)).toBe(true);
+    });
+
+    it('re-resolves a placeholder guest- id instead of trusting it', async () => {
+      // The client mints `guest-<timestamp>` locally before the server has
+      // ever seen it. It is not a uuid and owns nothing, so it must be
+      // replaced rather than written to a row.
+      const { status, body } = await uploadAs({
+        guestId: `guest-${Date.now()}`,
+        deviceFingerprint: `placeholder-${Date.now()}`,
+      });
+
+      expect(status).toBe(201);
+      expect(String(body.guestId).startsWith('guest-')).toBe(false);
+    });
+  });
+
   describe('SEC-D3 — cross-tenant guestId scoping', () => {
     let guestBId = '';
     let photoAId = '';
@@ -320,10 +456,10 @@ describe('Cross-tenant security regressions (SEC-A1, SEC-M1, SEC-D3)', () => {
       // recorded at all.
       expect(res.status).toBe(401);
 
-      const completion = await query(
-        'SELECT 1 FROM guest_quest_completions WHERE quest_id = $1 AND guest_id = $2',
-        [questId, guestBId]
-      );
+      const completion = await query('SELECT 1 FROM guest_quest_completions WHERE quest_id = $1 AND guest_id = $2', [
+        questId,
+        guestBId,
+      ]);
       expect(completion.rows).toHaveLength(0);
     });
 
@@ -374,92 +510,92 @@ describe('Cross-tenant security regressions (SEC-A1, SEC-M1, SEC-D3)', () => {
 
   describe('Fingerprint-only guest resolution never mints a fresh credential (SEC-03)', () => {
     it('POST /api/photos: a second upload with a known fingerprint attributes correctly but gets no guestToken', async () => {
-    const fingerprint = `sec03-fp-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+      const fingerprint = `sec03-fp-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 
-    const first = await fetch(`${BASE_URL}/api/photos`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        eventId: eventAId,
-        guestName: 'Fingerprint Guest',
-        fullUrl: JPEG_DATA_URL,
-        deviceFingerprint: fingerprint,
-      }),
+      const first = await fetch(`${BASE_URL}/api/photos`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          eventId: eventAId,
+          guestName: 'Fingerprint Guest',
+          fullUrl: JPEG_DATA_URL,
+          deviceFingerprint: fingerprint,
+        }),
+      });
+      expect(first.status).toBe(201);
+      const firstPhoto = await first.json();
+      expect(firstPhoto.guestToken).toBeTruthy();
+
+      // A second request with the SAME fingerprint and no token at all — as if
+      // someone else had merely obtained the fingerprint value, which is
+      // client-generated and sent as a plain, non-secret request field.
+      const second = await fetch(`${BASE_URL}/api/photos`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          eventId: eventAId,
+          guestName: 'Fingerprint Guest',
+          fullUrl: JPEG_DATA_URL,
+          deviceFingerprint: fingerprint,
+        }),
+      });
+      expect(second.status).toBe(201);
+      const secondPhoto = await second.json();
+
+      // Correctly attributed to the same guest (quota-continuity still works)...
+      expect(secondPhoto.guestId).toBe(firstPhoto.guestId);
+      // ...but no durable credential handed out for an identity this caller
+      // never actually proved ownership of.
+      expect(secondPhoto.guestToken).toBeUndefined();
     });
-    expect(first.status).toBe(201);
-    const firstPhoto = await first.json();
-    expect(firstPhoto.guestToken).toBeTruthy();
 
-    // A second request with the SAME fingerprint and no token at all — as if
-    // someone else had merely obtained the fingerprint value, which is
-    // client-generated and sent as a plain, non-secret request field.
-    const second = await fetch(`${BASE_URL}/api/photos`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        eventId: eventAId,
-        guestName: 'Fingerprint Guest',
-        fullUrl: JPEG_DATA_URL,
-        deviceFingerprint: fingerprint,
-      }),
+    it('POST /api/guests: re-registering on a known fingerprint updates the row but returns no guestToken', async () => {
+      const fingerprint = `sec03-guests-fp-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+
+      const first = await fetch(`${BASE_URL}/api/guests`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ eventId: eventAId, name: 'First Name', deviceFingerprint: fingerprint }),
+      });
+      expect(first.status).toBe(201);
+      const firstGuest = await first.json();
+      expect(firstGuest.guestToken).toBeTruthy();
+
+      const second = await fetch(`${BASE_URL}/api/guests`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ eventId: eventAId, name: 'Renamed By Someone Else', deviceFingerprint: fingerprint }),
+      });
+      expect(second.status).toBe(201);
+      const secondGuest = await second.json();
+
+      expect(secondGuest.id).toBe(firstGuest.id);
+      expect(secondGuest.guestToken).toBeUndefined();
     });
-    expect(second.status).toBe(201);
-    const secondPhoto = await second.json();
 
-    // Correctly attributed to the same guest (quota-continuity still works)...
-    expect(secondPhoto.guestId).toBe(firstPhoto.guestId);
-    // ...but no durable credential handed out for an identity this caller
-    // never actually proved ownership of.
-    expect(secondPhoto.guestToken).toBeUndefined();
-  });
+    it('GET /api/guests: a pure fingerprint lookup never returns a guestToken', async () => {
+      const fingerprint = `sec03-lookup-fp-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 
-  it('POST /api/guests: re-registering on a known fingerprint updates the row but returns no guestToken', async () => {
-    const fingerprint = `sec03-guests-fp-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+      const created = await fetch(`${BASE_URL}/api/guests`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ eventId: eventAId, name: 'Lookup Guest', deviceFingerprint: fingerprint }),
+      });
+      const createdGuest = await created.json();
+      expect(createdGuest.guestToken).toBeTruthy();
 
-    const first = await fetch(`${BASE_URL}/api/guests`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ eventId: eventAId, name: 'First Name', deviceFingerprint: fingerprint }),
+      const lookup = await fetch(
+        `${BASE_URL}/api/guests?eventId=${eventAId}&deviceFingerprint=${encodeURIComponent(fingerprint)}`
+      );
+      expect(lookup.status).toBe(200);
+      const found = await lookup.json();
+      expect(found.id).toBe(createdGuest.id);
+      expect(found.guestToken).toBeUndefined();
     });
-    expect(first.status).toBe(201);
-    const firstGuest = await first.json();
-    expect(firstGuest.guestToken).toBeTruthy();
-
-    const second = await fetch(`${BASE_URL}/api/guests`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ eventId: eventAId, name: 'Renamed By Someone Else', deviceFingerprint: fingerprint }),
-    });
-    expect(second.status).toBe(201);
-    const secondGuest = await second.json();
-
-    expect(secondGuest.id).toBe(firstGuest.id);
-    expect(secondGuest.guestToken).toBeUndefined();
-  });
-
-  it('GET /api/guests: a pure fingerprint lookup never returns a guestToken', async () => {
-    const fingerprint = `sec03-lookup-fp-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-
-    const created = await fetch(`${BASE_URL}/api/guests`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ eventId: eventAId, name: 'Lookup Guest', deviceFingerprint: fingerprint }),
-    });
-    const createdGuest = await created.json();
-    expect(createdGuest.guestToken).toBeTruthy();
-
-    const lookup = await fetch(
-      `${BASE_URL}/api/guests?eventId=${eventAId}&deviceFingerprint=${encodeURIComponent(fingerprint)}`
-    );
-    expect(lookup.status).toBe(200);
-    const found = await lookup.json();
-    expect(found.id).toBe(createdGuest.id);
-    expect(found.guestToken).toBeUndefined();
-  });
   });
 
   describe('ZIP export never asks the storage adapter for a cross-event path (SEC-04)', () => {
-    it('skips a photo row whose storage_path was planted into another event\'s folder', async () => {
+    it("skips a photo row whose storage_path was planted into another event's folder", async () => {
       // A real file that genuinely belongs to event B.
       const uploadB = await uploadPhoto(eventBId);
       const foreignPathRes = await query('SELECT storage_path FROM photos WHERE id = $1', [uploadB.photoId]);
