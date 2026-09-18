@@ -85,18 +85,14 @@ function renderDashboard(over: Overrides = {}) {
     onOpenPricing: vi.fn(),
     ...rest,
   };
-  const rendered = render(
-    <HostDashboard {...(props as unknown as React.ComponentProps<typeof HostDashboard>)} />
-  );
+  const rendered = render(<HostDashboard {...(props as unknown as React.ComponentProps<typeof HostDashboard>)} />);
   return { props, ...rendered };
 }
 
 /** Switch tabs by clicking the nav button carrying this label. */
 function openTab(container: HTMLElement, key: string) {
   const label = i18n.t(key);
-  const button = Array.from(container.querySelectorAll('button')).find((b) =>
-    b.textContent?.includes(label)
-  );
+  const button = Array.from(container.querySelectorAll('button')).find((b) => b.textContent?.includes(label));
   if (!button) throw new Error(`tab not found: ${label} (${key})`);
   fireEvent.click(button);
 }
@@ -191,9 +187,7 @@ describe('revoking every guest session', () => {
     );
     fireEvent.click(button!);
 
-    await waitFor(() =>
-      expect(window.alert).toHaveBeenCalledWith(expect.stringContaining('12'))
-    );
+    await waitFor(() => expect(window.alert).toHaveBeenCalledWith(expect.stringContaining('12')));
   });
 
   it('surfaces a failure rather than pretending it worked', async () => {
@@ -231,9 +225,7 @@ describe('deleting the album (D2)', () => {
     const remove = vi.spyOn(eventsApi, 'remove');
     const { container } = renderDashboard({ planTier: 'pro_planner' });
 
-    const field = Array.from(container.querySelectorAll('input')).find(
-      (i) => i.placeholder === baseEvent.slug
-    );
+    const field = Array.from(container.querySelectorAll('input')).find((i) => i.placeholder === baseEvent.slug);
     fireEvent.change(field!, { target: { value: 'ivan-and-maria ' } });
     fireEvent.click(deleteButton(container)!);
 
@@ -244,25 +236,19 @@ describe('deleting the album (D2)', () => {
     vi.spyOn(eventsApi, 'remove').mockResolvedValue({ photosDeleted: 143 } as never);
     const { container } = renderDashboard({ planTier: 'pro_planner' });
 
-    const field = Array.from(container.querySelectorAll('input')).find(
-      (i) => i.placeholder === baseEvent.slug
-    );
+    const field = Array.from(container.querySelectorAll('input')).find((i) => i.placeholder === baseEvent.slug);
     fireEvent.change(field!, { target: { value: baseEvent.slug } });
     fireEvent.click(deleteButton(container)!);
 
     await waitFor(() => expect(eventsApi.remove).toHaveBeenCalledWith('event-1', baseEvent.slug));
-    await waitFor(() =>
-      expect(window.alert).toHaveBeenCalledWith(expect.stringContaining('143'))
-    );
+    await waitFor(() => expect(window.alert).toHaveBeenCalledWith(expect.stringContaining('143')));
   });
 
   it('surfaces a failed deletion instead of navigating away', async () => {
     vi.spyOn(eventsApi, 'remove').mockRejectedValue(new Error('Still has photos'));
     const { container } = renderDashboard({ planTier: 'pro_planner' });
 
-    const field = Array.from(container.querySelectorAll('input')).find(
-      (i) => i.placeholder === baseEvent.slug
-    );
+    const field = Array.from(container.querySelectorAll('input')).find((i) => i.placeholder === baseEvent.slug);
     fireEvent.change(field!, { target: { value: baseEvent.slug } });
     fireEvent.click(deleteButton(container)!);
 
@@ -303,5 +289,97 @@ describe('the ZIP export', () => {
 
     // A tier refusal is not a session problem, and must not be reported as one.
     expect(await screen.findByText('Plan does not include export')).toBeTruthy();
+  });
+});
+
+/**
+ * The grand prize editor.
+ *
+ * Its confirmation tick clears itself after 2.5s, and that timer is the third
+ * instance of a leak this repository has now paid for twice: an uncleared
+ * `window.setTimeout` firing after the component is gone. In a browser it is a
+ * harmless no-op. Under jsdom it lands after teardown and throws
+ * `ReferenceError: window is not defined`, which fails CI as an unhandled
+ * error while every test still reports passing — so the failure names no test
+ * and points at no file.
+ *
+ * The assertion is therefore about the timer, not about the tick.
+ */
+describe('the grand prize editor', () => {
+  function openPrizeEditor() {
+    const rendered = renderDashboard({ planTier: 'pro_planner' as PlanTier });
+    openTab(rendered.container, 'host.quests_mgr');
+    return rendered;
+  }
+
+  it('saves the prize the host typed', async () => {
+    const { container, props } = openPrizeEditor();
+    const textarea = container.querySelector('textarea');
+    expect(textarea).toBeTruthy();
+
+    fireEvent.change(textarea as HTMLTextAreaElement, { target: { value: '  A weekend in Sozopol  ' } });
+    fireEvent.submit(textarea!.closest('form') as HTMLFormElement);
+
+    // Trimmed, because a host who types a trailing space has not chosen one.
+    expect(props.onUpdateEvent).toHaveBeenCalledWith({ questPrize: 'A weekend in Sozopol' });
+  });
+
+  it('treats an emptied box as a return to the default, not as an empty prize', async () => {
+    const { container, props } = openPrizeEditor();
+    const textarea = container.querySelector('textarea') as HTMLTextAreaElement;
+
+    fireEvent.change(textarea, { target: { value: '   ' } });
+    fireEvent.submit(textarea.closest('form') as HTMLFormElement);
+
+    // null, not '': the client renders its localized default only for null.
+    expect(props.onUpdateEvent).toHaveBeenCalledWith({ questPrize: null });
+  });
+
+  it('clears its confirmation timer when the dashboard goes away', async () => {
+    const armed = new Set<unknown>();
+    const realSet = window.setTimeout;
+    const realClear = window.clearTimeout;
+    vi.spyOn(window, 'setTimeout').mockImplementation(((fn: () => void, ms?: number, ...rest: unknown[]) => {
+      const handle = realSet(fn, ms, ...rest);
+      if (ms === 2500) armed.add(handle);
+      return handle;
+    }) as typeof window.setTimeout);
+    vi.spyOn(window, 'clearTimeout').mockImplementation(((handle: never) => {
+      armed.delete(handle);
+      return realClear(handle);
+    }) as typeof window.clearTimeout);
+
+    const { container, unmount } = openPrizeEditor();
+    const textarea = container.querySelector('textarea') as HTMLTextAreaElement;
+    fireEvent.change(textarea, { target: { value: 'Champagne' } });
+    fireEvent.submit(textarea.closest('form') as HTMLFormElement);
+
+    // Tracked by its delay: the dashboard arms other timers this test has no
+    // opinion about.
+    expect(armed.size).toBe(1);
+
+    unmount();
+
+    expect([...armed]).toEqual([]);
+  });
+
+  it('re-arms rather than stacking when the host saves twice quickly', async () => {
+    const cleared: unknown[] = [];
+    const realClear = window.clearTimeout;
+    vi.spyOn(window, 'clearTimeout').mockImplementation(((handle: never) => {
+      cleared.push(handle);
+      return realClear(handle);
+    }) as typeof window.clearTimeout);
+
+    const { container } = openPrizeEditor();
+    const textarea = container.querySelector('textarea') as HTMLTextAreaElement;
+    const form = textarea.closest('form') as HTMLFormElement;
+
+    fireEvent.submit(form);
+    fireEvent.submit(form);
+
+    // Without the re-arm the first timer survives and clears the tick while
+    // the second save is still fresh.
+    expect(cleared.length).toBeGreaterThan(0);
   });
 });
