@@ -6,7 +6,12 @@ import {
   FEATURE_GATES,
   GatedFeature,
 } from '../../src/config/tierGating';
-import { requireEventTier, checkPhotoUploadTierLimit } from '../../server/middleware/tierGate';
+import {
+  requireEventTier,
+  checkPhotoUploadTierLimit,
+  getEffectiveTierForUser,
+  getEffectiveTierForEvent,
+} from '../../server/middleware/tierGate';
 import { pool } from '../../server/lib/db';
 import { TRANSLATIONS } from '../../src/i18n';
 import type { Request, Response, NextFunction } from 'express';
@@ -259,5 +264,54 @@ describe('Backend Tier Gate Middleware', () => {
     // A larger plan accepts what the free plan refused.
     mockUsageQueries('celebration_pass', 1, halfGb);
     expect((await checkPhotoUploadTierLimit(TEST_EVENT_ID, 1)).allowed).toBe(true);
+  });
+});
+
+/**
+ * What happens when the database holds a tier this code has never heard of.
+ *
+ * `subscriptions.tier` is a VARCHAR with no CHECK constraint, so an unknown
+ * value can arrive from a migration, a manual fix, or a new plan added to the
+ * data before the code that understands it ships. Both resolvers guard against
+ * it with `TIER_WEIGHTS[tier] !== undefined`, and nothing tested that guard:
+ * changing its `&&` to `||`, so an unrecognised string is returned verbatim
+ * instead of falling back, left all 56 spec files that reach this module green.
+ *
+ * It has to fail closed. An unrecognised tier flowing onward is compared
+ * against TIER_WEIGHTS by every gate downstream, and comparisons against
+ * `undefined` are false — so the customer's access becomes a question of which
+ * comparison happens to run first rather than a decision anyone made.
+ */
+describe('a tier the code does not recognise', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('falls back to free rather than passing the unknown value on, for a user', async () => {
+    vi.spyOn(pool, 'query').mockResolvedValue({ rows: [{ tier: 'platinum_unicorn' }] } as never);
+
+    await expect(getEffectiveTierForUser('10eebc99-9c0b-4ef8-bb6d-6bb9bd380a01')).resolves.toBe('free');
+  });
+
+  it('falls back to free for an event as well', async () => {
+    // Two resolvers, the same guard, written out twice — so they need asserting
+    // twice. The event-scoped one is the hot path.
+    vi.spyOn(pool, 'query').mockResolvedValue({ rows: [{ tier: 'platinum_unicorn' }] } as never);
+
+    await expect(getEffectiveTierForEvent('a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11')).resolves.toBe('free');
+  });
+
+  it('still returns a tier it does recognise', async () => {
+    // The other half: a fallback that swallowed everything would satisfy the
+    // assertions above and silently downgrade every paying customer.
+    vi.spyOn(pool, 'query').mockResolvedValue({ rows: [{ tier: 'deluxe_keepsake' }] } as never);
+
+    await expect(getEffectiveTierForUser('10eebc99-9c0b-4ef8-bb6d-6bb9bd380a01')).resolves.toBe('deluxe_keepsake');
+  });
+
+  it('treats no subscription row at all as free', async () => {
+    vi.spyOn(pool, 'query').mockResolvedValue({ rows: [] } as never);
+
+    await expect(getEffectiveTierForUser('10eebc99-9c0b-4ef8-bb6d-6bb9bd380a01')).resolves.toBe('free');
   });
 });
