@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest';
 import { createServer } from 'http';
 import express from 'express';
 import { WebSocket } from 'ws';
@@ -61,11 +61,7 @@ function connect(): Promise<WebSocket> {
   });
 }
 
-function joinAndAwait(
-  ws: WebSocket,
-  eventId: string,
-  authToken?: string
-): Promise<{ isHost: boolean }> {
+function joinAndAwait(ws: WebSocket, eventId: string, authToken?: string): Promise<{ isHost: boolean }> {
   return new Promise((resolve, reject) => {
     const timeout = setTimeout(() => reject(new Error('join timed out')), 5000);
     ws.on('message', (raw) => {
@@ -214,6 +210,60 @@ describe('Guest identity & WebSocket auth (SEC-A2, SEC-A5)', () => {
       expect(isHost).toBe(true);
       ws.close();
     });
+
+    it('a host token for one album grants nothing in another album’s room', async () => {
+      // The check is `rows.length > 0 && rows[0].host_user_id === userId`.
+      // Dropping the second half — which mutation testing did, with all 40
+      // spec files still green — hands host privileges to anyone holding any
+      // valid session token, for any album that exists. Host privileges are
+      // what gate the moderation queue and the pending-photo channel.
+      const intruder = await registerHost();
+      const victim = await registerHost();
+
+      const ws = await connect();
+      try {
+        const { isHost } = await joinAndAwait(ws, victim.eventId, intruder.token);
+
+        expect(isHost).toBe(false);
+      } finally {
+        ws.close();
+      }
+    }, 20_000);
+
+    it('stops delivering an album’s photos once the client joins another', async () => {
+      // Switching rooms removes the client from the old one, guarded by
+      // `oldMeta.eventId !== eventId`. Flip that comparison and the client
+      // stays subscribed to the album it left — so a guest who opens a second
+      // wedding link keeps receiving the first couple's photographs.
+      const first = await registerHost();
+      const second = await registerHost();
+
+      const ws = await connect();
+      try {
+        await joinAndAwait(ws, first.eventId);
+        await joinAndAwait(ws, second.eventId);
+
+        const leaked: string[] = [];
+        ws.on('message', (raw) => {
+          const msg = JSON.parse(raw.toString());
+          if (msg.type === 'PHOTO_ADDED') leaked.push(String(msg.payload?.id ?? ''));
+        });
+
+        wsManager.broadcastToEvent(first.eventId, 'PHOTO_ADDED', { id: 'from-the-album-we-left' });
+        wsManager.broadcastToEvent(second.eventId, 'PHOTO_ADDED', { id: 'from-the-album-we-joined' });
+
+        // Waiting for the frame that *should* arrive is what makes the absence
+        // of the other one meaningful: asserting on an empty list immediately
+        // would pass before either had a chance to be delivered.
+        await vi.waitFor(() => {
+          expect(leaked).toContain('from-the-album-we-joined');
+        }, 5000);
+
+        expect(leaked).not.toContain('from-the-album-we-left');
+      } finally {
+        ws.close();
+      }
+    }, 20_000);
 
     it('an invalid AUTH token leaves the connection as a guest, not an error', async () => {
       const ws = await connect();

@@ -226,9 +226,7 @@ describe('retention notices', () => {
     await sendRetentionNotices({ send: true, eventIds: createdEvents });
     expect(await notifiedAt(host.eventId)).toBeNull();
 
-    await query("UPDATE events SET event_date = NOW() - INTERVAL '1 day' WHERE id = $1", [
-      host.eventId,
-    ]);
+    await query("UPDATE events SET event_date = NOW() - INTERVAL '1 day' WHERE id = $1", [host.eventId]);
     const after = await sendRetentionNotices({ send: true, eventIds: createdEvents });
 
     expect(after.sent).toContain(host.eventId);
@@ -374,6 +372,30 @@ describe('retention notices', () => {
       expect(html).not.toContain('<img');
       expect(html).toContain('&lt;img');
     });
+
+    it('escapes every character it claims to, not only the opening angle', () => {
+      // This payload is why the assertion above is not enough on its own: it
+      // survives with `>` left unescaped, because `&lt;img` still appears and
+      // `<img` still does not. Mutation testing found that — breaking the `>`
+      // branch of escapeHtml changed nothing any test could see.
+      //
+      // The four characters matter together. A title carrying a bare `>` can
+      // close an attribute the escaping of `<` was supposed to have made safe,
+      // and `&` must go first or every other replacement is double-escaped.
+      const { html } = buildNoticeEmail({
+        ...candidate,
+        title: `Tom & Ann's "big" <day> ending here >`,
+      });
+
+      expect(html).toContain('&amp;');
+      expect(html).toContain('&lt;day&gt;');
+      expect(html).toContain('&quot;big&quot;');
+      // No raw angle bracket from the title survives into the markup.
+      expect(html).not.toContain('<day>');
+      expect(html).not.toContain('ending here >');
+      // `&` escaped once, not twice: `&amp;lt;` would render as literal text.
+      expect(html).not.toContain('&amp;lt;');
+    });
   });
 
   /**
@@ -420,9 +442,7 @@ describe('retention notices', () => {
       await expiringSoon(host.eventId);
       // What a small-ICU runtime does: answers "no locales matched" rather
       // than throwing, so every date silently comes back in English.
-      const locales = vi
-        .spyOn(Intl.DateTimeFormat, 'supportedLocalesOf')
-        .mockReturnValue([] as unknown as string[]);
+      const locales = vi.spyOn(Intl.DateTimeFormat, 'supportedLocalesOf').mockReturnValue([] as unknown as string[]);
       const err = vi.spyOn(console, 'error').mockImplementation(() => undefined);
 
       try {
