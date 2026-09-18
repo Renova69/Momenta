@@ -1,6 +1,7 @@
 # MASTER AUDIT — Momenta / WedMoments
 
 **Audited:** 2026-09-15, read-only. **Fixes applied and recorded:** 2026-09-17.
+**Post-audit findings added:** 2026-09-18 (§3b).
 
 > **Read this first.** The audit below is preserved as written — each finding
 > still describes the code as it was on 2026-09-15, because a finding rewritten
@@ -8,12 +9,21 @@
 > that every confirmed finding now carries a **FIXED** line naming the commit,
 > and §9 records what is actually left.
 >
-> **State on 2026-09-17:** all three production blockers cleared in code. Of the
-> 20 confirmed findings (12 in §§2–3, 8 in §4): **18 fixed**, **1 partly** —
-> H-4, whose lifecycle rule is written and waiting on a credential — and **1
-> resolved as not a defect**: L-1's premise was wrong, `vercel.json` is genuinely
-> in use. What remains is operational (§9), plus V-5: the 84 spec files nobody
-> has read.
+> **State on 2026-09-18:** all three production blockers cleared in code. Of the
+> 20 findings the audit itself produced (12 in §§2–3, 8 in §4): **18 fixed**,
+> **1 partly** — H-4, whose lifecycle rule is written and waiting on a
+> credential — and **1 resolved as not a defect**: L-1's premise was wrong,
+> `vercel.json` is genuinely in use.
+>
+> **§3b records 11 further findings the audit did not produce, all of them
+> fixed.** Every one was found by *running* something the audit had only read. That is
+> the most useful thing in this document: reading code does not catch a
+> container that will not start, a sweep that reports work it did not do, or a
+> teardown that deletes another process's data. One of them, N-3, is the root
+> cause of the intermittent suite failures that had previously been blamed on
+> database contention.
+>
+> What remains is operational (§9).
 
 Consolidates every completed audit and verification report into one authoritative
 list. Sources reconciled:
@@ -34,10 +44,13 @@ by inspection, not by preference; each is recorded with its evidence in §6 or �
 **Totals as audited:** Critical 0 · High 4 · Medium 8 · Low 8 · Unfinished 4 ·
 False positives 3 · Needs manual verification 5 · Production blockers 3.
 
-**Totals as of 2026-09-17:** 18 of 20 confirmed findings fixed · H-4 partly
-(lifecycle rule written, not applied) · L-1 resolved as not a defect ·
-production blockers 0 in code, 4 operational actions outstanding · the 4
-unfinished features and 5 verification items unchanged, none of them defects.
+**Totals as of 2026-09-18:** of the audit's own 20 findings — 18 fixed, H-4
+partly (lifecycle rule written, not applied), L-1 resolved as not a defect. Of
+the 11 post-audit findings in §3b — 11 fixed. Production blockers 0 in code, 4
+operational actions outstanding (§9). The 4 unfinished features are unchanged
+and none is a defect; of the 5 verification items, V-5 is substantially
+addressed by mutation testing rather than by reading, and V-1 to V-4 still need
+real credentials, real hardware or real third-party services.
 
 Two of those Medium findings, **N-1** and **N-2**, were not produced by the
 audit passes. They were found while implementing the fixes, by running things
@@ -334,6 +347,201 @@ the test responsible.
 
 ---
 
+## 3b. Found After the Audit (2026-09-17 / 18)
+
+None of the findings below came from the read-only passes. Every one was found
+by **running** something the audit had only read — the container, the storage
+sweep, the lifecycle script, the test suite under its own conditions, or the
+source with a mutation in it. That is the single most useful observation in this
+document: an audit that reads code does not catch a container that will not
+start, a sweep that reports work it did not do, or a teardown that deletes
+another process's data.
+
+They are numbered in the N- series that began with N-1 and N-2.
+
+### N-3 — The test teardown deleted a concurrent run's fixtures
+**Status** CONFIRMED · **Severity** High (test integrity) · **Feature** Test infrastructure
+**Files** `tests/globalSetup.ts`, `scripts/purge-test-data.ts`
+**The root cause of this repository's intermittent suite failures**, which had
+been attributed to database contention for long enough to be written into
+`vitest.config.ts`'s comments.
+
+`purgeTestData` deletes every event and user whose address is in a test domain.
+Identification by domain says *whose* rows these are; it says nothing about
+*when* they were made. The teardown that calls it fires whenever any Vitest
+process finishes — including while another is halfway through a suite.
+
+Reproduced deliberately rather than inferred: firing that purge against a
+running suite deleted **11 events and 152 users** and failed **11 tests across 6
+unrelated spec files** (`concurrentUploadQuota`, `exportDownload`,
+`ingestRoutes`, `photoComments`, `photoReactions`, `slugConcurrency`). That is
+the observed signature exactly — a broad scatter across whichever DB-touching
+specs were mid-test, different files each time, green on a re-run done alone. It
+also explains why six consecutive runs in a loop were clean: one run at a time.
+
+The 152-users-to-11-events ratio is the tell. Users were matched by domain with
+no event constraint at all, and deleting a user cascades into their albums.
+**FIXED** `9a24447`. A run now cleans up after *previous* runs, never its peers:
+`setup()` records the start instant and teardown passes it as a cutoff, so rows
+created during a run are out of reach by construction rather than by timing.
+Accumulation stays bounded at one run's worth — demonstrated: run 1 purged
+nothing and left 54 events, run 2 collected exactly those 54 and left its own.
+
+Two things would have made the cutoff a lie, and both are part of the fix:
+
+- Deleting a user cascades into their events, so an old host holding a new album
+  would still take a live fixture down. The user delete carries
+  `AND NOT EXISTS (... events ... created_at >= cutoff)`.
+- The cutoff must come from Postgres, not `new Date()`. Rows are stamped by the
+  database's clock and the two are several hundred milliseconds apart on this
+  machine — enough for a row inserted with `NOW()` immediately after a JS
+  timestamp to land *before* it, reintroducing the timing dependence the cutoff
+  exists to remove.
+
+**Regression test required** Yes — `tests/unit/purgeScope.spec.ts`, which uses
+`dryRun` throughout on purpose: a test calling the real delete would remove
+every fixture older than its cutoff, including those of sibling specs in
+parallel workers, reproducing the bug it exists to prevent.
+
+### N-4 — The teardown deleted from R2 and never from local disk
+**Status** CONFIRMED · **Severity** Medium · **Feature** Test infrastructure / storage
+**Files** `tests/globalSetup.ts`, `package.json` scripts
+`tests/setup.ts` refuses to let the unit suite run against remote storage, and
+that guard covers the *worker* processes, where `vitest.config.ts`'s `test.env`
+applies. `globalSetup` is not one of them: it runs in Vitest's main process,
+which `test.env` never touches, so it resolved `STORAGE_PROVIDER` from `.env`.
+
+On any machine whose `.env` says `r2` — which is this one, and which is what
+production runs — the teardown called `purgeEventMedia` against the **live
+Cloudflare bucket** after a suite that had written every byte to local disk.
+Measured, not inferred: the main process resolved `r2` while a probe inside a
+worker reported `local`.
+
+Every `npm run test:unit` therefore issued real DeleteObject calls against
+production storage — no-ops only because a local disk path is not a key that
+exists in the bucket — while the local files it was meant to delete were never
+touched, and it reported success either way. CI was never affected: the workflow
+sets `STORAGE_PROVIDER=local` at job level.
+**FIXED** `cab08a5`. The scripts pin the provider for the whole invocation
+rather than only its workers, and the teardown asserts the pin held before
+purging anything.
+
+### N-5 — Forty spec files deleted event rows without purging media
+**Status** CONFIRMED · **Severity** Medium · **Feature** Test infrastructure / storage
+**Files** 40 spec files, `tests/helpers/cleanup.ts`
+`DELETE FROM events` cascades to the photo and audio rows, and those rows are
+the only record of where the bytes live. Delete them first and the files are
+stranded with nothing left to identify them — the failure this repository has
+recorded four times in application code, reproduced by its own test suite on
+every run.
+
+Measured from a clean disk: a full run left **7,267 orphaned album directories
+and 421 MB**. It now leaves 2 to 3 directories and about 4 MB. This is where the
+10,431 directories swept off the development machine came from.
+**FIXED** `46e2995`. All 62 call sites go through `tests/helpers/cleanup.ts`,
+which purges media first — so every spec exercises the ordering production must
+follow. `tests/unit/fixtureCleanup.spec.ts` names any file that goes back to the
+raw statement. The same commit fixed `purge-test-data` selecting doomed events
+by the event's own `host_email` and then deleting users, whose cascade took
+events the purge had never seen.
+
+### N-6 — The migration spec poisoned its own next run
+**Status** CONFIRMED · **Severity** Low · **Feature** Test infrastructure
+**Files** `tests/unit/migrate.spec.ts`
+Fixed scratch table, fixed ledger filenames, and the ledger is a real table
+shared by every run. A run killed part-way leaves `900_spec_create.sql` recorded
+as applied; the next run fails exactly two tests because `runMigrations`
+correctly declines to re-apply it, and that run's `afterAll` clears the row so
+the run after passes. Fail once, pass on retry, nothing reproducible.
+Reproduced by seeding one leftover row.
+**FIXED** `06c68b5`. Fixtures are suffixed per run, making the collision
+impossible rather than unlikely.
+
+### N-7 — Two cross-tenant holes in the realtime layer
+**Status** CONFIRMED · **Severity** High · **Feature** WebSockets
+**Files** `server/ws/wsServer.ts`
+Found by mutation testing; both were reachable and neither was asserted.
+
+1. **Host privilege.** The ownership check is
+   `rows.length > 0 && rows[0].host_user_id === userId`. Dropping the second
+   half hands host privileges to anyone holding any valid session token, for any
+   album that exists — and host privilege gates the moderation queue and the
+   pending-photo channel. All 40 spec files reaching the module stayed green.
+   The existing tests covered an owner on their own album and an invalid token;
+   nobody had tried a *valid token for somebody else's wedding*.
+2. **Room switching.** Leaving a room is guarded by
+   `oldMeta.eventId !== eventId`. Flip it and the client stays subscribed to the
+   album it left, so a guest who opens a second wedding link keeps receiving the
+   first couple's photographs.
+
+**FIXED** `d43766e` — tests, not code: the production logic was already correct
+and entirely unverified. Toggle-verified in both directions.
+
+### N-8 — The storage sweep reported work it had not done
+**Status** CONFIRMED · **Severity** Medium · **Feature** Storage hygiene
+**Files** `scripts/storage-orphans.ts`
+Two faults, both found by running it:
+
+- It walked `UPLOADS_DIR/events` only. `QUARANTINE_DIR` defaults to a *sibling*
+  of the uploads directory rather than a child — the same layout detail behind
+  N-1 — so the quarantine tree was never scanned. It held 2,577 orphaned albums.
+- It counted a directory as removed whenever `fs.rmSync` did not throw. It does
+  not always throw: one pass reported 7,234 folders removed while 616 were still
+  on disk, silently. A sweep that overstates what it freed is worse than one
+  that fails loudly, because the second gets re-run.
+
+**FIXED** `bce0e6a`. It verifies each removal, names survivors, retries
+transient locks, exits non-zero when any remain, reports bytes actually freed,
+and carries the R2 branch's empty-database guard.
+
+### N-9 — The lifecycle script could not be run the way its own note said
+**Status** CONFIRMED · **Severity** Medium · **Feature** Storage lifecycle
+**Files** `scripts/r2-lifecycle.ts`
+Three faults, all found trying to apply the policy for real:
+
+- Its note said to use "a separate admin token that is not the one the app
+  carries", and gave no way to pass one. The only route was editing
+  `R2_ACCESS_KEY_ID` in `.env`, which makes the application's own credentials an
+  admin token until someone remembers to change them back.
+- Only the 403 case returned early. Every other read failure fell through to a
+  Put that **replaces the entire configuration** — a blind overwrite of rules the
+  script had never seen.
+- It hardcodes a copy of Cloudflare's default rule and calls that "preserving"
+  it, which holds only while nobody has added anything in the dashboard.
+
+**FIXED** `4bf398d`. `R2_ADMIN_*` credentials, a refusal to write over an unread
+configuration, and any unknown rule named with the run stopped.
+
+### N-10 — The health probe leaked its deadline
+**Status** CONFIRMED · **Severity** Low · **Feature** Ops / observability
+**Files** `server/lib/health.ts`
+The loser of a `Promise.race` is not cancelled, so every healthy probe left its
+2s timeout armed — on an endpoint an orchestrator calls every few seconds for
+the life of the container. The same leak class as N-2, introduced by the fix for
+M-1.
+**FIXED** `4bf398d`, with a test that tracks the timer by its delay rather than
+counting live timers.
+
+### N-11 — Three tests that could not fail
+**Status** CONFIRMED · **Severity** Medium (test integrity) · **Feature** Test suite
+**Files** `tests/unit/feedComponents.spec.tsx`, `tests/unit/tierGatingEndToEnd.spec.ts`
+Beyond the three recorded in §8, a mechanical scan of all 126 spec files found
+two more that could not fail, and mutation testing found the class the scan
+could not see:
+
+- `feedComponents` "asks to capture the quest the guest chose" **asserted
+  nothing for its entire life**. It walked from the title to
+  `closest('div').parentElement`, took the first button there — none — and
+  guarded its only assertion behind `if (button)`. Replacing the handler body
+  with `undefined` left it green.
+- `tierGatingEndToEnd`'s gate-tier check iterates `if (gate.name in advertised)`.
+  Rename a gate and `in` stops matching, no iteration body runs, and a test about
+  what the customer is charged for passes having checked none of it.
+
+**FIXED** `147b131`. Both repaired and toggle-verified.
+
+---
+
 ## 4. Confirmed Low
 
 **All eight fixed in `9e6f239`**, except L-1, which was not a defect: `vercel.json`
@@ -430,7 +638,7 @@ including conversation logs) are all correctly gitignored and not exposed.
 | **V-2** | SMTP with a real provider | Deliverability, SPF/DKIM, bounce-webhook ingestion. The rehearsal used a local sink. |
 | **V-3** | FTP ingest against real photographer software | Lightroom tethering / camera FTP. The integration test drives `basic-ftp` only. |
 | **V-4** | Service capacity ceiling (G2, second half) | The 2026-09-13 benchmark saturated the host uplink at 8.7 MB/s — CPU 17–49%, pool 12/40 — so the service's own limit was never reached. Needs real hosting with the generator elsewhere. |
-| **V-5** | ~84 unread spec files | Executed, never read. "Tests with weak assertions / tests that always pass" is evidenced only for the ~38 specs read — and three such tests were found among those, so the rate in the remainder is not zero. See §8. |
+| **V-5** | ~84 unread spec files | **Substantially addressed, by a different method than proposed.** Reading was the wrong instrument: every bad test found this session was invisible on the page. A mechanical scan of all 126 spec files for shapes that cannot fail found two more (N-11), and mutation testing — breaking the source and checking the suite notices — found gaps in files that *had* been read. 22 modules swept; see §8 for scores and what is left. |
 
 ---
 
@@ -451,6 +659,67 @@ Lines 88.55%. `npm run test:e2e` → 27 passed. No skipped or disabled suites.
 | 5 | `/api/audio` refuses an image | M-3 |
 | 6 | Advertised plan features map to implemented capabilities | H-1, at authorship |
 | 7 | R2 adapter contract runs in CI | M-4 — the tests exist, unwired |
+
+**Mutation testing, 2026-09-17 / 18.** The method that actually worked: apply
+one small semantic change to a module, run every spec that reaches it, and
+record whether any failed. A mutation that survives is a behaviour nothing
+asserts. 22 modules swept.
+
+| Module | Score | Real gap found |
+|---|---|---|
+| `middleware/tierGate` | 18/18 | unrecognised tier must fail closed to free |
+| `middleware/auth` | 18/18 | both session-token guards had no direct test |
+| `middleware/rateLimit` | 8/8 | body and query fingerprint branches unasserted |
+| `ws/wsServer` | 18/22 | N-7, two cross-tenant holes |
+| `lib/retention` | 11/13 | both byte figures reported to a human |
+| `lib/guestAuth` | 11/12 | no direct test at all; impersonation unasserted |
+| `lib/retentionNotice` | 7/7 | `escapeHtml` only asserted for one of four characters |
+| `routes/auth` | 12/15 | `companyName` never persisted-tested |
+| `lib/photoWrite` · `lib/planLimits` · `lib/images` · `shared/planCaps` | full | — |
+| `lib/downloadToken` · `lib/previewToken` · `lib/subscriptionUpgrade` | full | — |
+| `lib/storage` | 15/20 | survivors all equivalent or the R2 hole (M-4) |
+| `lib/migrate` | 7/10 | survivors all in the CLI `main()`, no spec reaches it |
+| `routes/billingWebhook` | 17/18 | one survivor, open |
+| `routes/photos/engagement` | 5/8 | three survivors, open |
+| `lib/photoQuarantine` | 8/10 | two survivors, open |
+| `lib/guestIdentity` | 9/11 | two survivors, open |
+| `middleware/validate` | 0/3 | all three in an unreachable fallback |
+
+**Open leads from the second batch, not yet chased.** Recorded rather than
+fixed, so the next pass starts from evidence instead of re-deriving it:
+
+- `routes/photos/engagement:38` — `!isValidUuid(id) || !isValidUuid(guestId)`.
+  With `&&` the route rejects only when *both* are malformed, so a bad guestId
+  reaches the query. Nothing covers the guestId-format refusal on this route.
+- `routes/photos/engagement:57` — the disposable-reveal visibility rule
+  (`!is_locked || !reveal_at || reveal_at <= now`). Its branches are not all
+  covered, which is SEC-07 territory: a guest reacting to a photo before the
+  couple's reveal.
+- `lib/guestIdentity:69,99` — `Number(token_version) || 0`. Forcing it to 0
+  changes nothing any test sees, and this is the value the M10 revocation check
+  compares against.
+- `lib/photoQuarantine:43` — the early return when *nothing* is quarantined. No
+  test covers a partially-quarantined photo, where display and original disagree.
+- `middleware/validate:7` — 0 of 3 killed because all three sites are in a
+  fallback that `err instanceof ZodError` makes unreachable. It exists for two
+  copies of zod in the tree, which is a real npm hazard; it is defensive code
+  with no consumer, not a gap.
+
+Roughly 30 modules remain unswept. The highest-value are `routes/photos/upload`
+(the hot path), `routes/photos/moderation`, `lib/ingest`, `routes/events/export`
+and `lib/emailBounces`.
+
+Two notes on method, both learned by getting it wrong first:
+
+- **Equivalent mutants are not gaps.** Several survivors change no observable
+  behaviour — `>` versus `>=` on Date instants that are equal either way, a
+  redundant `existsSync` whose caller already guarantees the file exists. They
+  are recorded as such rather than chased.
+- **A harness that under-selects specs manufactures survivors.** Selecting only
+  direct importers reported 10 survivors in `guestAuth` where the transitive set
+  reported 4. The harness now runs a canary — corrupt the module outright and
+  refuse to report if the specs still pass — because a survivor list that
+  includes impossible mutations is a list nobody trusts.
 
 **Structural gaps:**
 - **The production storage adapter has no automated coverage at all** (M-4).
