@@ -147,7 +147,11 @@ describe('guest rows are not minted per request (H8)', () => {
       const fingerprint = `mint-fp-${Math.random().toString(36).slice(2, 8)}`;
 
       for (let i = 0; i < 5; i++) {
-        const res = await postComment(photoId, { guestId: 'unknown', guestName: 'Repeat', deviceFingerprint: fingerprint });
+        const res = await postComment(photoId, {
+          guestId: 'unknown',
+          guestName: 'Repeat',
+          deviceFingerprint: fingerprint,
+        });
         expect(res.status).toBe(201);
       }
 
@@ -159,12 +163,20 @@ describe('guest rows are not minted per request (H8)', () => {
       const photoId = await uploadPhoto(host.eventId);
       const fingerprint = `mint-fp-${Math.random().toString(36).slice(2, 8)}`;
 
-      const first = await postComment(photoId, { guestId: 'unknown', guestName: 'Newcomer', deviceFingerprint: fingerprint });
+      const first = await postComment(photoId, {
+        guestId: 'unknown',
+        guestName: 'Newcomer',
+        deviceFingerprint: fingerprint,
+      });
       const firstBody = await first.json();
       expect(first.status).toBe(201);
       expect(typeof firstBody.guestToken).toBe('string');
 
-      const second = await postComment(photoId, { guestId: 'unknown', guestName: 'Newcomer', deviceFingerprint: fingerprint });
+      const second = await postComment(photoId, {
+        guestId: 'unknown',
+        guestName: 'Newcomer',
+        deviceFingerprint: fingerprint,
+      });
       const secondBody = await second.json();
       expect(second.status).toBe(201);
       expect(secondBody.guestId).toBe(firstBody.guestId);
@@ -176,7 +188,11 @@ describe('guest rows are not minted per request (H8)', () => {
       const photoId = await uploadPhoto(host.eventId);
       const fingerprint = `mint-fp-${Math.random().toString(36).slice(2, 8)}`;
 
-      const seed = await postComment(photoId, { guestId: 'unknown', guestName: 'Tokened', deviceFingerprint: fingerprint });
+      const seed = await postComment(photoId, {
+        guestId: 'unknown',
+        guestName: 'Tokened',
+        deviceFingerprint: fingerprint,
+      });
       const { guestId, guestToken } = await seed.json();
 
       const before = await guestCount(host.eventId);
@@ -200,9 +216,7 @@ describe('guest rows are not minted per request (H8)', () => {
       // timeout, which stopped being reliable as the suite grew and more spec
       // files competed for the machine.
       const responses = await Promise.all(
-        Array.from({ length: 25 }, () =>
-          postComment(photoId, { guestId: 'unknown', deviceFingerprint: fingerprint })
-        )
+        Array.from({ length: 25 }, () => postComment(photoId, { guestId: 'unknown', deviceFingerprint: fingerprint }))
       );
 
       expect(responses.some((res) => res.status === 429)).toBe(true);
@@ -251,7 +265,9 @@ describe('guest rows are not minted per request (H8)', () => {
       const first = await (await completeQuest(questId, { guestId: 'unknown', deviceFingerprint: fingerprint })).json();
       expect(typeof first.guestToken).toBe('string');
 
-      const second = await (await completeQuest(questId, { guestId: 'unknown', deviceFingerprint: fingerprint })).json();
+      const second = await (
+        await completeQuest(questId, { guestId: 'unknown', deviceFingerprint: fingerprint })
+      ).json();
       expect(second.guestId).toBe(first.guestId);
       expect(second.guestToken).toBeUndefined();
     });
@@ -264,5 +280,106 @@ describe('guest rows are not minted per request (H8)', () => {
     const res = await postComment(photoId, { guestId: 'unknown', deviceFingerprint: 'photographer' });
 
     expect(res.status).toBe(400);
+  });
+
+  /**
+   * The token version a resolved identity carries.
+   *
+   * `resolveGuestIdentity` returns `tokenVersion`, and its only consumer is
+   * `issueGuestToken(guestId, eventId, tokenVersion)` on the comment, quest and
+   * upload paths. Both places that produce it read
+   * `Number(row.token_version) || 0`, and mutation testing found that forcing
+   * either to 0 changed nothing any test could see.
+   *
+   * Forcing it to 0 is not a cosmetic bug. A host who uses "reset guest sessions"
+   * bumps every row's `token_version` to 1 (M10); a guest who then comments would
+   * be issued a token minted at 0, which `verifyGuestToken` rejects against the
+   * row's 1 — for ever, on every subsequent request. A feature meant to log other
+   * people out would permanently lock the remaining guests out instead, and the
+   * suite would not have said a word.
+   */
+
+  describe('resolveGuestIdentity carries the row’s token version', () => {
+    let tvHost: Host;
+
+    beforeAll(async () => {
+      tvHost = await registerHost();
+      createdEvents.push(tvHost.eventId);
+    }, 30_000);
+
+    async function seedGuest(version: number): Promise<{ guestId: string; fingerprint: string }> {
+      const fingerprint = `tv-fp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const { rows } = await query<{ id: string }>(
+        `INSERT INTO guests (event_id, name, device_fingerprint, token_version)
+         VALUES ($1, 'Token Version Guest', $2, $3) RETURNING id`,
+        [tvHost.eventId, fingerprint, version]
+      );
+      return { guestId: rows[0].id, fingerprint };
+    }
+
+    it('returns the stored version when a token proves the identity', async () => {
+      const { resolveGuestIdentity } = await import('../../server/lib/guestIdentity');
+      const { issueGuestToken } = await import('../../server/lib/guestAuth');
+      const { guestId } = await seedGuest(2);
+
+      const identity = await resolveGuestIdentity({
+        eventId: tvHost.eventId,
+        guestId,
+        guestToken: issueGuestToken(guestId, tvHost.eventId, 2),
+      });
+
+      expect(identity).not.toBeNull();
+      expect(identity!.identityProven).toBe(true);
+      expect(identity!.tokenVersion).toBe(2);
+    }, 30_000);
+
+    it('returns the stored version when the device fingerprint matches', async () => {
+      // The other producer of the same value, written out separately in the
+      // source, so it needs asserting separately too.
+      const { resolveGuestIdentity } = await import('../../server/lib/guestIdentity');
+      const { guestId, fingerprint } = await seedGuest(3);
+
+      const identity = await resolveGuestIdentity({
+        eventId: tvHost.eventId,
+        deviceFingerprint: fingerprint,
+      });
+
+      expect(identity).not.toBeNull();
+      expect(identity!.guestId).toBe(guestId);
+      expect(identity!.tokenVersion).toBe(3);
+    }, 30_000);
+
+    it('mints a token the verifier then accepts, after a session reset', async () => {
+      // The end-to-end consequence, and the one that matters: a guest recognised
+      // after a reset must receive a token that still works.
+      const { resolveGuestIdentity } = await import('../../server/lib/guestIdentity');
+      const { issueGuestToken, verifyGuestToken } = await import('../../server/lib/guestAuth');
+      const { guestId, fingerprint } = await seedGuest(0);
+
+      await query('UPDATE guests SET token_version = token_version + 1 WHERE id = $1', [guestId]);
+
+      const identity = await resolveGuestIdentity({
+        eventId: tvHost.eventId,
+        deviceFingerprint: fingerprint,
+      });
+      const minted = issueGuestToken(guestId, tvHost.eventId, identity!.tokenVersion);
+
+      expect(verifyGuestToken(minted, guestId, tvHost.eventId, 1)).toBe(true);
+    }, 30_000);
+
+    it('treats a brand-new guest as version zero', async () => {
+      // The default, and the reason `|| 0` is there at all: a fresh row has no
+      // history to carry.
+      const { resolveGuestIdentity } = await import('../../server/lib/guestIdentity');
+
+      const identity = await resolveGuestIdentity({
+        eventId: tvHost.eventId,
+        deviceFingerprint: `tv-new-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        fallbackName: 'Fresh Guest',
+      });
+
+      expect(identity!.tokenVersion).toBe(0);
+      expect(identity!.identityProven).toBe(true);
+    }, 30_000);
   });
 });

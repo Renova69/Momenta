@@ -288,4 +288,96 @@ describe('Photo quarantine (MED-03/SEC-M5)', () => {
     const row = await query('SELECT storage_path FROM photos WHERE id = $1', [uploaded.body.id]);
     expect(row.rows[0].storage_path).toMatch(/^\/quarantine\//);
   });
+
+  /**
+   * Promotion out of quarantine, when the photo's three copies disagree.
+   *
+   * `promotePhotoFromQuarantine` returns early when nothing is quarantined —
+   * correct, and what makes it safe to call unconditionally. The guard is
+   * `!isQuarantined(display) && !isQuarantined(original) && !isQuarantined(thumb)`,
+   * and mutation testing found that turning those `&&` into `||` changed nothing
+   * any test could see: with `||` it returns as soon as *one* copy is already
+   * public, so a photo in a mixed state is skipped, `is_quarantined` stays true,
+   * and it never becomes visible to anyone.
+   *
+   * Mixed is not hypothetical. Promotion moves three objects and then writes one
+   * row; a crash or a storage error between those leaves exactly this state, and
+   * the retry is the thing that must recover it. A guard that bails on the retry
+   * turns a transient failure into a photograph nobody ever sees again.
+   */
+  describe('promoting a photo whose copies disagree', () => {
+    let host: Session;
+
+    beforeAll(async () => {
+      host = await registerHost();
+      createdEvents.push(host.eventId);
+      await query('UPDATE events SET is_moderation_enabled = true WHERE id = $1', [host.eventId]);
+    }, 30_000);
+
+    /** Put the row into a state where only some copies still sit in quarantine. */
+    async function leaveHalfPromoted(photoId: string): Promise<void> {
+      const { rows } = await query<{ thumbnail_url: string | null }>('SELECT thumbnail_url FROM photos WHERE id = $1', [
+        photoId,
+      ]);
+      // The thumbnail looks already-public while display and original do not —
+      // the shape a promotion interrupted after its first object would leave.
+      await query('UPDATE photos SET thumbnail_url = $2 WHERE id = $1', [
+        photoId,
+        (rows[0].thumbnail_url ?? '').replace('/quarantine/', '/uploads/'),
+      ]);
+    }
+
+    it('still promotes when only some copies are quarantined', async () => {
+      const { body } = await uploadPhoto(host.eventId, 'half promoted');
+      const photoId = body.id as string;
+
+      const before = await query<{ storage_path: string; is_quarantined: boolean }>(
+        'SELECT storage_path, is_quarantined FROM photos WHERE id = $1',
+        [photoId]
+      );
+      expect(before.rows[0].is_quarantined).toBe(true);
+      expect(before.rows[0].storage_path).toContain('/quarantine/');
+
+      await leaveHalfPromoted(photoId);
+
+      const { promotePhotoFromQuarantine } = await import('../../server/lib/photoQuarantine');
+      await promotePhotoFromQuarantine(photoId);
+
+      const after = await query<{ storage_path: string; is_quarantined: boolean }>(
+        'SELECT storage_path, is_quarantined FROM photos WHERE id = $1',
+        [photoId]
+      );
+
+      // The still-quarantined copies moved, and the row no longer claims to be
+      // quarantined. Without this the photo is stranded: invisible to guests,
+      // and no later call will retry it.
+      expect(after.rows[0].storage_path).not.toContain('/quarantine/');
+      expect(after.rows[0].is_quarantined).toBe(false);
+    }, 30_000);
+
+    it('does nothing for a photo already fully public', async () => {
+      // The other half of the branch, and the reason the early return exists:
+      // this function is called unconditionally, so a no-op has to stay a no-op.
+      const { body } = await uploadPhoto(host.eventId, 'already public');
+      const photoId = body.id as string;
+
+      const { promotePhotoFromQuarantine } = await import('../../server/lib/photoQuarantine');
+      await promotePhotoFromQuarantine(photoId);
+
+      const first = await query<{ storage_path: string; full_url: string }>(
+        'SELECT storage_path, full_url FROM photos WHERE id = $1',
+        [photoId]
+      );
+
+      await promotePhotoFromQuarantine(photoId);
+
+      const second = await query<{ storage_path: string; full_url: string }>(
+        'SELECT storage_path, full_url FROM photos WHERE id = $1',
+        [photoId]
+      );
+
+      expect(second.rows[0].storage_path).toBe(first.rows[0].storage_path);
+      expect(second.rows[0].full_url).toBe(first.rows[0].full_url);
+    }, 30_000);
+  });
 });
