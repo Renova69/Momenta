@@ -28,6 +28,29 @@ import { CONFIG } from '../server/lib/config';
  * invocation, not just its workers. This asserts the pin held, because the
  * failure mode is silent in both directions.
  */
+/**
+ * When this run began, *by the database's clock*.
+ *
+ * Read in `setup()`, before any spec has created a fixture, so every row the
+ * teardown may touch is one that already existed when we started. See
+ * `PurgeOptions.createdBefore`: without a cutoff, a run finishing while another
+ * is mid-suite deletes the other's fixtures, which is what caused this suite's
+ * scattered, unreproducible failures.
+ *
+ * It has to come from Postgres rather than from `new Date()`. Rows are stamped
+ * by the server's clock (`DEFAULT now()`), and this process and the database
+ * are not the same machine — measured here at several hundred milliseconds
+ * apart. A cutoff taken from the app clock while timestamps come from the
+ * database's reintroduces exactly the timing dependence the cutoff exists to
+ * remove, for any row written inside the skew window. One clock, no window.
+ */
+let runStartedAt: string | null = null;
+
+export async function setup(): Promise<void> {
+  const { rows } = await pool.query<{ now: string }>('SELECT now()::text AS now');
+  runStartedAt = rows[0].now;
+}
+
 function mayPurgeMedia(): boolean {
   return CONFIG.STORAGE_PROVIDER === 'local' || process.env.ALLOW_REMOTE_STORAGE_IN_TESTS === 'true';
 }
@@ -53,6 +76,15 @@ function mayPurgeMedia(): boolean {
  * that has nothing to do with the code under test.
  */
 export async function teardown(): Promise<void> {
+  if (runStartedAt === null) {
+    // No cutoff means no way to tell this run's rows from a concurrent run's,
+    // and the unbounded purge is what broke six spec files at a time. Leftover
+    // fixtures are untidy; deleting someone else's live ones is not.
+    console.error('[teardown] run start was never recorded — refusing to purge.');
+    await pool.end().catch(() => undefined);
+    return;
+  }
+
   if (!mayPurgeMedia()) {
     console.error(
       `[teardown] STORAGE_PROVIDER resolved to "${CONFIG.STORAGE_PROVIDER}" in Vitest's main process.\n` +
@@ -65,7 +97,9 @@ export async function teardown(): Promise<void> {
   }
 
   try {
-    const { events, users, mediaBytes } = await purgeTestData(false);
+    const { events, users, mediaBytes } = await purgeTestData(false, {
+      createdBefore: runStartedAt,
+    });
     if (events > 0 || users > 0) {
       const mb = (mediaBytes / 1024 / 1024).toFixed(1);
       console.log(`[teardown] removed ${events} test event(s), ${users} test user(s), ${mb} MB of media`);

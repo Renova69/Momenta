@@ -36,19 +36,60 @@ export interface PurgeResult {
   mediaBytes: number;
 }
 
-export async function purgeTestData(dryRun = false): Promise<PurgeResult> {
+export interface PurgeOptions {
+  /**
+   * Only remove rows that already existed at this instant.
+   *
+   * Identification by email domain says *whose* rows these are. It does not say
+   * *when* they were made, and the teardown that calls this runs while other
+   * vitest processes may be mid-suite — so without a cutoff it deletes the
+   * fixtures another run is still using. Reproduced directly: firing this purge
+   * against a live suite deleted 11 events and 152 users and failed 11 tests
+   * across 6 unrelated spec files, which is exactly the shape of the
+   * intermittent failures that went unexplained for a week.
+   *
+   * A run therefore cleans up after *previous* runs, never its own peers.
+   * Accumulation stays bounded — one run's worth, collected by the next — and a
+   * concurrent run's rows become untouchable by construction rather than by
+   * timing.
+   *
+   * Omitted by the CLI, where an operator asking for a purge means all of it.
+   */
+  createdBefore?: string | null;
+}
+
+export async function purgeTestData(dryRun = false, options: PurgeOptions = {}): Promise<PurgeResult> {
+  const cutoff = options.createdBefore ?? null;
+
+  // `$2 IS NULL OR ...` rather than building the SQL conditionally: one
+  // statement, one plan, and no chance of the count and the delete drifting
+  // apart.
+  const eventScope = `(e.host_email LIKE ANY($1::text[]) OR u.email LIKE ANY($1::text[]))
+                      AND ($2::timestamptz IS NULL OR e.created_at < $2)`;
+
+  // Deleting a user cascades into their events (migration 011), so an old user
+  // holding a new event would take that event down with them and put us right
+  // back where we started. The NOT EXISTS is what makes the cutoff mean what it
+  // says.
+  const userScope = `email LIKE ANY($1::text[])
+                     AND ($2::timestamptz IS NULL OR created_at < $2)
+                     AND NOT EXISTS (
+                       SELECT 1 FROM events e
+                        WHERE e.host_user_id = users.id
+                          AND ($2::timestamptz IS NULL OR e.created_at >= $2)
+                     )`;
+
   // Same reach as the delete below, so the preview cannot promise less than
   // the run removes.
   const countEvents = `SELECT COUNT(*)::int AS n
                          FROM events e
                          LEFT JOIN users u ON u.id = e.host_user_id
-                        WHERE e.host_email LIKE ANY($1::text[])
-                           OR u.email LIKE ANY($1::text[])`;
-  const countUsers = `SELECT COUNT(*)::int AS n FROM users WHERE email LIKE ANY($1::text[])`;
+                        WHERE ${eventScope}`;
+  const countUsers = `SELECT COUNT(*)::int AS n FROM users WHERE ${userScope}`;
 
   if (dryRun) {
-    const e = await pool.query(countEvents, [LIKE_PATTERNS]);
-    const u = await pool.query(countUsers, [LIKE_PATTERNS]);
+    const e = await pool.query(countEvents, [LIKE_PATTERNS, cutoff]);
+    const u = await pool.query(countUsers, [LIKE_PATTERNS, cutoff]);
     return { events: e.rows[0].n, users: u.rows[0].n, mediaBytes: 0 };
   }
 
@@ -70,9 +111,8 @@ export async function purgeTestData(dryRun = false): Promise<PurgeResult> {
     `SELECT e.id
        FROM events e
        LEFT JOIN users u ON u.id = e.host_user_id
-      WHERE e.host_email LIKE ANY($1::text[])
-         OR u.email LIKE ANY($1::text[])`,
-    [LIKE_PATTERNS]
+      WHERE ${eventScope}`,
+    [LIKE_PATTERNS, cutoff]
   );
 
   let mediaBytes = 0;
@@ -95,7 +135,7 @@ export async function purgeTestData(dryRun = false): Promise<PurgeResult> {
   // (migration 011), but specs that insert an event directly leave it with a
   // NULL host_user_id and nothing to cascade from — those are only reachable here.
   const events = await pool.query(`DELETE FROM events WHERE id = ANY($1::uuid[])`, [doomed.map((e) => e.id)]);
-  const users = await pool.query(`DELETE FROM users WHERE email LIKE ANY($1::text[])`, [LIKE_PATTERNS]);
+  const users = await pool.query(`DELETE FROM users WHERE ${userScope}`, [LIKE_PATTERNS, cutoff]);
 
   return { events: events.rowCount ?? 0, users: users.rowCount ?? 0, mediaBytes };
 }
