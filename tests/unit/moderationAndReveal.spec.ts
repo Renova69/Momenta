@@ -26,7 +26,10 @@ function buildMultipartAudio(bytes: Buffer, fields: Record<string, string>): { b
   }
   parts.push(Buffer.from(`--${boundary}--\r\n`));
   // Node's fetch accepts a Buffer body at runtime; DOM's BodyInit type just doesn't know about it.
-  return { body: Buffer.concat(parts) as unknown as BodyInit, contentType: `multipart/form-data; boundary=${boundary}` };
+  return {
+    body: Buffer.concat(parts) as unknown as BodyInit,
+    contentType: `multipart/form-data; boundary=${boundary}`,
+  };
 }
 
 /**
@@ -183,9 +186,7 @@ describe('Moderation and disposable-camera reveal', () => {
       createdEvents.push(host.eventId);
 
       // Moderation is a Celebration Pass feature and is enforced server-side.
-      await query("UPDATE subscriptions SET tier = 'celebration_pass' WHERE user_id = $1", [
-        host.userId,
-      ]);
+      await query("UPDATE subscriptions SET tier = 'celebration_pass' WHERE user_id = $1", [host.userId]);
       const enable = await fetch(`${BASE_URL}/api/events/${host.eventId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${host.token}` },
@@ -252,9 +253,7 @@ describe('Moderation and disposable-camera reveal', () => {
     it('releases the photo to guests once the host approves it', async () => {
       const host = await registerHost();
       createdEvents.push(host.eventId);
-      await query("UPDATE subscriptions SET tier = 'celebration_pass' WHERE user_id = $1", [
-        host.userId,
-      ]);
+      await query("UPDATE subscriptions SET tier = 'celebration_pass' WHERE user_id = $1", [host.userId]);
       await fetch(`${BASE_URL}/api/events/${host.eventId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${host.token}` },
@@ -283,6 +282,100 @@ describe('Moderation and disposable-camera reveal', () => {
       guest.close();
     });
 
+    /**
+     * What a status change does to the photo's *storage*, as opposed to its row.
+     *
+     * Approving is the one discrete action that makes a quarantined photo safe
+     * to be public, so it promotes the objects out of `quarantine/` and onto
+     * the served path. Mutation testing found this whole decision unasserted:
+     * `moderation.ts` scored 4 of 10, the weakest module of the sweep.
+     */
+    async function moderatedHost(): Promise<Session> {
+      const host = await registerHost();
+      createdEvents.push(host.eventId);
+      await query("UPDATE subscriptions SET tier = 'celebration_pass' WHERE user_id = $1", [host.userId]);
+      await query('UPDATE events SET is_moderation_enabled = true WHERE id = $1', [host.eventId]);
+      return host;
+    }
+
+    async function setStatus(host: Session, photoId: string, status: string) {
+      const res = await fetch(`${BASE_URL}/api/photos/${photoId}/status`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${host.token}` },
+        body: JSON.stringify({ status }),
+      });
+      return res.status;
+    }
+
+    async function storageOf(photoId: string): Promise<string> {
+      const { rows } = await query<{ storage_path: string }>('SELECT storage_path FROM photos WHERE id = $1', [
+        photoId,
+      ]);
+      return rows[0].storage_path;
+    }
+
+    it('does not publish a photo the host just rejected', async () => {
+      // The serious one. Promotion is gated on the status being approved or
+      // featured; with `||` instead of `&&` that gate is satisfied by the
+      // UPDATE having matched a row, which it always has by this point — so
+      // rejecting a photo would move it out of quarantine and onto the public
+      // path. A host rejects a photo precisely because it must not be seen.
+      const host = await moderatedHost();
+      const { body } = await uploadPhoto(host.eventId, 'rejected, not published');
+      const photoId = body.id as string;
+
+      expect(await storageOf(photoId)).toContain('/quarantine/');
+      expect(await setStatus(host, photoId, 'rejected')).toBe(200);
+
+      expect(await storageOf(photoId)).toContain('/quarantine/');
+    });
+
+    it('publishes a photo the host approves', async () => {
+      // The other direction, so the refusal above cannot be satisfied by a
+      // rule that simply never promotes anything.
+      const host = await moderatedHost();
+      const { body } = await uploadPhoto(host.eventId, 'approved and published');
+      const photoId = body.id as string;
+
+      expect(await setStatus(host, photoId, 'approved')).toBe(200);
+
+      expect(await storageOf(photoId)).not.toContain('/quarantine/');
+    });
+
+    it('holds an approved photo back while it is still locked before its reveal', async () => {
+      // Approval alone is not enough for a disposable-locked photo: the read
+      // path promotes it lazily once the reveal passes.
+      const host = await moderatedHost();
+      await query("UPDATE events SET is_disposable_mode = true, reveal_at = NOW() + INTERVAL '1 hour' WHERE id = $1", [
+        host.eventId,
+      ]);
+      const { body } = await uploadPhoto(host.eventId, 'approved but still locked');
+      const photoId = body.id as string;
+      await query('UPDATE photos SET is_locked = true WHERE id = $1', [photoId]);
+
+      expect(await setStatus(host, photoId, 'approved')).toBe(200);
+
+      expect(await storageOf(photoId)).toContain('/quarantine/');
+    });
+
+    it('publishes an approved photo that was never locked, reveal time or not', async () => {
+      // `stillLocked` is `is_locked && reveal_at && reveal_at > now`. Loosen
+      // any of those to `||` and a photo that was never locked counts as
+      // locked merely because the album has a reveal time — so every ordinary
+      // approval in a disposable-mode album silently stops publishing.
+      const host = await moderatedHost();
+      await query("UPDATE events SET is_disposable_mode = true, reveal_at = NOW() + INTERVAL '1 hour' WHERE id = $1", [
+        host.eventId,
+      ]);
+      const { body } = await uploadPhoto(host.eventId, 'unlocked in a disposable album');
+      const photoId = body.id as string;
+      await query('UPDATE photos SET is_locked = false WHERE id = $1', [photoId]);
+
+      expect(await setStatus(host, photoId, 'approved')).toBe(200);
+
+      expect(await storageOf(photoId)).not.toContain('/quarantine/');
+    });
+
     it('broadcasts normally to guests when moderation is off', async () => {
       const host = await registerHost();
       createdEvents.push(host.eventId);
@@ -302,9 +395,7 @@ describe('Moderation and disposable-camera reveal', () => {
   describe('disposable camera reveal', () => {
     async function enableDisposable(host: Session, revealAt: Date) {
       // Disposable mode is a Deluxe Keepsake feature.
-      await query("UPDATE subscriptions SET tier = 'deluxe_keepsake' WHERE user_id = $1", [
-        host.userId,
-      ]);
+      await query("UPDATE subscriptions SET tier = 'deluxe_keepsake' WHERE user_id = $1", [host.userId]);
       const res = await fetch(`${BASE_URL}/api/events/${host.eventId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${host.token}` },
@@ -383,14 +474,12 @@ describe('Moderation and disposable-camera reveal', () => {
       await uploadPhoto(host.eventId, 'the morning after');
 
       // Before the reveal, nothing.
-      expect(
-        (await listPhotos(host.eventId)).map((p: { caption: string }) => p.caption)
-      ).not.toContain('the morning after');
+      expect((await listPhotos(host.eventId)).map((p: { caption: string }) => p.caption)).not.toContain(
+        'the morning after'
+      );
 
       // Move the reveal into the past, as the morning would.
-      await query('UPDATE events SET reveal_at = NOW() - INTERVAL \'1 minute\' WHERE id = $1', [
-        host.eventId,
-      ]);
+      await query("UPDATE events SET reveal_at = NOW() - INTERVAL '1 minute' WHERE id = $1", [host.eventId]);
 
       const revealed = await listPhotos(host.eventId);
       expect(revealed.map((p: { caption: string }) => p.caption)).toContain('the morning after');
@@ -481,10 +570,7 @@ describe('Moderation and disposable-camera reveal', () => {
       expect(photo.originalUrl).not.toBe(photo.fullUrl);
 
       // And the upload is charged against the plan's storage allowance.
-      const { rows } = await query(
-        'SELECT storage_bytes FROM events WHERE id = $1',
-        [host.eventId]
-      );
+      const { rows } = await query('SELECT storage_bytes FROM events WHERE id = $1', [host.eventId]);
       expect(Number(rows[0].storage_bytes)).toBeGreaterThan(jpeg.length);
     });
   });
