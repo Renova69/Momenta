@@ -231,6 +231,66 @@ describe('guest rows are not minted per request (H8)', () => {
     }, 20_000);
   });
 
+  /**
+   * The defaults a quest is created with.
+   *
+   * `description?.trim() || null, iconName || 'camera', points || 10` — three
+   * fallbacks on one line, none of them asserted. Turning any `||` into `&&`
+   * nulls the value and the response still looks right, because the route
+   * returns the row it just wrote. A host creates a quest and it silently has
+   * no icon, or is worth nothing.
+   */
+  describe('POST /api/quests/events/:id/quests defaults', () => {
+    /** The quests router is mounted at `/api` in this file, not `/api/quests`. */
+    async function createQuest(host: Host, body: Record<string, unknown>) {
+      const res = await fetch(`${BASE_URL}/api/events/${host.eventId}/quests`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${host.token}` },
+        body: JSON.stringify(body),
+      });
+      return { status: res.status, body: await res.json().catch(() => ({})) };
+    }
+
+    async function paidHost(): Promise<Host> {
+      const host = await registerHost();
+      createdEvents.push(host.eventId);
+      // Scavenger quests are gated at celebration_pass.
+      await query(
+        "UPDATE subscriptions SET tier = 'celebration_pass' WHERE user_id = (SELECT host_user_id FROM events WHERE id = $1)",
+        [host.eventId]
+      );
+      return host;
+    }
+
+    it('fills in an icon and a point value when the host gives none', async () => {
+      const host = await paidHost();
+
+      const { status, body } = await createQuest(host, { title: 'Find the cake' });
+
+      expect(status).toBe(201);
+      expect(body.iconName).toBe('camera');
+      expect(body.points).toBe(10);
+      expect(body.description).toBeNull();
+    }, 20_000);
+
+    it('keeps what the host did give', async () => {
+      // The other half: a defaulting expression that ignored its input would
+      // satisfy the test above.
+      const host = await paidHost();
+
+      const { body } = await createQuest(host, {
+        title: 'Toast the couple',
+        description: '  raise a glass  ',
+        iconName: 'wine',
+        points: 25,
+      });
+
+      expect(body.iconName).toBe('wine');
+      expect(body.points).toBe(25);
+      expect(body.description).toBe('raise a glass');
+    }, 20_000);
+  });
+
   describe('POST /api/quests/:id/complete', () => {
     it('refuses a caller offering neither a token nor a fingerprint', async () => {
       const host = await registerHost();
@@ -242,6 +302,28 @@ describe('guest rows are not minted per request (H8)', () => {
       expect(res.status).toBe(401);
       expect(await guestCount(host.eventId)).toBe(before);
     });
+
+    it('stores no photo reference when the one supplied is not a uuid', async () => {
+      // `photoId && isValidUuid(photoId) ? photoId : null`. With `||` the
+      // malformed value is kept and handed to a uuid column, which raises
+      // 22P02 and surfaces as a 500 — on a route a guest hits by tapping a
+      // quest tile.
+      const host = await registerHost();
+      const questId = await firstQuestId(host.eventId);
+
+      const res = await completeQuest(questId, {
+        guestId: 'unknown',
+        deviceFingerprint: `badphoto-${Math.random().toString(36).slice(2, 8)}`,
+        photoId: 'not-a-uuid',
+      });
+
+      expect(res.status).toBe(200);
+      const { rows } = await query<{ photo_id: string | null }>(
+        'SELECT photo_id FROM guest_quest_completions WHERE quest_id = $1 ORDER BY completed_at DESC LIMIT 1',
+        [questId]
+      );
+      expect(rows[0].photo_id).toBeNull();
+    }, 20_000);
 
     it('creates at most one row for a device across repeated completions', async () => {
       const host = await registerHost();
@@ -381,5 +463,89 @@ describe('guest rows are not minted per request (H8)', () => {
       expect(identity!.tokenVersion).toBe(0);
       expect(identity!.identityProven).toBe(true);
     }, 30_000);
+  });
+
+  /**
+   * What POST /api/guests actually stores.
+   *
+   * The join form sends a name, an optional table number and an optional
+   * avatar. Both optionals are written with `x || fallback`, and mutation
+   * testing found neither asserted: turning either `||` into `&&` makes the
+   * value null on every join, and the response still looks right because the
+   * route returns the row it just wrote. A guest joins, the seating chart
+   * loses their table, and their avatar quietly becomes the default — visible
+   * to everyone on every photo they take.
+   */
+  describe('POST /api/guests stores what the guest supplied', () => {
+    let joinHost: Host;
+
+    beforeAll(async () => {
+      joinHost = await registerHost();
+      createdEvents.push(joinHost.eventId);
+    }, 30_000);
+
+    async function join(body: Record<string, unknown>) {
+      const res = await fetch(`${BASE_URL}/api/guests`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ eventId: joinHost.eventId, ...body }),
+      });
+      return { status: res.status, body: await res.json().catch(() => ({})) };
+    }
+
+    it('keeps the table number, trimmed', async () => {
+      const { status, body } = await join({
+        name: 'Ana',
+        tableNumber: '  12  ',
+        deviceFingerprint: `table-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      });
+
+      expect(status).toBe(201);
+      expect(body.tableNumber).toBe('12');
+
+      // Asserted against the row, not only the response: the route returns
+      // what it wrote, so a response-shape check cannot tell you it persisted.
+      const { rows } = await query<{ table_number: string | null }>('SELECT table_number FROM guests WHERE id = $1', [
+        body.id,
+      ]);
+      expect(rows[0].table_number).toBe('12');
+    }, 20_000);
+
+    it('leaves the table number null when none was given', async () => {
+      const { body } = await join({
+        name: 'Boris',
+        deviceFingerprint: `notable-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      });
+
+      const { rows } = await query<{ table_number: string | null }>('SELECT table_number FROM guests WHERE id = $1', [
+        body.id,
+      ]);
+      // null, not the empty string — "no table" has to stay a question the
+      // column can answer.
+      expect(rows[0].table_number).toBeNull();
+    }, 20_000);
+
+    it('keeps the avatar the guest chose', async () => {
+      const chosen = 'https://example.com/ana.png';
+      const { body } = await join({
+        name: 'Ana',
+        avatarUrl: chosen,
+        deviceFingerprint: `avatar-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      });
+
+      expect(body.avatarUrl).toBe(chosen);
+    }, 20_000);
+
+    it('generates one from the name when the guest chose none', async () => {
+      // The fallback is the other half of the same expression; a test that only
+      // covered the supplied case would pass with the fallback deleted.
+      const { body } = await join({
+        name: 'Silvia',
+        deviceFingerprint: `noavatar-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      });
+
+      expect(typeof body.avatarUrl).toBe('string');
+      expect(body.avatarUrl).toContain('Silvia');
+    }, 20_000);
   });
 });

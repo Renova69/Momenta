@@ -156,6 +156,65 @@ describe('Reaction batching (P6)', () => {
     if (server) server.close();
   });
 
+  it('carries the reactor’s name, and null when they gave none', async () => {
+    // `guestName?.trim() || null` — the ambient reaction bar shows who reacted.
+    // Turning that `||` into `&&` makes every reaction anonymous, and nothing
+    // noticed: the batch still arrives, still has the right count, still has
+    // the right emoji. Only the name silently goes missing.
+    const ws = new WebSocket(`ws://localhost:${BATCH_PORT}`);
+    await new Promise<void>((resolve, reject) => {
+      const timeout = setTimeout(() => reject(new Error('connect timed out')), 5000);
+      ws.on('open', () => {
+        clearTimeout(timeout);
+        resolve();
+      });
+      ws.on('error', reject);
+    });
+
+    const seen: { reaction: string; guestName: string | null }[] = [];
+    ws.on('message', (raw) => {
+      const msg = JSON.parse(raw.toString());
+      if (msg.type === 'REACTIONS_BATCH') seen.push(...(msg.payload?.reactions || []));
+    });
+
+    const joined = new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('ROOM_JOINED timed out')), 5000);
+      ws.on('message', (raw) => {
+        if (JSON.parse(raw.toString()).type === 'ROOM_JOINED') {
+          clearTimeout(timer);
+          resolve();
+        }
+      });
+    });
+    ws.send(JSON.stringify({ type: 'JOIN_EVENT_ROOM', eventId }));
+    await joined;
+
+    const send = (body: Record<string, unknown>) =>
+      fetch(`http://localhost:${BATCH_PORT}/api/events/${eventId}/reactions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+
+    await send({ reaction: 'clap', guestName: '  Ana  ' });
+    await send({ reaction: 'cheers' });
+
+    const deadline = Date.now() + 3000;
+    while (seen.length < 2 && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+
+    const named = seen.find((r) => r.reaction === 'clap');
+    const anonymous = seen.find((r) => r.reaction === 'cheers');
+
+    // Trimmed, because a name typed with a trailing space is still that name.
+    expect(named?.guestName).toBe('Ana');
+    // Absent means anonymous, not the string "undefined".
+    expect(anonymous?.guestName).toBeNull();
+
+    ws.close();
+  });
+
   it('coalesces a burst of reactions into few REACTIONS_BATCH messages, not one per reaction', async () => {
     const listenerPort = BATCH_PORT;
     const ws = new WebSocket(`ws://localhost:${listenerPort}`);
@@ -321,7 +380,10 @@ describe('WS AUTH rejects non-session tokens (SEC-01)', () => {
     return new Promise((resolve, reject) => {
       const ws = new WebSocket(`ws://localhost:${port}`);
       const timeout = setTimeout(() => reject(new Error('connect timed out')), 5000);
-      ws.on('open', () => { clearTimeout(timeout); resolve(ws); });
+      ws.on('open', () => {
+        clearTimeout(timeout);
+        resolve(ws);
+      });
       ws.on('error', reject);
     });
   }
