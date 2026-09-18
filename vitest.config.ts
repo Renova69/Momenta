@@ -18,6 +18,14 @@ export default defineConfig({
     // which exports `teardown`. Runs whether or not the suite passed, which is
     // the case per-spec afterAll hooks cannot cover.
     globalSetup: ['./tests/globalSetup.ts'],
+    // DB-backed HTTP tests against a shared Postgres, 16 workers deep. The
+    // default 5s is fine on a quiet machine — the slowest of these takes 1.6s —
+    // and too tight on a busy one, which is the intermittent failure nobody
+    // could reproduce. Most specs already pass 20_000 by hand; this makes that
+    // the default instead of something each author has to remember.
+    testTimeout: 20_000,
+    hookTimeout: 30_000,
+
     env: {
       // Cap the Postgres pool per test worker.
       //

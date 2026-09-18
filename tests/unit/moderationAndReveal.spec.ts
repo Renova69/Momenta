@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest';
 import { createServer } from 'http';
 import express from 'express';
 import { WebSocket } from 'ws';
@@ -127,8 +127,20 @@ class RoomClient {
   }
 }
 
-/** Give broadcasts a moment to arrive before asserting they did not. */
-const settle = () => new Promise((r) => setTimeout(r, 350));
+/**
+ * Wait until the assertion holds, rather than for a fixed time.
+ *
+ * This replaced a `settle()` that slept 350ms before asserting a broadcast had
+ * arrived. Waiting a fixed period for something to turn up is a race the
+ * machine wins whenever it is busy: on a quiet run these land well inside
+ * 350ms, and under load they do not — one of the causes of this suite's
+ * unreproducible failures.
+ *
+ * Where a test asserts a broadcast did *not* arrive, it waits for one that
+ * should have first; the arrival of the expected frame is what makes the
+ * absence of the other meaningful rather than merely early.
+ */
+const arrives = (assertion: () => void) => vi.waitFor(assertion, { timeout: 5000 });
 
 async function uploadPhoto(eventId: string, caption: string) {
   const res = await fetch(`${BASE_URL}/api/photos`, {
@@ -203,11 +215,12 @@ describe('Moderation and disposable-camera reveal', () => {
       expect(uploaded.status).toBe(201);
       expect(uploaded.body.status).toBe('pending');
 
-      await settle();
+      // Wait for the frame that should arrive; its arrival is what makes the
+      // guest's empty list meaningful rather than merely early.
+      await arrives(() => expect(hostClient.of('PHOTO_ADDED')).toHaveLength(1));
 
       // This is the regression: the pending photo used to reach every guest.
       expect(guest.of('PHOTO_ADDED')).toHaveLength(0);
-      expect(hostClient.of('PHOTO_ADDED')).toHaveLength(1);
 
       // And the REST list agrees with the socket.
       const guestList = await listPhotos(host.eventId);
@@ -272,10 +285,8 @@ describe('Moderation and disposable-camera reveal', () => {
       });
       expect(approve.status).toBe(200);
 
-      await settle();
-
       // Guests are told about the approval, and the photo now lists for them.
-      expect(guest.of('PHOTO_STATUS_UPDATED')).toHaveLength(1);
+      await arrives(() => expect(guest.of('PHOTO_STATUS_UPDATED')).toHaveLength(1));
       const guestList = await listPhotos(host.eventId);
       expect(guestList.map((p: { caption: string }) => p.caption)).toContain('to be approved');
 
@@ -382,10 +393,8 @@ describe('Moderation and disposable-camera reveal', () => {
 
       const guest = await RoomClient.join(host.eventId);
       await uploadPhoto(host.eventId, 'straight to the feed');
-      await settle();
-
       // The host-only path must not swallow ordinary uploads.
-      expect(guest.of('PHOTO_ADDED')).toHaveLength(1);
+      await arrives(() => expect(guest.of('PHOTO_ADDED')).toHaveLength(1));
       expect(guest.of('PHOTO_ADDED')[0].payload.caption).toBe('straight to the feed');
 
       guest.close();
@@ -415,11 +424,9 @@ describe('Moderation and disposable-camera reveal', () => {
       expect(uploaded.status).toBe(201);
       expect(uploaded.body.isLocked).toBe(true);
 
-      await settle();
-
       // Guests learn a photo exists, but not what it looks like.
+      await arrives(() => expect(guest.of('PHOTO_ADDED')).toHaveLength(1));
       const seen = guest.of('PHOTO_ADDED');
-      expect(seen).toHaveLength(1);
       expect(seen[0].payload.fullUrl).toBe('');
       expect(seen[0].payload.thumbnailUrl).toBe('');
 
