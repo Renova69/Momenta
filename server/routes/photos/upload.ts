@@ -25,13 +25,9 @@ import { buildDerivatives } from '../../lib/images';
 import { validateBody } from '../../middleware/validate';
 import { uploadLimiter, uploadIpLimiter } from '../../middleware/rateLimit';
 import { getUploadContext, checkUploadAllowance } from '../../middleware/tierGate';
-import {
-  savePhotoVariants,
-  insertPhotoUnderQuota,
-  broadcastPhotoAdded,
-  SavedPhotoFiles,
-} from '../../lib/photoWrite';
-import { issueGuestToken, verifyGuestToken } from '../../lib/guestAuth';
+import { savePhotoVariants, insertPhotoUnderQuota, broadcastPhotoAdded, SavedPhotoFiles } from '../../lib/photoWrite';
+import { issueGuestToken } from '../../lib/guestAuth';
+import { verifyGuestOwnership } from '../../lib/guestIdentity';
 import { isImageMagicBytes, isValidUuid } from '../../lib/validation';
 import { errorLabel } from '../../lib/errors';
 import { DEFAULT_MAX_PHOTOS_PER_GUEST } from '../../../shared/planCaps';
@@ -49,8 +45,10 @@ export { photosRouter as uploadRouter };
  */
 type Step<T> = { ok: true; value: T } | { ok: false; status: number; body: Record<string, unknown> };
 
-const fail = (status: number, body: Record<string, unknown>): { ok: false; status: number; body: Record<string, unknown> } =>
-  ({ ok: false, status, body });
+const fail = (
+  status: number,
+  body: Record<string, unknown>
+): { ok: false; status: number; body: Record<string, unknown> } => ({ ok: false, status, body });
 
 /** The event's settings, plan allowance and current usage, in one round trip. */
 type UploadContext = NonNullable<Awaited<ReturnType<typeof getUploadContext>>>;
@@ -106,18 +104,18 @@ async function resolveGuestForUpload(
     // from another event or guest (SEC-D3), or from the public feed of this
     // same event (SEC-A2). Treat anything short of a matching token as absent,
     // same as an unknown id.
-    const owns = await pool.query(
-      'SELECT id, token_version FROM guests WHERE id = $1 AND event_id = $2',
-      [currentGuestId, eventId]
-    );
-    if (
-      owns.rows.length === 0 ||
-      !verifyGuestToken(guestToken, currentGuestId, eventId, owns.rows[0].token_version)
-    ) {
-      currentGuestId = undefined;
-    } else {
+    // Shared with lib/guestIdentity.ts. This check was written out in both
+    // files, and being identical in two places is how the same two defects —
+    // an ownership test satisfiable without a token, and a token_version read
+    // as 0 — came to exist in both, found weeks apart. The *write* semantics
+    // below stay this route's own: it may rename a guest and must always
+    // produce one, neither of which the comment path is allowed to do.
+    const owned = await verifyGuestOwnership(eventId, currentGuestId, guestToken);
+    if (owned) {
       identityProven = true;
-      tokenVersion = Number(owns.rows[0].token_version) || 0;
+      tokenVersion = owned.tokenVersion;
+    } else {
+      currentGuestId = undefined;
     }
   }
 
@@ -170,10 +168,10 @@ async function checkPerGuestCap(
   const guestPhotoCount = deviceFingerprint
     ? context.devicePhotoCount
     : (
-        await pool.query(
-          'SELECT COUNT(*)::int AS count FROM photos WHERE event_id = $1 AND guest_id = $2',
-          [eventId, guestId]
-        )
+        await pool.query('SELECT COUNT(*)::int AS count FROM photos WHERE event_id = $1 AND guest_id = $2', [
+          eventId,
+          guestId,
+        ])
       ).rows[0].count;
 
   if (guestPhotoCount >= maxAllowed) {
@@ -200,10 +198,7 @@ interface DecodedImages {
  * fails is rejected outright instead of a broken photo silently reaching the
  * feed (SEC-M4).
  */
-async function decodeAndValidateImages(
-  fullUrl: string,
-  originalUrl?: string
-): Promise<Step<DecodedImages>> {
+async function decodeAndValidateImages(fullUrl: string, originalUrl?: string): Promise<Step<DecodedImages>> {
   const displayData = decodeDataUrl(fullUrl);
   const originalData = decodeDataUrl(originalUrl);
 
@@ -225,10 +220,7 @@ async function decodeAndValidateImages(
   try {
     derivatives = await buildDerivatives(displayData.buffer);
   } catch (err) {
-    console.warn(
-      '[Photos] Rejected: display image is not decodable:',
-      err instanceof Error ? err.message : err
-    );
+    console.warn('[Photos] Rejected: display image is not decodable:', err instanceof Error ? err.message : err);
     return fail(400, { error: 'Invalid image data.' });
   }
 
@@ -310,8 +302,20 @@ interface InsertPhotoArgs {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function insertPhotoAtomically(args: InsertPhotoArgs): Promise<Step<{ row: any; hostUserId: string | null }>> {
   const {
-    eventId, guestId, questId, caption, filterApplied, deviceFingerprint,
-    files, urls, width, height, originalBytes, initialStatus, isLocked, needsQuarantine,
+    eventId,
+    guestId,
+    questId,
+    caption,
+    filterApplied,
+    deviceFingerprint,
+    files,
+    urls,
+    width,
+    height,
+    originalBytes,
+    initialStatus,
+    isLocked,
+    needsQuarantine,
   } = args;
 
   const written = await insertPhotoUnderQuota({
@@ -327,14 +331,27 @@ async function insertPhotoAtomically(args: InsertPhotoArgs): Promise<Step<{ row:
           caption, status, is_locked, filter_applied, width, height, storage_bytes,
           is_quarantined
         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17) RETURNING *`,
-        [eventId, guestId, questId || null, files.display.storagePath, urls.full,
-         urls.thumb, urls.original, files.original ? files.original.storagePath : null,
-         originalBytes,
-         caption || null, initialStatus, isLocked, filterApplied || 'original',
-         width, height, files.totalBytes,
-         // H4 — recorded here rather than inferred later from a LIKE over the
-         // path columns, so the read path can find these rows by index.
-         needsQuarantine]
+        [
+          eventId,
+          guestId,
+          questId || null,
+          files.display.storagePath,
+          urls.full,
+          urls.thumb,
+          urls.original,
+          files.original ? files.original.storagePath : null,
+          originalBytes,
+          caption || null,
+          initialStatus,
+          isLocked,
+          filterApplied || 'original',
+          width,
+          height,
+          files.totalBytes,
+          // H4 — recorded here rather than inferred later from a LIKE over the
+          // path columns, so the read path can find these rows by index.
+          needsQuarantine,
+        ]
       );
       return photoInsert.rows[0];
     },
@@ -349,11 +366,7 @@ async function insertPhotoAtomically(args: InsertPhotoArgs): Promise<Step<{ row:
 }
 
 /** Best-effort: a failed quest credit must not fail an upload that succeeded. */
-async function recordQuestCompletion(
-  questId: string | undefined,
-  guestId: string,
-  photoId: string
-): Promise<void> {
+async function recordQuestCompletion(questId: string | undefined, guestId: string, photoId: string): Promise<void> {
   if (!questId || !isValidUuid(questId)) return;
   await pool
     .query(
@@ -379,8 +392,17 @@ photosRouter.post(
   validateBody(CreatePhotoSchema),
   async (req: Request, res: Response) => {
     const {
-      eventId, guestName, guestAvatar, guestTable,
-      fullUrl, originalUrl, caption, filterApplied, questId, questTitle, localId,
+      eventId,
+      guestName,
+      guestAvatar,
+      guestTable,
+      fullUrl,
+      originalUrl,
+      caption,
+      filterApplied,
+      questId,
+      questTitle,
+      localId,
       deviceFingerprint,
     } = req.body;
 
@@ -399,9 +421,7 @@ photosRouter.post(
       // decoding a payload that may be tens of megabytes.
       const tierCheck = checkUploadAllowance(context);
       if (!tierCheck.allowed) {
-        return res
-          .status(403)
-          .json({ error: tierCheck.reason, code: tierCheck.code || 'TIER_LIMIT_REACHED' });
+        return res.status(403).json({ error: tierCheck.reason, code: tierCheck.code || 'TIER_LIMIT_REACHED' });
       }
 
       const guest = await resolveGuestForUpload(eventId, req.body);
@@ -415,8 +435,7 @@ photosRouter.post(
 
       // Now that the payload is decoded, charge the real footprint against the
       // plan's storage allowance before anything is written.
-      const incomingBytes =
-        images.displayData.buffer.length + (images.originalData?.buffer.length || 0);
+      const incomingBytes = images.displayData.buffer.length + (images.originalData?.buffer.length || 0);
       if (incomingBytes > 0) {
         const storageCheck = checkUploadAllowance(context, incomingBytes);
         if (!storageCheck.allowed) {
@@ -445,12 +464,20 @@ photosRouter.post(
       };
 
       const inserted = await insertPhotoAtomically({
-        eventId, guestId: guest.guestId, questId, caption, filterApplied, deviceFingerprint,
-        files, urls,
+        eventId,
+        guestId: guest.guestId,
+        questId,
+        caption,
+        filterApplied,
+        deviceFingerprint,
+        files,
+        urls,
         width: images.derivatives.width || null,
         height: images.derivatives.height || null,
         originalBytes: images.originalData ? images.originalData.buffer.length : null,
-        initialStatus, isLocked, needsQuarantine,
+        initialStatus,
+        isLocked,
+        needsQuarantine,
       });
       if (!inserted.ok) return res.status(inserted.status).json(inserted.body);
       const { row: created, hostUserId } = inserted.value;
@@ -462,15 +489,25 @@ photosRouter.post(
         eventId: created.event_id,
         guestId: guest.guestId,
         guestName: guestName || 'Guest',
-        guestAvatar, guestTable, questId, questTitle,
+        guestAvatar,
+        guestTable,
+        questId,
+        questTitle,
         storagePath: files.display.storagePath,
         thumbnailUrl: urls.thumb,
         fullUrl: urls.full,
         originalUrl: urls.original,
-        caption, status: initialStatus, isLocked,
+        caption,
+        status: initialStatus,
+        isLocked,
         filterApplied: filterApplied || 'original',
-        source: 'guest', priority: 0,
-        likesCount: 0, commentsCount: 0, likedByGuestIds: [], reactions: [], comments: [],
+        source: 'guest',
+        priority: 0,
+        likesCount: 0,
+        commentsCount: 0,
+        likedByGuestIds: [],
+        reactions: [],
+        comments: [],
         createdAt: created.created_at,
         ...(localId ? { localId } : {}),
       };
@@ -497,9 +534,7 @@ photosRouter.post(
       // for quota purposes, but does not walk away with a usable credential.
       res.status(201).json({
         ...newPhoto,
-        ...(guest.identityProven
-          ? { guestToken: issueGuestToken(guest.guestId, eventId, guest.tokenVersion) }
-          : {}),
+        ...(guest.identityProven ? { guestToken: issueGuestToken(guest.guestId, eventId, guest.tokenVersion) } : {}),
       });
     } catch (err) {
       console.error('[Photos] POST error:', errorLabel(err));

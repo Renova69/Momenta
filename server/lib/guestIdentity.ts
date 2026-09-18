@@ -48,6 +48,54 @@ export interface ResolveGuestOptions {
   fallbackName?: string;
 }
 
+/** A guest row whose ownership this request has actually proven. */
+export interface GuestOwnership {
+  guestId: string;
+  name: string;
+  /** The row's current `token_version`, for minting a token at (M10). */
+  tokenVersion: number;
+}
+
+/**
+ * Does this caller own the guest id they are claiming?
+ *
+ * One SELECT, one token check, one version read — the whole of "prove you are
+ * this guest", in one place.
+ *
+ * It lives here because it was previously written out twice: once in this file
+ * and once in `routes/photos/upload.ts`, which has its own resolver with
+ * deliberately different *write* semantics (it may rename a guest and create
+ * one where none exists; this path must do neither — SEC-A2 and H8). Those
+ * differences are real and stay separate. This part was identical, and being
+ * identical in two places is exactly how it came to be wrong in two places:
+ * mutation testing found the same two defects — an ownership check that could
+ * be satisfied without a token, and a `token_version` silently read as 0 — in
+ * both copies, in separate sweeps, weeks apart.
+ *
+ * Returning null covers both failure modes on purpose. "No such guest in this
+ * event" and "wrong token" are the same answer to the caller — an id it has
+ * not proven — and collapsing them here removes the possibility of a caller
+ * checking one and forgetting the other.
+ */
+export async function verifyGuestOwnership(
+  eventId: string,
+  guestId: string,
+  guestToken: unknown
+): Promise<GuestOwnership | null> {
+  const { rows } = await pool.query<{ id: string; name: string; token_version: number }>(
+    'SELECT id, name, token_version FROM guests WHERE id = $1 AND event_id = $2',
+    [guestId, eventId]
+  );
+  if (rows.length === 0) return null;
+  if (!verifyGuestToken(guestToken, guestId, eventId, rows[0].token_version)) return null;
+
+  return {
+    guestId: rows[0].id,
+    name: rows[0].name,
+    tokenVersion: Number(rows[0].token_version) || 0,
+  };
+}
+
 export async function resolveGuestIdentity(options: ResolveGuestOptions): Promise<ResolvedGuest | null> {
   const { eventId, guestId, guestToken, deviceFingerprint, fallbackName } = options;
 
@@ -58,17 +106,9 @@ export async function resolveGuestIdentity(options: ResolveGuestOptions): Promis
   //    needs its token_version (M10). That is the same query as before, just
   //    reordered and one column wider — no extra round trip.
   if (guestId && isValidUuid(guestId)) {
-    const owned = await pool.query<{ id: string; name: string; token_version: number }>(
-      'SELECT id, name, token_version FROM guests WHERE id = $1 AND event_id = $2',
-      [guestId, eventId]
-    );
-    if (owned.rows.length > 0 && verifyGuestToken(guestToken, guestId, eventId, owned.rows[0].token_version)) {
-      return {
-        guestId: owned.rows[0].id,
-        name: owned.rows[0].name,
-        tokenVersion: Number(owned.rows[0].token_version) || 0,
-        identityProven: true,
-      };
+    const owned = await verifyGuestOwnership(eventId, guestId, guestToken);
+    if (owned) {
+      return { ...owned, identityProven: true };
     }
   }
 
