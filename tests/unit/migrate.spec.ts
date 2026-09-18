@@ -16,7 +16,39 @@ import { query } from '../../server/lib/db';
  * application schema.
  */
 
-const TEST_TABLE = 'migrate_spec_scratch';
+/**
+ * Every fixture this file creates is namespaced to this run.
+ *
+ * The scratch table and the ledger filenames used to be fixed strings, and the
+ * ledger is a real table shared by every run on this database. A run killed
+ * part-way — a timed-out CI job, or a mutation-testing harness reaping a slow
+ * vitest — leaves `900_spec_create.sql` recorded as applied. The next run then
+ * fails exactly two tests, because `runMigrations` correctly declines to
+ * re-apply a migration the ledger already has; that run's `afterAll` clears the
+ * row, so the run after it passes.
+ *
+ * Fail once, pass on retry, nothing reproducible, blame the database. This was
+ * chased as suite flakiness before it was reproduced deliberately: seeding one
+ * leftover row fails those two tests and only those two.
+ *
+ * A unique suffix makes the collision impossible rather than unlikely, which is
+ * the same bargain `testPortAllocation.spec.ts` strikes for ports. Cleanup
+ * still runs, and still matters for tidiness — it just no longer decides
+ * whether the next run passes.
+ */
+const RUN_ID = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+const TEST_TABLE = `migrate_spec_scratch_${RUN_ID}`;
+
+/** `900_create` → `900_spec_<run>_create.sql`, unique to this run. */
+function migrationName(stem: string): string {
+  return `9${stem}_spec_${RUN_ID}.sql`;
+}
+
+const CREATE = migrationName('00_create');
+const ALTER = migrationName('01_alter');
+const BROKEN = migrationName('02_broken');
+const AFTER_BROKEN = migrationName('03_after_broken');
+
 let tempDir: string;
 
 function writeMigration(name: string, sql: string) {
@@ -45,23 +77,18 @@ afterEach(() => {
 });
 
 afterAll(async () => {
-  await cleanUp([
-    '900_spec_create.sql',
-    '901_spec_alter.sql',
-    '902_spec_broken.sql',
-    '903_spec_after_broken.sql',
-  ]);
+  await cleanUp([CREATE, ALTER, BROKEN, AFTER_BROKEN]);
 });
 
 describe('SQL migration runner', () => {
   it('applies pending migrations in filename order and records them', async () => {
-    writeMigration('900_spec_create.sql', `CREATE TABLE IF NOT EXISTS ${TEST_TABLE} (id INT PRIMARY KEY);`);
-    writeMigration('901_spec_alter.sql', `ALTER TABLE ${TEST_TABLE} ADD COLUMN IF NOT EXISTS label TEXT;`);
+    writeMigration(CREATE, `CREATE TABLE IF NOT EXISTS ${TEST_TABLE} (id INT PRIMARY KEY);`);
+    writeMigration(ALTER, `ALTER TABLE ${TEST_TABLE} ADD COLUMN IF NOT EXISTS label TEXT;`);
 
     const result = await runMigrations(tempDir);
 
     // Order matters: the ALTER cannot run before the CREATE.
-    expect(result.applied).toEqual(['900_spec_create.sql', '901_spec_alter.sql']);
+    expect(result.applied).toEqual([CREATE, ALTER]);
     expect(result.checksumDrift).toEqual([]);
 
     const { rows } = await query(
@@ -71,83 +98,79 @@ describe('SQL migration runner', () => {
     );
     expect(rows.map((r) => r.column_name)).toEqual(['id', 'label']);
 
-    const ledger = await ledgerFor(['900_spec_create.sql', '901_spec_alter.sql']);
+    const ledger = await ledgerFor([CREATE, ALTER]);
     expect(ledger).toHaveLength(2);
 
-    await cleanUp(['900_spec_create.sql', '901_spec_alter.sql']);
+    await cleanUp([CREATE, ALTER]);
   });
 
   it('is idempotent — a second run applies nothing', async () => {
-    writeMigration('900_spec_create.sql', `CREATE TABLE IF NOT EXISTS ${TEST_TABLE} (id INT PRIMARY KEY);`);
+    writeMigration(CREATE, `CREATE TABLE IF NOT EXISTS ${TEST_TABLE} (id INT PRIMARY KEY);`);
 
     const first = await runMigrations(tempDir);
-    expect(first.applied).toEqual(['900_spec_create.sql']);
+    expect(first.applied).toEqual([CREATE]);
 
     const second = await runMigrations(tempDir);
     expect(second.applied).toEqual([]);
-    expect(second.alreadyApplied).toContain('900_spec_create.sql');
+    expect(second.alreadyApplied).toContain(CREATE);
 
-    await cleanUp(['900_spec_create.sql']);
+    await cleanUp([CREATE]);
   });
 
   it('reports drift when an already-applied migration is edited, and does not re-run it', async () => {
-    writeMigration('900_spec_create.sql', `CREATE TABLE IF NOT EXISTS ${TEST_TABLE} (id INT PRIMARY KEY);`);
+    writeMigration(CREATE, `CREATE TABLE IF NOT EXISTS ${TEST_TABLE} (id INT PRIMARY KEY);`);
     await runMigrations(tempDir);
 
     // Editing an applied migration is the mistake this warning exists to catch:
     // the change would never reach a database that already ran the old version.
-    writeMigration(
-      '900_spec_create.sql',
-      `CREATE TABLE IF NOT EXISTS ${TEST_TABLE} (id INT PRIMARY KEY); -- edited after the fact`
-    );
+    writeMigration(CREATE, `CREATE TABLE IF NOT EXISTS ${TEST_TABLE} (id INT PRIMARY KEY); -- edited after the fact`);
 
     const result = await runMigrations(tempDir);
-    expect(result.checksumDrift).toEqual(['900_spec_create.sql']);
+    expect(result.checksumDrift).toEqual([CREATE]);
     expect(result.applied).toEqual([]);
 
-    await cleanUp(['900_spec_create.sql']);
+    await cleanUp([CREATE]);
   });
 
   it('rolls a failing migration back and stops, leaving the ledger clean', async () => {
-    writeMigration('900_spec_create.sql', `CREATE TABLE IF NOT EXISTS ${TEST_TABLE} (id INT PRIMARY KEY);`);
+    writeMigration(CREATE, `CREATE TABLE IF NOT EXISTS ${TEST_TABLE} (id INT PRIMARY KEY);`);
     writeMigration(
-      '902_spec_broken.sql',
+      BROKEN,
       `ALTER TABLE ${TEST_TABLE} ADD COLUMN broken_col TEXT; SELECT this_function_does_not_exist();`
     );
-    writeMigration('903_spec_after_broken.sql', `ALTER TABLE ${TEST_TABLE} ADD COLUMN never_added TEXT;`);
+    writeMigration(AFTER_BROKEN, `ALTER TABLE ${TEST_TABLE} ADD COLUMN never_added TEXT;`);
 
-    await expect(runMigrations(tempDir)).rejects.toThrow(/902_spec_broken/);
+    // Named by the constant, not a literal, or this stops matching the moment
+    // the filenames became run-scoped.
+    await expect(runMigrations(tempDir)).rejects.toThrow(BROKEN);
 
     // The broken migration's own statements must not survive...
-    const { rows: cols } = await query(
-      'SELECT column_name FROM information_schema.columns WHERE table_name = $1',
-      [TEST_TABLE]
-    );
+    const { rows: cols } = await query('SELECT column_name FROM information_schema.columns WHERE table_name = $1', [
+      TEST_TABLE,
+    ]);
     const names = cols.map((c) => c.column_name);
     expect(names).not.toContain('broken_col');
     // ...and the run stops rather than skipping ahead.
     expect(names).not.toContain('never_added');
 
-    const ledger = await ledgerFor(['902_spec_broken.sql', '903_spec_after_broken.sql']);
+    const ledger = await ledgerFor([BROKEN, AFTER_BROKEN]);
     expect(ledger).toHaveLength(0);
 
-    await cleanUp(['900_spec_create.sql', '902_spec_broken.sql', '903_spec_after_broken.sql']);
+    await cleanUp([CREATE, BROKEN, AFTER_BROKEN]);
   });
 
   it('fails loudly when the migrations directory is missing', async () => {
-    await expect(runMigrations(path.join(tempDir, 'does-not-exist'))).rejects.toThrow(
-      /Migrations directory not found/
-    );
+    await expect(runMigrations(path.join(tempDir, 'does-not-exist'))).rejects.toThrow(/Migrations directory not found/);
   });
 
   it('ignores non-SQL files in the directory', async () => {
-    writeMigration('900_spec_create.sql', `CREATE TABLE IF NOT EXISTS ${TEST_TABLE} (id INT PRIMARY KEY);`);
+    writeMigration(CREATE, `CREATE TABLE IF NOT EXISTS ${TEST_TABLE} (id INT PRIMARY KEY);`);
     fs.writeFileSync(path.join(tempDir, 'README.md'), '# not a migration', 'utf8');
     fs.writeFileSync(path.join(tempDir, 'notes.txt'), 'ignore me', 'utf8');
 
     const result = await runMigrations(tempDir);
-    expect(result.applied).toEqual(['900_spec_create.sql']);
+    expect(result.applied).toEqual([CREATE]);
 
-    await cleanUp(['900_spec_create.sql']);
+    await cleanUp([CREATE]);
   });
 });
