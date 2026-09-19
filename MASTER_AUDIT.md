@@ -707,7 +707,7 @@ assumed to be.
 | `routes/subscriptions` | 4/5 | 1 equivalent: unreachable past the CHECKOUT_REQUIRED return |
 | `shared/planCaps` | 2/2 | — |
 | `shared/transliterate` | 3/4 | 1 open |
-| `routes/events/qr` | 3/6 | 3 open, all on one line of defaults |
+| `routes/events/qr` | 6/6 | the upsert saved nothing the host typed |
 | `lib/stripe` | 3/3 | the failure path fails open, and nothing checked it |
 
 **Three lessons, each learned by getting it wrong first.**
@@ -741,9 +741,6 @@ running where a surviving mutant would mean something.
 **Open leads, measured but not yet chased.** Recorded with line numbers so the
 next pass starts from evidence rather than re-deriving it:
 
-- `routes/events/qr:105` — three defaults on one line
-  (`canvasSize || null` and friends), none asserted. Same shape as the guests,
-  quests and reactions findings already fixed.
 - `shared/transliterate:33` — the slug year fallback.
 - `routes/auth` — six, all low value: two slug-naming branches whose only
   observable difference is the shape of a generated slug, the retry-on-collision
