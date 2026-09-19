@@ -15,8 +15,10 @@
 > credential — and **1 resolved as not a defect**: L-1's premise was wrong,
 > `vercel.json` is genuinely in use.
 >
-> **§3b records 13 further findings the audit did not produce, all of them
-> fixed.** Every one was found by *running* something the audit had only read. That is
+> **§3b records 14 further findings the audit did not produce, all of them
+> fixed.** All but one were found by *running* something the audit had only
+> read; the exception, N-14, surfaced while building a feature on top of the
+> code it was in. That is
 > the most useful thing in this document: reading code does not catch a
 > container that will not start, a sweep that reports work it did not do, or a
 > teardown that deletes another process's data. One of them, N-3, is the root
@@ -46,7 +48,7 @@ False positives 3 · Needs manual verification 5 · Production blockers 3.
 
 **Totals as of 2026-09-19:** of the audit's own 20 findings — 18 fixed, H-4
 partly (lifecycle rule written, not applied), L-1 resolved as not a defect. Of
-the 13 post-audit findings in §3b — 13 fixed. Production blockers 0 in code, 4
+the 14 post-audit findings in §3b — 14 fixed. Production blockers 0 in code, 4
 operational actions outstanding (§9). The 4 unfinished features are unchanged
 and none is a defect; of the 5 verification items, V-5 is substantially
 addressed by mutation testing rather than by reading, and V-1 to V-4 still need
@@ -347,10 +349,10 @@ the test responsible.
 
 ---
 
-## 3b. Found After the Audit (2026-09-17 / 18)
+## 3b. Found After the Audit (2026-09-17 to 19)
 
-None of the findings below came from the read-only passes. Every one was found
-by **running** something the audit had only read — the container, the storage
+None of the findings below came from the read-only passes. All but N-14 were
+found by **running** something the audit had only read — the container, the storage
 sweep, the lifecycle script, the test suite under its own conditions, or the
 source with a mutation in it. That is the single most useful observation in this
 document: an audit that reads code does not catch a container that will not
@@ -586,6 +588,36 @@ happens at the boundary as a 400.
 
 **FIXED** `6236ac4`. Both directions tested — over the cap refused, at the cap
 accepted and persisted.
+
+---
+
+### N-14 — A photo upload could credit a guest on another wedding's quest
+**Status** CONFIRMED · **Severity** Medium (cross-tenant integrity) · **Feature** Scavenger quests
+**Files** `server/routes/photos/upload.ts`
+`POST /api/photos` took `questId` from the request body and used it twice
+without asking which event the quest belonged to: it stored it on the photo row,
+and it recorded a quest completion for the uploading guest. A guest of one
+wedding could therefore name any other wedding's quest. Quest ids are not
+secret: `GET /api/events/:id/quests` lists them for anyone who has the event id,
+and the slug endpoint hands out the event id.
+
+Before the leaderboard the damage was small but real. The other wedding's quest
+showed an outsider in its completion count, and the uploader's own feed labelled
+the photo with the other wedding's quest title, which the feed joins by id. Once
+a leaderboard ranks completions and a host hands a prize to the top of it, the
+same row would put a stranger on another couple's board.
+
+Unlike the rest of this section, this was not found by running anything. It
+surfaced while designing the leaderboard query, by asking which rows the ranking
+could trust. The leaderboard pins every join to the event as well, so a row like
+this could not have ranked even without the fix. The fix is at the source
+because the photo label leaked regardless.
+
+**FIXED** `8db42dc`. The upload keeps `questId` only when it names a quest of
+the upload's own event; otherwise it is dropped and the photo still uploads.
+The spec uploads to one wedding with another wedding's quest, then asserts that
+wedding's board is empty and the photo row's `quest_id` is null. It was
+toggle-verified by widening the event check.
 
 ---
 
