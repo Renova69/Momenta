@@ -736,11 +736,11 @@ assumed to be.
 | `lib/downloadToken` · `lib/previewToken` | 4/4 · 4/4 | — |
 | `lib/subscriptionUpgrade` | 9/9 | — |
 | `lib/ingest` | 9/9 | — |
-| `lib/ingestPipeline` | 8/9 | magic-byte gate removable without changing the outcome; 1 message-only |
+| `lib/ingestPipeline` | 9/9 | magic-byte gate removable without changing the outcome; an event deleted mid-upload |
 | `lib/emailBounces` | 7/7 | — |
 | `lib/storage` | 15/20 | survivors equivalent, or the R2 coverage hole (M-4) |
 | `lib/migrate` | 7/10 | 3 survivors in the CLI `main()`, reached by no spec |
-| `ws/wsServer` | 18/22 | N-7, two cross-tenant holes; 2 equivalent; heartbeat untested |
+| `ws/wsServer` | 20/22 | N-7, two cross-tenant holes; the heartbeat reaper; 2 equivalent |
 | `routes/photos/upload` | 13/14 | four survivors in one block, all identity; 1 dead assignment |
 | `routes/photos/engagement` | 8/8 | uuid guard vacuous; reveal rule uncovered |
 | `routes/photos/moderation` | 7/10 | rejecting a photo would have published it |
@@ -753,7 +753,7 @@ assumed to be.
 | `routes/events/export` | 14/16 | 2 equivalent, both guarded twice already |
 | `routes/subscriptions` | 4/5 | 1 equivalent: unreachable past the CHECKOUT_REQUIRED return |
 | `shared/planCaps` | 2/2 | — |
-| `shared/transliterate` | 3/4 | 1 open |
+| `shared/transliterate` | 4/4 | the slug year branch is reachable only from the browser |
 | `routes/events/qr` | 6/6 | the upsert saved nothing the host typed |
 | `lib/stripe` | 3/3 | the failure path fails open, and nothing checked it |
 
@@ -794,10 +794,15 @@ roughly three quarters of an hour for config parsing, a pool constructor and a
 string formatter. The cost is real and the information is not; a sweep is worth
 running where a surviving mutant would mean something.
 
-**Open leads, measured but not yet chased.** Recorded with line numbers so the
-next pass starts from evidence rather than re-deriving it:
+**Open leads — none remain.** Every module under `server/` and `shared/` is
+swept, and every survivor is either killed or read and explained below. What
+was open, and how each closed:
 
-- `shared/transliterate:33` — the slug year fallback.
+- `shared/transliterate:33` — **closed, `0d34de0`.** The slug year fallback is
+  reachable only from the browser: `HostEventsList` calls
+  `generateEventSlug(hostName, eventDate)` while every server call site omits
+  the argument, so a server-and-shared sweep could not reach it. Weakened, every
+  wedding gets a 2026 slug regardless of when it is.
 - `routes/auth` — **chased, `6236ac4`.** Of the six, one was a real hole: the
   login event-auto-creation fallback (DB-13) stops looping only because of its
   `&& !event` guard, and nothing asserted it. Weakened, one login creates five
@@ -810,16 +815,37 @@ next pass starts from evidence rather than re-deriving it:
   transient non-collision failure or five consecutive slug collisions; both need
   a mocked pool, and for a persistent failure the mutated code returns the same
   500 the original does. Recorded, not tested.
-- `lib/ingestPipeline:176` — message text only.
+- `lib/ingestPipeline:176` — **closed, `0d34de0`.** Not message text only: the
+  tier gate refuses a missing event long before the write, so this branch fires
+  only when the event is deleted *between* the two — an FTP drop racing a host
+  deleting the album. `event_not_found` is the one refusal `photoWrite` returns
+  with no message attached, so without the pipeline's text the photographer gets
+  an empty failure. The first test written for it passed with the mutation
+  applied, because it was reaching the tier gate's identical message instead;
+  repointed at the real branch with a mock rather than kept.
 
 **Still genuinely uncovered, and recorded rather than closed:**
 
-- `ws/wsServer`'s heartbeat reaper. Covering it means either fake timers against
-  live sockets, which this suite does not need more of, or extracting the reap
-  decision into a predicate — a testability refactor of production code, left
-  as a decision rather than taken unilaterally.
 - `lib/storage`'s R2 branch, which is M-4: the tests exist and the CI lane is
   wired, but it skips until the repository secrets are set.
+
+**The heartbeat reaper, closed `958deea` and `74c6631`.** It was recorded as a
+decision rather than taken unilaterally, because covering it meant either fake
+timers against live sockets or a testability refactor. The refactor turned out
+to be four lines: the `setInterval` body becomes `runHeartbeat()`, and a test
+drives two passes in one tick — the first marks the client unanswered and pings
+it, the pong cannot land before the second pass, the second reaps. A mirror test
+lets the pong arrive and asserts the connection survives, because a reaper that
+kills everything is the same outage seen from the other side. Both waits are
+bounded so a regression reports an assertion rather than hanging to the timeout.
+
+Re-sweeping then surfaced one more, which was not equivalent: the AUTH branch
+ends in an unconditional `return`, so widening its guard from *and* to *or*
+means any frame carrying a `token` field is swallowed there. A `JOIN_EVENT_ROOM`
+that carries one never joins, and the client waits for a `ROOM_JOINED` that is
+not coming. `ws/wsServer` is 20/22; the two survivors are both the
+`typeof msg !== 'object' || msg === null` guard, redundant with the enclosing
+`try/catch` that drops malformed frames in either direction.
 
 **Structural gaps:**
 - **The production storage adapter has no automated coverage at all** (M-4).
@@ -853,11 +879,12 @@ next pass starts from evidence rather than re-deriving it:
 | 3 | Regenerate the exposed R2 keys | `.env` still carries the warning that the stored keys were exposed and must be replaced in the Cloudflare dashboard (OPEN_ITEMS M14). Not verifiable from the repository. |
 | 4 | Configure SMTP, then notices, then `RETENTION_ENFORCED=true` — in that order | U-1 and U-4. Nothing deletes until the third step; `npm run retention:rehearse` passes 24/24 against a local sink. |
 
-**Close to blocking, not yet:** V-5 — roughly 84 spec files have been executed
-but never read. Three of the ~38 that *were* read turned out to pass for the
-wrong reason, and none of the three was visible without breaking the source, so
-the rate over the remainder is not zero. The suite's size is not the same as its
-strength.
+**No longer close to blocking:** V-5. The sweep is finished — every module under
+`server/` and `shared/` bar the three named in §8, with no survivor left
+unexplained. Reading the 84 files was never going to find what it found; three
+of the ~38 that *were* read passed for the wrong reason and none was visible on
+the page. The suite's size is still not the same as its strength, but it is now
+measured rather than assumed.
 
 **Explicitly not blockers:** U-1 through U-4. Unconfigured SMTP and disabled
 retention are safe resting states, not defects — the system fails closed in both.
