@@ -1,7 +1,7 @@
 # MASTER AUDIT — Momenta / WedMoments
 
 **Audited:** 2026-09-15, read-only. **Fixes applied and recorded:** 2026-09-17.
-**Post-audit findings added:** 2026-09-18 (§3b).
+**Post-audit findings added:** 2026-09-18, extended 2026-09-19 (§3b).
 
 > **Read this first.** The audit below is preserved as written — each finding
 > still describes the code as it was on 2026-09-15, because a finding rewritten
@@ -15,7 +15,7 @@
 > credential — and **1 resolved as not a defect**: L-1's premise was wrong,
 > `vercel.json` is genuinely in use.
 >
-> **§3b records 11 further findings the audit did not produce, all of them
+> **§3b records 13 further findings the audit did not produce, all of them
 > fixed.** Every one was found by *running* something the audit had only read. That is
 > the most useful thing in this document: reading code does not catch a
 > container that will not start, a sweep that reports work it did not do, or a
@@ -44,9 +44,9 @@ by inspection, not by preference; each is recorded with its evidence in §6 or �
 **Totals as audited:** Critical 0 · High 4 · Medium 8 · Low 8 · Unfinished 4 ·
 False positives 3 · Needs manual verification 5 · Production blockers 3.
 
-**Totals as of 2026-09-18:** of the audit's own 20 findings — 18 fixed, H-4
+**Totals as of 2026-09-19:** of the audit's own 20 findings — 18 fixed, H-4
 partly (lifecycle rule written, not applied), L-1 resolved as not a defect. Of
-the 11 post-audit findings in §3b — 11 fixed. Production blockers 0 in code, 4
+the 13 post-audit findings in §3b — 13 fixed. Production blockers 0 in code, 4
 operational actions outstanding (§9). The 4 unfinished features are unchanged
 and none is a defect; of the 5 verification items, V-5 is substantially
 addressed by mutation testing rather than by reading, and V-1 to V-4 still need
@@ -542,6 +542,53 @@ could not see:
 
 ---
 
+### N-12 — A harvested guest id was accepted as proven identity on upload
+**Status** CONFIRMED · **Severity** High · **Feature** Guest uploads
+**Files** `server/routes/photos/upload.ts`
+The weakest module of the sweep at 11/15, with all four survivors inside one
+block: the one that decides whose guest id an upload counts against.
+
+The worst turns the ownership check inside out. With `&&` where the code has
+`||`, a client-supplied `guestId` is cleared only when the guest row is missing
+*and* the token is bad — so a real guest id plus any rubbish token passes as
+proven identity. Every photo in the feed carries its `guestId`, so the id is
+public and the token is the only thing that is not. Proven identity decides both
+which guest an upload counts against and whether a signed durable token comes
+back, so the hole is worth a quota and a credential.
+
+The last survivor was not where its line number suggested: `tokenVersion =
+Number(...token_version) || 0` is the same defect found in `lib/guestIdentity.ts`,
+because upload kept its own copy of the identity logic. Forcing the version to 0
+means that after a host resets guest sessions, a proven guest's upload mints a
+token at version 0 that the verifier then rejects against the row's 1 —
+permanently. The gap existed twice and had to be closed twice; the duplication
+itself is what `0c01347` then removed.
+
+**FIXED** `05cae17`, five tests covering both directions (a blanket refusal
+would satisfy the impersonation cases and break every returning guest), each
+toggle-verified; the shared resolution extracted in `0c01347`. Module now 15/15.
+
+---
+
+### N-13 — Two Zod caps wider than the columns behind them
+**Status** CONFIRMED · **Severity** Medium · **Feature** Host accounts
+**Files** `server/routes/auth.ts:60`, `server/routes/auth.ts:351`
+`RegisterSchema.companyName` was `z.string().max(200)`; `users.company_name` is
+`VARCHAR(150)`. `UpdateProfileSchema.fullName` was the same 200 against
+`users.full_name`, also `VARCHAR(150)`. Anything between 151 and 200 characters
+passed validation, reached Postgres, and came back as `22001` — which neither
+handler names, so both answered **500** to a request their own schema had just
+accepted, with nothing in the response naming the field at fault.
+
+The same shape as M12, and found the same way the M-series were: by asking what
+the boundary actually promises. Both caps now match the column, so the refusal
+happens at the boundary as a 400.
+
+**FIXED** `6236ac4`. Both directions tested — over the cap refused, at the cap
+accepted and persisted.
+
+---
+
 ## 4. Confirmed Low
 
 **All eight fixed in `9e6f239`**, except L-1, which was not a defect: `vercel.json`
@@ -698,7 +745,7 @@ assumed to be.
 | `routes/photos/engagement` | 8/8 | uuid guard vacuous; reveal rule uncovered |
 | `routes/photos/moderation` | 7/10 | rejecting a photo would have published it |
 | `routes/photos/feed` | 7/8 | 1 equivalent: millisecond boundary |
-| `routes/auth` | 9/15 | `companyName` never persisted-tested; 6 open — see below |
+| `routes/auth` | 12/14 | `companyName` never persisted-tested; the login fallback could create five events; N-13 |
 | `routes/billingWebhook` | 18/18 | which customer the advisory lock keys on |
 | `routes/quests` | 9/9 | defaults nulled; malformed photoId reached a uuid column |
 | `routes/guests` | 4/4 | table number and avatar silently nulled |
@@ -710,7 +757,7 @@ assumed to be.
 | `routes/events/qr` | 6/6 | the upsert saved nothing the host typed |
 | `lib/stripe` | 3/3 | the failure path fails open, and nothing checked it |
 
-**Three lessons, each learned by getting it wrong first.**
+**Four lessons, each learned by getting it wrong first.**
 
 *Equivalent mutants are not gaps.* Several survivors change no observable
 behaviour: `>` versus `>=` on Date instants that are equal either way, a
@@ -732,6 +779,15 @@ reported 4. The harness runs a canary — it corrupts the module outright and
 refuses to report if the specs still pass — because a survivor list containing
 impossible mutations is a list nobody trusts.
 
+*A flaky spec manufactures kills, and those are the dangerous direction.* The
+harness reads a failing run as "the mutation was caught". Re-sweeping
+`routes/auth` reported `auth:121` — the first-attempt slug ternary — killed;
+toggling it by hand and running all 132 spec files left the suite green. No
+test kills it; one of the 55 specs in that selection had failed for its own
+reasons. A false survivor wastes an afternoon and corrects itself on reading.
+A false kill is silent, and it inflates the score. Any survivor that turns into
+a kill without a test being written for it is worth re-checking by hand.
+
 **Not swept, deliberately.** `lib/config.ts`, `lib/db.ts` and `lib/errors.ts`
 are imported by nearly everything, so each mutation re-runs all 131 spec files —
 roughly three quarters of an hour for config parsing, a pool constructor and a
@@ -742,10 +798,18 @@ running where a surviving mutant would mean something.
 next pass starts from evidence rather than re-deriving it:
 
 - `shared/transliterate:33` — the slug year fallback.
-- `routes/auth` — six, all low value: two slug-naming branches whose only
-  observable difference is the shape of a generated slug, the retry-on-collision
-  guard (needs a forced unique violation), and defaulting expressions where the
-  supplied and default values coincide in every existing fixture.
+- `routes/auth` — **chased, `6236ac4`.** Of the six, one was a real hole: the
+  login event-auto-creation fallback (DB-13) stops looping only because of its
+  `&& !event` guard, and nothing asserted it. Weakened, one login creates five
+  weddings — five albums, five slugs, five QR codes — and the existing test
+  still passed because it read only the last one. Two more were defaulting
+  expressions reading a column straight back from the INSERT that wrote it, so
+  the fallback could never fire: deleted rather than tested. Two are slug-shape
+  only, and one was measured false (see the fourth lesson above). The sixth —
+  the retry-on-collision guard at `auth:165` — is observable only through a
+  transient non-collision failure or five consecutive slug collisions; both need
+  a mocked pool, and for a persistent failure the mutated code returns the same
+  500 the original does. Recorded, not tested.
 - `lib/ingestPipeline:176` — message text only.
 
 **Still genuinely uncovered, and recorded rather than closed:**
