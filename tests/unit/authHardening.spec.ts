@@ -10,6 +10,7 @@ import { issueDownloadToken } from '../../server/lib/downloadToken';
 import { issueGuestToken } from '../../server/lib/guestAuth';
 import { hashPassword } from '../../server/middleware/auth';
 import { computeExpiry } from '../../server/lib/retention';
+import { deleteEventFixturesForHost } from '../helpers/cleanup';
 
 /**
  * Regressions for the remaining auth-hygiene slice of OPEN_ITEMS.md Phase 5:
@@ -199,8 +200,27 @@ describe("Login's event-auto-creation fallback (DB-13)", () => {
   const BASE_URL = `http://localhost:${TEST_PORT}`;
   let server: ReturnType<typeof createServer>;
   let userId = '';
-  const email = `db13-${Date.now()}-${Math.random().toString(36).slice(2, 7)}@test.com`;
+  let email = '';
+  const extraUserIds: string[] = [];
   const password = 'Password123!';
+
+  // Bypasses normal registration (which always auto-creates one event) to
+  // reach the exact scenario the login fallback exists for: a user row with
+  // zero events, e.g. an OAuth import.
+  async function createEventlessHost(prefix: string): Promise<{ email: string; id: string }> {
+    const address = `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}@test.com`;
+    const passwordHash = await hashPassword(password);
+    const created = await query<{ id: string }>(
+      `INSERT INTO users (email, full_name, password_hash) VALUES ($1, $2, $3) RETURNING id`,
+      [address, 'DB13 Spec Host', passwordHash]
+    );
+    await query(
+      `INSERT INTO subscriptions (user_id, tier, status, billing_type, amount_paid_cents, currency)
+       VALUES ($1, 'free', 'active', 'one_time', 0, 'EUR')`,
+      [created.rows[0].id]
+    );
+    return { email: address, id: created.rows[0].id };
+  }
 
   beforeAll(async () => {
     const app = express();
@@ -209,24 +229,16 @@ describe("Login's event-auto-creation fallback (DB-13)", () => {
     app.use('/api/auth', authRouter);
     await new Promise<void>((resolve) => server.listen(TEST_PORT, () => resolve()));
 
-    // Bypasses normal registration (which always auto-creates one event) to
-    // reach the exact scenario the login fallback exists for: a user row
-    // with zero events, e.g. an OAuth import.
-    const passwordHash = await hashPassword(password);
-    const created = await query(
-      `INSERT INTO users (email, full_name, password_hash) VALUES ($1, $2, $3) RETURNING id`,
-      [email, 'DB13 Spec Host', passwordHash]
-    );
-    userId = created.rows[0].id;
-    await query(
-      `INSERT INTO subscriptions (user_id, tier, status, billing_type, amount_paid_cents, currency)
-       VALUES ($1, 'free', 'active', 'one_time', 0, 'EUR')`,
-      [userId]
-    );
+    const host = await createEventlessHost('db13');
+    email = host.email;
+    userId = host.id;
   });
 
   afterAll(async () => {
-    await query('DELETE FROM users WHERE id = $1', [userId]).catch(() => undefined);
+    for (const id of [userId, ...extraUserIds]) {
+      await deleteEventFixturesForHost(id);
+      await query('DELETE FROM users WHERE id = $1', [id]).catch(() => undefined);
+    }
     if (server) server.close();
   });
 
@@ -244,6 +256,29 @@ describe("Login's event-auto-creation fallback (DB-13)", () => {
     expect(row.rows[0].expires_at).not.toBeNull();
     const expected = computeExpiry('free', row.rows[0].event_date, row.rows[0].created_at);
     expect(new Date(row.rows[0].expires_at).toISOString()).toBe(expected!.toISOString());
+  });
+
+  it('creates exactly one event, not one per attempt the retry budget allows', async () => {
+    // The loop's second condition is what stops it once it has an event.
+    // Without it the whole retry budget is spent whether or not the first
+    // attempt worked, and a host who logged in once owns five weddings —
+    // five albums, five slugs, five QR codes, four of them invisible behind
+    // a UI that shows the most recent one.
+    const host = await createEventlessHost('db13-once');
+    extraUserIds.push(host.id);
+
+    const res = await fetch(`${BASE_URL}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: host.email, password }),
+    });
+    expect(res.status).toBe(200);
+
+    const { rows } = await query<{ count: number }>(
+      'SELECT COUNT(*)::int AS count FROM events WHERE host_user_id = $1',
+      [host.id]
+    );
+    expect(rows[0].count).toBe(1);
   });
 });
 

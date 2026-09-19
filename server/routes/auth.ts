@@ -57,7 +57,10 @@ const RegisterSchema = z.object({
       message: 'Password must be at most 72 bytes (roughly 72 characters of plain text).',
     }),
   role: z.enum(['couple', 'planner', 'venue', 'photographer']).default('couple'),
-  companyName: z.string().max(200).optional(),
+  // VARCHAR(150) in the users table. A wider cap here does not accept more,
+  // it only moves the refusal from Zod to Postgres, where it arrives as 22001
+  // and leaves as an opaque 500.
+  companyName: z.string().max(150).optional(),
 });
 
 const LoginSchema = z.object({
@@ -151,7 +154,7 @@ authRouter.post('/register', authLimiter, validateBody(RegisterSchema), async (r
           userId: user.id,
           email: user.email,
           role: user.role,
-          fullName: user.full_name || fullName,
+          fullName: user.full_name,
           // A brand-new row, so this is the column default (migration 019).
           tokenVersion: Number(user.token_version ?? 0),
         });
@@ -183,7 +186,7 @@ authRouter.post('/register', authLimiter, validateBody(RegisterSchema), async (r
     const sanitizedUser = {
       id: result.user.id,
       email: result.user.email,
-      fullName: result.user.full_name || fullName,
+      fullName: result.user.full_name,
       role: result.user.role,
       companyName: result.user.company_name,
       avatarUrl: result.user.avatar_url,
@@ -348,7 +351,9 @@ authRouter.get('/me', requireAuth, async (req, res) => {
 });
 
 const UpdateProfileSchema = z.object({
-  fullName: z.string().trim().min(1, 'Full name is required').max(200),
+  // Same column bound as registration writes to: users.full_name is
+  // VARCHAR(150).
+  fullName: z.string().trim().min(1, 'Full name is required').max(150),
 });
 
 // PUT /api/auth/me — the host's own account profile. Email is intentionally

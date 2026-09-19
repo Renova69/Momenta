@@ -217,4 +217,73 @@ describe('input validation and error codes (MEDIUM)', () => {
       expect(res.status).toBe(201);
     });
   });
+  describe('N-13 — string fields bounded by the schema, not by the column', () => {
+    // Two Zod caps were wider than the columns behind them: companyName
+    // allowed 200 characters into a VARCHAR(150), and PUT /me's fullName
+    // allowed 200 into the same 150. Postgres answers 22001, which is not a
+    // unique violation and not anything either handler names, so it came back
+    // as a 500 — a request the schema had just accepted, answered with
+    // "something broke" and no hint which field was at fault. Same shape as
+    // M12: the bound belongs at the boundary.
+
+    function freshEmail(prefix: string): string {
+      return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}@test.com`;
+    }
+
+    function register(body: Record<string, unknown>) {
+      return fetch(`${BASE_URL}/api/auth/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+    }
+
+    function renameSelf(token: string, fullName: string) {
+      return fetch(`${BASE_URL}/api/auth/me`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ fullName }),
+      });
+    }
+
+    it('rejects a company name longer than the column instead of 500ing', async () => {
+      const res = await register({
+        email: freshEmail('toolong'),
+        fullName: 'Company Name Spec Host',
+        password: 'Password123!',
+        companyName: 'C'.repeat(151),
+      });
+
+      expect(res.status).toBe(400);
+    });
+
+    it('still accepts a company name that fills the column exactly', async () => {
+      const res = await register({
+        email: freshEmail('fits'),
+        fullName: 'Company Name Spec Host',
+        password: 'Password123!',
+        companyName: 'C'.repeat(150),
+      });
+
+      expect(res.status).toBe(201);
+      const data = await res.json();
+      createdEvents.push(data.event.id);
+      expect(data.user.companyName).toHaveLength(150);
+    });
+
+    it('rejects an over-long full name on profile update the same way', async () => {
+      const host = await registerHost();
+
+      expect((await renameSelf(host.token, 'N'.repeat(151))).status).toBe(400);
+    });
+
+    it('still accepts a full name that fills the column exactly', async () => {
+      const host = await registerHost();
+
+      const res = await renameSelf(host.token, 'N'.repeat(150));
+
+      expect(res.status).toBe(200);
+      expect((await res.json()).user.fullName).toHaveLength(150);
+    });
+  });
 });
