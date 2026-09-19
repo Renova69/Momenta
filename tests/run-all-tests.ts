@@ -254,12 +254,14 @@ async function runAllSpecs() {
     assert(questsRes.status === 200 && questsList.length > 0, 'Quests retrieved for event');
     const questId = questsList[0].id;
 
-    const completeRes = await fetch(`${BASE_URL}/api/quests/${questId}/complete`, {
+    // A quest is completed by uploading a photo for it; there is no separate
+    // claim route any more.
+    const claimRes = await fetch(`${BASE_URL}/api/quests/${questId}/complete`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ guestId }),
     });
-    assert(completeRes.status === 200, 'Quest completed with null photo');
+    assert(claimRes.status === 404, 'No route claims a quest without a photo');
 
     // /api/audio is multipart-only (P7) — a real WebM magic-byte header,
     // not base64-in-JSON.

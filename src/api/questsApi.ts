@@ -26,21 +26,4 @@ export const questsApi = {
       method: 'DELETE',
     });
   },
-
-  // Complete quest
-  complete: async (
-    questId: string,
-    guestId: string,
-    photoId?: string,
-    guestToken?: string,
-    deviceFingerprint?: string
-  ): Promise<{ success: boolean; questId: string; guestId: string; guestToken?: string }> => {
-    return apiFetch<{ success: boolean; questId: string; guestId: string; guestToken?: string }>(
-      `/api/quests/${questId}/complete`,
-      {
-        method: 'POST',
-        body: JSON.stringify({ guestId, photoId, guestToken, deviceFingerprint }),
-      }
-    );
-  },
 };

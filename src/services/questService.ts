@@ -1,6 +1,6 @@
 import { ScavengerQuest } from '../types';
 import { questsApi } from '../api/questsApi';
-import { STORAGE_KEYS, getOrCreateDeviceFingerprint } from './storageKeys';
+import { STORAGE_KEYS } from './storageKeys';
 import { ServiceContext } from './storageServiceContext';
 
 export function getQuests(ctx: ServiceContext, eventId?: string): ScavengerQuest[] {
@@ -13,6 +13,15 @@ export function getQuests(ctx: ServiceContext, eventId?: string): ScavengerQuest
   }
 }
 
+/**
+ * Tick a quest on this phone the moment its photo is taken.
+ *
+ * Local only. The server records the completion when the photo upload lands
+ * (with the photo, which is what scores) and broadcasts QUEST_COMPLETED; the
+ * next sync replaces this list with the server's anyway. The tick exists for
+ * the case the upload never lands: the card then reads "not counted" with a
+ * retake, rather than silently reverting to an untried quest.
+ */
 export function completeQuest(ctx: ServiceContext, questId: string, guestId: string): void {
   const event = ctx.getEvent();
   const quests = getQuests(ctx, event.id).map((q) => {
@@ -30,22 +39,6 @@ export function completeQuest(ctx: ServiceContext, questId: string, guestId: str
 
   localStorage.setItem(STORAGE_KEYS.QUESTS(event.id), JSON.stringify(quests));
   ctx.notify();
-
-  // Sync quest completion
-  questsApi
-    .complete(
-      questId,
-      guestId,
-      undefined,
-      ctx.getCurrentGuest(event.id)?.guestToken,
-      // H8 — same reason as the comment path: identifies a returning
-      // device so the server need not mint a guest row per request.
-      getOrCreateDeviceFingerprint()
-    )
-    .then((result) => {
-      ctx.syncGuestFromServer(event.id, result.guestId, result.guestToken);
-    })
-    .catch(() => {});
 }
 
 export function addQuest(

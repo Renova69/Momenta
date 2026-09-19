@@ -312,13 +312,14 @@ async function runE2ETests() {
     assert(questsRes.status === 200 && questsList.length > 0, 'Scavenger quests retrieved for event');
     const questId = questsList[0].id;
 
-    // 6.2 Complete Quest without photo
-    const completeRes = await fetch(`${BASE_URL}/api/quests/${questId}/complete`, {
+    // 6.2 A quest is completed by uploading a photo for it; there is no
+    // separate claim route any more.
+    const claimRes = await fetch(`${BASE_URL}/api/quests/${questId}/complete`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ guestId }),
     });
-    await completeRes.json();
+    assert(claimRes.status === 404, 'No route claims a quest without a photo');
     // /api/audio is multipart-only (P7) — a real WebM magic-byte header,
     // not base64-in-JSON.
     const webmHeader = new Uint8Array([0x1a, 0x45, 0xdf, 0xa3, 0x00, 0x00, 0x00, 0x00]);

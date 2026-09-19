@@ -437,7 +437,7 @@ describe('Cross-tenant security regressions (SEC-A1, SEC-M1, SEC-D3)', () => {
       }
     });
 
-    it('rejects a quest completion attributed to an event-B guestId', async () => {
+    it('offers no route to claim a quest for an event-B guestId, or anyone', async () => {
       const questsRes = await fetch(`${BASE_URL}/api/events/${eventAId}/quests`);
       const quests = await questsRes.json();
       expect(quests.length).toBeGreaterThan(0);
@@ -449,12 +449,13 @@ describe('Cross-tenant security regressions (SEC-A1, SEC-M1, SEC-D3)', () => {
         body: JSON.stringify({ guestId: guestBId }),
       });
 
-      // An event-B guestId is never honoured on an event-A quest. This used to
-      // fall through to a freshly-minted event-A guest and answer 200; since
-      // H8 a caller identifying neither a token nor a device is refused
-      // outright, which satisfies the same property more strongly — nothing is
-      // recorded at all.
-      expect(res.status).toBe(401);
+      // This route once took a guestId and a quest and recorded a completion.
+      // It was hardened (H8) to refuse a caller identifying neither a token nor
+      // a device, and has since been removed: a quest is completed only by
+      // uploading a photo for it, and the upload keeps a quest only from its
+      // own event (N-14). The strongest form of the old property is that the
+      // route does not exist.
+      expect(res.status).toBe(404);
 
       const completion = await query('SELECT 1 FROM guest_quest_completions WHERE quest_id = $1 AND guest_id = $2', [
         questId,

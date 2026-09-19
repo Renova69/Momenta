@@ -9,19 +9,17 @@ import { pool } from './db';
  *
  *   - still exists — a host who deletes a photo takes its points with it
  *     (the foreign key sets `photo_id` to NULL, which the join drops);
- *   - belongs to the same guest — `POST /quests/:id/complete` accepts any
- *     photo id, so without this a guest could claim a quest with somebody
- *     else's picture;
- *   - was uploaded for that quest — the same route would otherwise let one
- *     photo claim every quest;
+ *   - belongs to the same guest, and
+ *   - was uploaded for that quest. Completions are only written by the upload
+ *     now, which satisfies both by construction, but rows written by the
+ *     claim endpoint that used to exist could name any photo id — somebody
+ *     else's, or one photo for every quest — and may still be in a database;
  *   - is not rejected by moderation. A pending photo does score: the host has
  *     not decided yet, and a guest should not drop off the board while they
  *     wait.
  *
- * Completions recorded with no photo at all never score. The client claims a
- * quest as soon as the photo is taken, before the upload reaches the server,
- * and anyone can send that claim; it still shows as a tick on the guest's own
- * quest list, which is all it ever was.
+ * Completions recorded with no photo at all — left behind by that endpoint, or
+ * by a photo since deleted — never score.
  *
  * Every join is pinned to the event, so a guest or photo from another wedding
  * cannot appear here however the completion row came to exist.

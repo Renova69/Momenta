@@ -312,21 +312,12 @@ describe('Express REST Routes Spec', () => {
     const photos = await getPhotos.json();
     expect(photos.length).toBeGreaterThan(0);
 
-    // Complete Quest and verify quest list reflects completion.
-    // The fingerprint is what a real client sends (H8): without a token or a
-    // fingerprint the server no longer mints a guest row per request, so an
-    // unidentified caller is asked to join first.
-    const completeRes = await fetch(`${BASE_URL}/api/quests/${newQuest.id}/complete`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ guestId: 'anon-guest-str', deviceFingerprint: 'lifecycle-quest-device' }),
-    });
-    expect(completeRes.status).toBe(200);
-
+    // The photo above was uploaded for this quest, and that upload is what
+    // completes it: there is no separate claim request any more.
     const getQuestsAfterCompletion = await fetch(`${BASE_URL}/api/events/${event.id}/quests`);
     const questsList = await getQuestsAfterCompletion.json();
-    expect(questsList.length).toBeGreaterThan(0);
-    expect(questsList[0].completedByGuestIds).toBeDefined();
+    const completedQuest = questsList.find((q: { id: string }) => q.id === newQuest.id);
+    expect(completedQuest.completedByGuestIds).toContain(photoData.guestId);
 
     const deleteQuest = await fetch(`${BASE_URL}/api/quests/${newQuest.id}`, {
       method: 'DELETE',

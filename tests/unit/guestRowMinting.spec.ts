@@ -16,7 +16,8 @@ import { deleteEventFixtures } from '../helpers/cleanup';
  *
  * POST /api/photos/:id/comments and POST /api/quests/:id/complete both
  * accepted a request carrying no credential at all and INSERTed a fresh
- * `guests` row on every single call. Comments had no rate limiter beyond the
+ * `guests` row on every single call. (The quest route has since been removed
+ * outright: a quest is completed only by uploading a photo for it.) Comments had no rate limiter beyond the
  * global apiLimiter (3000/min/IP), and `guests` has no quota of any kind.
  *
  * Anyone with a public event slug could therefore create unbounded guest rows:
@@ -88,19 +89,6 @@ function postComment(photoId: string, body: Record<string, unknown>) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ commentText: 'Lovely shot!', ...body }),
   });
-}
-
-function completeQuest(questId: string, body: Record<string, unknown>) {
-  return fetch(`${BASE_URL}/api/quests/${questId}/complete`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-}
-
-async function firstQuestId(eventId: string): Promise<string> {
-  const res = await query<{ id: string }>('SELECT id FROM scavenger_quests WHERE event_id = $1 LIMIT 1', [eventId]);
-  return res.rows[0].id;
 }
 
 describe('guest rows are not minted per request (H8)', () => {
@@ -291,70 +279,6 @@ describe('guest rows are not minted per request (H8)', () => {
     }, 20_000);
   });
 
-  describe('POST /api/quests/:id/complete', () => {
-    it('refuses a caller offering neither a token nor a fingerprint', async () => {
-      const host = await registerHost();
-      const questId = await firstQuestId(host.eventId);
-      const before = await guestCount(host.eventId);
-
-      const res = await completeQuest(questId, { guestId: 'not-a-uuid' });
-
-      expect(res.status).toBe(401);
-      expect(await guestCount(host.eventId)).toBe(before);
-    });
-
-    it('stores no photo reference when the one supplied is not a uuid', async () => {
-      // `photoId && isValidUuid(photoId) ? photoId : null`. With `||` the
-      // malformed value is kept and handed to a uuid column, which raises
-      // 22P02 and surfaces as a 500 — on a route a guest hits by tapping a
-      // quest tile.
-      const host = await registerHost();
-      const questId = await firstQuestId(host.eventId);
-
-      const res = await completeQuest(questId, {
-        guestId: 'unknown',
-        deviceFingerprint: `badphoto-${Math.random().toString(36).slice(2, 8)}`,
-        photoId: 'not-a-uuid',
-      });
-
-      expect(res.status).toBe(200);
-      const { rows } = await query<{ photo_id: string | null }>(
-        'SELECT photo_id FROM guest_quest_completions WHERE quest_id = $1 ORDER BY completed_at DESC LIMIT 1',
-        [questId]
-      );
-      expect(rows[0].photo_id).toBeNull();
-    }, 20_000);
-
-    it('creates at most one row for a device across repeated completions', async () => {
-      const host = await registerHost();
-      const questId = await firstQuestId(host.eventId);
-      const before = await guestCount(host.eventId);
-      const fingerprint = `mint-q-${Math.random().toString(36).slice(2, 8)}`;
-
-      for (let i = 0; i < 4; i++) {
-        const res = await completeQuest(questId, { guestId: 'unknown', deviceFingerprint: fingerprint });
-        expect(res.status).toBe(200);
-      }
-
-      expect(await guestCount(host.eventId)).toBe(before + 1);
-    });
-
-    it('does not hand a credential to a fingerprint-only match (SEC-03)', async () => {
-      const host = await registerHost();
-      const questId = await firstQuestId(host.eventId);
-      const fingerprint = `mint-q-${Math.random().toString(36).slice(2, 8)}`;
-
-      const first = await (await completeQuest(questId, { guestId: 'unknown', deviceFingerprint: fingerprint })).json();
-      expect(typeof first.guestToken).toBe('string');
-
-      const second = await (
-        await completeQuest(questId, { guestId: 'unknown', deviceFingerprint: fingerprint })
-      ).json();
-      expect(second.guestId).toBe(first.guestId);
-      expect(second.guestToken).toBeUndefined();
-    });
-  });
-
   it('still rejects a reserved device fingerprint on these paths', async () => {
     const host = await registerHost();
     const photoId = await uploadPhoto(host.eventId);
@@ -368,8 +292,8 @@ describe('guest rows are not minted per request (H8)', () => {
    * The token version a resolved identity carries.
    *
    * `resolveGuestIdentity` returns `tokenVersion`, and its only consumer is
-   * `issueGuestToken(guestId, eventId, tokenVersion)` on the comment, quest and
-   * upload paths. Both places that produce it read
+   * `issueGuestToken(guestId, eventId, tokenVersion)` on the comment and upload
+   * paths. Both places that produce it read
    * `Number(row.token_version) || 0`, and mutation testing found that forcing
    * either to 0 changed nothing any test could see.
    *

@@ -27,6 +27,7 @@ import { uploadLimiter, uploadIpLimiter } from '../../middleware/rateLimit';
 import { getUploadContext, checkUploadAllowance } from '../../middleware/tierGate';
 import { savePhotoVariants, insertPhotoUnderQuota, broadcastPhotoAdded, SavedPhotoFiles } from '../../lib/photoWrite';
 import { issueGuestToken } from '../../lib/guestAuth';
+import { wsManager } from '../../ws/wsServer';
 import { verifyGuestOwnership } from '../../lib/guestIdentity';
 import { isImageMagicBytes, isValidUuid } from '../../lib/validation';
 import { errorLabel } from '../../lib/errors';
@@ -383,23 +384,39 @@ async function resolveEventQuestId(eventId: string, questId: string | undefined)
   return rows.length > 0 ? questId : null;
 }
 
-/** Best-effort: a failed quest credit must not fail an upload that succeeded. */
-async function recordQuestCompletion(questId: string | null, guestId: string, photoId: string): Promise<void> {
+/**
+ * Credit the quest this photo was taken for, and tell the room.
+ *
+ * This is the only place a quest is completed. The broadcast is what moves
+ * every other phone's per-quest count and prompts leaderboards to refetch; it
+ * used to come from a separate claim request the phone sent before uploading.
+ *
+ * Best-effort: a failed quest credit must not fail an upload that succeeded.
+ */
+async function recordQuestCompletion(
+  eventId: string,
+  questId: string | null,
+  guestId: string,
+  photoId: string
+): Promise<void> {
   if (!questId) return;
-  await pool
+  const recorded = await pool
     .query(
       `INSERT INTO guest_quest_completions (quest_id, guest_id, photo_id)
        VALUES ($1, $2, $3)
        ON CONFLICT (quest_id, guest_id) DO UPDATE SET photo_id = $3, completed_at = NOW()`,
       [questId, guestId, photoId]
     )
+    .then(() => true)
     .catch((err: unknown) => {
       console.warn(
         '[Photos] Quest completion not recorded for photo',
         photoId,
         err instanceof Error ? err.message : err
       );
+      return false;
     });
+  if (recorded) wsManager.broadcastToEvent(eventId, 'QUEST_COMPLETED', { questId, guestId });
 }
 
 // 3. POST /api/photos (Scoped to specific wedding event)
@@ -502,7 +519,7 @@ photosRouter.post(
       if (!inserted.ok) return res.status(inserted.status).json(inserted.body);
       const { row: created, hostUserId } = inserted.value;
 
-      await recordQuestCompletion(scopedQuestId, guest.guestId, created.id);
+      await recordQuestCompletion(eventId, scopedQuestId, guest.guestId, created.id);
 
       const newPhoto = {
         id: created.id,

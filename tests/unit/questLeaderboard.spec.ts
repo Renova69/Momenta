@@ -1,23 +1,26 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest';
 import { createServer } from 'http';
 import express from 'express';
 import sharp from 'sharp';
+import { WebSocket } from 'ws';
 
 import { authRouter } from '../../server/routes/auth';
 import { eventsRouter } from '../../server/routes/events';
 import { photosRouter } from '../../server/routes/photos';
 import { questsRouter } from '../../server/routes/quests';
-import { query } from '../../server/lib/db';
+import { wsManager } from '../../server/ws/wsServer';
+import { pool, query } from '../../server/lib/db';
 import { deleteEventFixtures } from '../helpers/cleanup';
 
 /**
  * The quest leaderboard decides who a host hands a real prize to, so it must
  * count what a guest has shown rather than what they have claimed.
  *
- * Everything here goes through the real routes a phone uses — upload, claim,
+ * Everything here goes through the real routes a phone uses — upload,
  * moderate, delete — because each rule exists to stop one of those routes
- * being used to climb the board. Only the tie-break test reaches into the
- * database, to set completion times a test cannot wait for.
+ * being used to climb the board. The database is reached into only to set
+ * completion times a test cannot wait for, and to plant the rows a removed
+ * claim endpoint could write, which may still sit in a database.
  */
 
 const TEST_PORT = 6671;
@@ -95,12 +98,18 @@ async function upload(eventId: string, device: Device, questId?: string): Promis
   return { id: body.id, guestId: body.guestId };
 }
 
-async function claim(questId: string, device: Device, guestId: string, photoId?: string) {
-  return fetch(`${BASE_URL}/api/quests/${questId}/complete`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ guestId, photoId, deviceFingerprint: device.fingerprint }),
-  });
+/**
+ * Write a completion row the way the removed `POST /quests/:id/complete` did:
+ * any photo id, or none. Nothing in the app writes these now, but rows it
+ * wrote may still be in a database, and the board must not count them.
+ */
+async function plantLegacyClaim(questId: string, guestId: string, photoId: string | null) {
+  await query(
+    `INSERT INTO guest_quest_completions (quest_id, guest_id, photo_id)
+     VALUES ($1, $2, $3)
+     ON CONFLICT (quest_id, guest_id) DO UPDATE SET photo_id = EXCLUDED.photo_id`,
+    [questId, guestId, photoId]
+  );
 }
 
 async function board(eventId: string): Promise<Entry[]> {
@@ -113,6 +122,7 @@ describe('quest leaderboard', () => {
   beforeAll(async () => {
     const app = express();
     server = createServer(app);
+    wsManager.init(server);
     app.use(express.json({ limit: '20mb' }));
     app.use('/api/auth', authRouter);
     app.use('/api/events', eventsRouter);
@@ -141,16 +151,13 @@ describe('quest leaderboard', () => {
     expect(await board(host.eventId)).toEqual([]);
   });
 
-  it('scores a quest photo, and nothing for the claim that came before it', async () => {
+  it('scores a quest photo, and nothing for a completion with no photo behind it', async () => {
     const host = await newHost();
     const quest = await addQuest(host, 'First dance', 15);
     const maria = guestDevice('Maria');
 
-    // The phone claims the quest as soon as the photo is taken, before the
-    // upload lands. Anyone can send that request, so on its own it is worth
-    // nothing.
     const first = await upload(host.eventId, maria);
-    expect((await claim(quest, maria, first.guestId)).status).toBe(200);
+    await plantLegacyClaim(quest, first.guestId, null);
     expect(await board(host.eventId)).toEqual([]);
 
     await upload(host.eventId, maria, quest);
@@ -237,29 +244,118 @@ describe('quest leaderboard', () => {
     expect(await board(host.eventId)).toEqual([]);
   });
 
-  it("refuses a claim made with somebody else's photo", async () => {
+  it("refuses a completion made with somebody else's photo", async () => {
     const host = await newHost();
     const quest = await addQuest(host, 'Group selfie', 30);
     const honest = await upload(host.eventId, guestDevice('Honest'), quest);
-    const thief = guestDevice('Thief');
-    const thiefGuest = (await upload(host.eventId, thief)).guestId;
+    const thiefGuest = (await upload(host.eventId, guestDevice('Thief'))).guestId;
 
-    // The claim route takes any photo id it is given.
-    expect((await claim(quest, thief, thiefGuest, honest.id)).status).toBe(200);
+    await plantLegacyClaim(quest, thiefGuest, honest.id);
 
     expect((await board(host.eventId)).map((e) => e.name)).toEqual(['Honest']);
   });
 
-  it('refuses a claim on one quest made with the photo from another', async () => {
+  it('refuses a completion on one quest made with the photo from another', async () => {
     const host = await newHost();
     const easy = await addQuest(host, 'Easy', 5);
     const hard = await addQuest(host, 'Hard', 100);
-    const guest = guestDevice('Stoyan');
-    const photo = await upload(host.eventId, guest, easy);
+    const photo = await upload(host.eventId, guestDevice('Stoyan'), easy);
 
-    expect((await claim(hard, guest, photo.guestId, photo.id)).status).toBe(200);
+    await plantLegacyClaim(hard, photo.guestId, photo.id);
 
     expect(await board(host.eventId)).toEqual([expect.objectContaining({ name: 'Stoyan', points: 5, questIds: [easy] })]);
+  });
+
+  it('tells everyone in the room when an upload completes a quest', async () => {
+    // With no separate claim request, the upload's completion is the only
+    // signal other phones get to move their per-quest counts.
+    const host = await newHost();
+    const quest = await addQuest(host, 'First dance', 10);
+    const ws = new WebSocket(BASE_URL.replace('http', 'ws'));
+    const completed: { questId: string; guestId: string }[] = [];
+    await new Promise<void>((resolve, reject) => {
+      const timeout = setTimeout(() => reject(new Error('WebSocket join timed out')), 5000);
+      ws.on('open', () => ws.send(JSON.stringify({ type: 'JOIN_EVENT_ROOM', eventId: host.eventId })));
+      ws.on('message', (raw) => {
+        const msg = JSON.parse(raw.toString());
+        if (msg.type === 'ROOM_JOINED') {
+          clearTimeout(timeout);
+          resolve();
+        } else if (msg.type === 'QUEST_COMPLETED') {
+          completed.push(msg.payload);
+        }
+      });
+      ws.on('error', reject);
+    });
+
+    try {
+      await upload(host.eventId, guestDevice('Plain'));
+      const photo = await upload(host.eventId, guestDevice('Dancer'), quest);
+
+      await vi.waitFor(() => expect(completed).toEqual([{ questId: quest, guestId: photo.guestId }]), {
+        timeout: 5000,
+      });
+    } finally {
+      ws.close();
+    }
+  });
+
+  it('stays silent about a completion it failed to record', async () => {
+    // Announcing a completion that never reached the database would tick the
+    // quest on every phone in the room, until their next sync took it back.
+    const host = await newHost();
+    const quest = await addQuest(host, 'First dance', 10);
+    const ws = new WebSocket(BASE_URL.replace('http', 'ws'));
+    const seen: string[] = [];
+    await new Promise<void>((resolve, reject) => {
+      const timeout = setTimeout(() => reject(new Error('WebSocket join timed out')), 5000);
+      ws.on('open', () => ws.send(JSON.stringify({ type: 'JOIN_EVENT_ROOM', eventId: host.eventId })));
+      ws.on('message', (raw) => {
+        const msg = JSON.parse(raw.toString());
+        if (msg.type === 'ROOM_JOINED') {
+          clearTimeout(timeout);
+          resolve();
+        } else {
+          seen.push(msg.type);
+        }
+      });
+      ws.on('error', reject);
+    });
+
+    const realQuery = pool.query.bind(pool);
+    const spy = vi.spyOn(pool, 'query').mockImplementation(((text: unknown, ...rest: unknown[]) => {
+      if (typeof text === 'string' && text.includes('INSERT INTO guest_quest_completions')) {
+        return Promise.reject(new Error('simulated write failure'));
+      }
+      return (realQuery as (...args: unknown[]) => unknown)(text, ...rest);
+    }) as typeof pool.query);
+
+    try {
+      // The upload itself still succeeds: the quest credit is best-effort.
+      await upload(host.eventId, guestDevice('Unlucky'), quest);
+      // PHOTO_ADDED is broadcast after the credit attempt, so once it has
+      // arrived, a QUEST_COMPLETED would have too.
+      await vi.waitFor(() => expect(seen).toContain('PHOTO_ADDED'), { timeout: 5000 });
+      expect(seen).not.toContain('QUEST_COMPLETED');
+    } finally {
+      spy.mockRestore();
+      ws.close();
+    }
+  });
+
+  it('has no route to claim a quest without a photo', async () => {
+    const host = await newHost();
+    const quest = await addQuest(host, 'First dance', 10);
+
+    const res = await fetch(`${BASE_URL}/api/quests/${quest}/complete`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ guestId: 'anyone', deviceFingerprint: 'any-device' }),
+    });
+
+    expect(res.status).toBe(404);
+    const { rows } = await query('SELECT 1 FROM guest_quest_completions WHERE quest_id = $1', [quest]);
+    expect(rows).toHaveLength(0);
   });
 
   it("does not let an upload to one wedding score on another wedding's quest", async () => {

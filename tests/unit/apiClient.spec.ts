@@ -163,11 +163,6 @@ describe('API Client Layer Spec', () => {
     const quests = await questsApi.list('e1');
     expect(quests.length).toBe(1);
 
-    global.fetch = vi.fn().mockResolvedValue(createMockResponse({ success: true, points: 15 }));
-
-    const completion = await questsApi.complete('q1', 'g1', 'p1');
-    expect(completion.success).toBe(true);
-
     const newQuest: Partial<ScavengerQuest> = { id: 'q2', title: 'Champagne Tower' };
     global.fetch = vi.fn().mockResolvedValue(createMockResponse(newQuest));
 

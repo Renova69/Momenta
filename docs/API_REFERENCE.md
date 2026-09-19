@@ -364,9 +364,21 @@ Creates new photo challenge (Host Only).
 Removes photo challenge (Host Only).
 - **Headers**: `Authorization: Bearer <JWT>`
 
-### `POST /api/quests/:id/complete`
-Records quest completion by attendee.
-- **Request Body**: `{ "guestId": "uuid", "photoId": "optional-uuid", "guestToken": "optional" }`
+### Completing a quest
+There is no claim endpoint. A quest is completed by uploading a photo for it:
+`POST /api/photos` with a `questId` naming a quest of the same event records the
+completion with that photo and broadcasts `QUEST_COMPLETED` (`{ questId, guestId }`)
+to the room. A `questId` from another event is dropped (N-14). The former
+`POST /api/quests/:id/complete` was removed: it earned nothing once scoring
+required a photo.
+
+### `GET /api/events/:id/leaderboard`
+Guests ranked by quest points. Public, like the quest list.
+- **Tier Gated**: Requires `celebration_pass` or higher.
+- **Scoring**: a completion counts only when its photo still exists, belongs to
+  the same guest, was uploaded for that quest, and is not rejected. Ties go to
+  whoever reached the score first.
+- **Response**: `[{ "rank": 1, "guestId": "uuid", "name": "Maria", "avatarUrl": null, "points": 50, "questsCompleted": 3, "questIds": ["uuid"] }]`
 
 ---
 
