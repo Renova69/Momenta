@@ -19,8 +19,8 @@ interface ScavengerHuntProps {
   quests: ScavengerQuest[];
   currentGuest: Guest;
   prize?: string | null;
-  /** Omitted, the leaderboard is not shown at all. */
-  leaderboard?: QuestLeaderboardEntry[];
+  /** Null while loading; omitted, neither the board nor a points total is shown. */
+  leaderboard?: QuestLeaderboardEntry[] | null;
   onSelectQuestForCapture: (questId: string) => void;
 }
 
@@ -49,9 +49,14 @@ export const ScavengerHunt: React.FC<ScavengerHuntProps> = ({
     q.completedByGuestIds.includes(currentGuest.id)
   ).length;
 
-  const totalPoints = quests.reduce((acc, q) => {
-    return acc + (q.completedByGuestIds.includes(currentGuest.id) ? q.points : 0);
-  }, 0);
+  // The same number the leaderboard shows, not a sum of this phone's ticks.
+  // A tick is a claim, recorded before the photo uploads; the board counts
+  // only the photos that landed and were not rejected or deleted. Summing
+  // ticks told a guest whose photo the host rejected that they still had the
+  // points, while the board — the one the prize goes by — said otherwise.
+  const myPoints = leaderboard
+    ? (leaderboard.find((entry) => entry.guestId === currentGuest.id)?.points ?? 0)
+    : null;
 
   const progressPercent = Math.round((completedCount / (quests.length || 1)) * 100);
 
@@ -79,7 +84,9 @@ export const ScavengerHunt: React.FC<ScavengerHuntProps> = ({
           {/* Points Pill */}
           <div className="px-4 py-2 rounded-2xl bg-gold-400/15 border border-gold-400/30 text-gold-300 flex items-center gap-2 self-stretch sm:self-auto justify-center">
             <Sparkles className="w-4 h-4 text-gold-400" />
-            <span className="font-serif text-lg font-bold">{totalPoints} {i18n.t('quests.pts')}</span>
+            <span className="font-serif text-lg font-bold" data-testid="quest-points-total">
+              {myPoints ?? '…'} {i18n.t('quests.pts')}
+            </span>
           </div>
         </div>
 
@@ -180,7 +187,9 @@ export const ScavengerHunt: React.FC<ScavengerHuntProps> = ({
         })}
       </div>
 
-      {leaderboard && <QuestLeaderboard entries={leaderboard} currentGuestId={currentGuest.id} limit={GUEST_LEADERBOARD_ROWS} />}
+      {leaderboard !== undefined && (
+        <QuestLeaderboard entries={leaderboard} currentGuestId={currentGuest.id} limit={GUEST_LEADERBOARD_ROWS} />
+      )}
     </div>
   );
 };

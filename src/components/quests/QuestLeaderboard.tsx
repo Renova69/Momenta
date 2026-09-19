@@ -5,7 +5,8 @@ import { QuestLeaderboardEntry } from '../../types';
 import { avatarFor, rankBadgeClass } from './leaderboardStyle';
 
 interface QuestLeaderboardProps {
-  entries: QuestLeaderboardEntry[];
+  /** Null while the first fetch is in flight; nothing renders until it lands. */
+  entries: QuestLeaderboardEntry[] | null;
   /** The viewing guest: highlighted, and pinned below the list when outside it. */
   currentGuestId?: string;
   /** Rows to show; omitted shows everyone (the host's view). */
@@ -47,6 +48,10 @@ const Row: React.FC<{ entry: QuestLeaderboardEntry; isYou: boolean }> = ({ entry
 );
 
 export const QuestLeaderboard: React.FC<QuestLeaderboardProps> = ({ entries, currentGuestId, limit, hint }) => {
+  // Rendering the empty state here would tell every guest "no points yet"
+  // for the moment before the real board arrives.
+  if (entries === null) return null;
+
   const shown = limit === undefined ? entries : entries.slice(0, limit);
   const you = currentGuestId ? entries.find((e) => e.guestId === currentGuestId) : undefined;
   const youAreBelow = you !== undefined && !shown.includes(you);

@@ -84,7 +84,7 @@ export const LiveProjectorScreen: React.FC<LiveProjectorScreenProps> = ({
     NO_QUESTS,
     photos
   );
-  const podium = useMemo(() => leaderboard.slice(0, PROJECTOR_LEADERBOARD_ROWS), [leaderboard]);
+  const podium = useMemo(() => (leaderboard ?? []).slice(0, PROJECTOR_LEADERBOARD_ROWS), [leaderboard]);
   const hasBoard = podium.length > 0;
   const [isBoardSlide, setIsBoardSlide] = useState(false);
   const slidesShown = useRef(0);

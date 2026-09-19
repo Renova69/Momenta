@@ -28,6 +28,13 @@ function ranked(count: number): QuestLeaderboardEntry[] {
 const names = () => screen.getAllByRole('listitem').map((li) => within(li).queryByText(/^Guest \d+/)?.textContent ?? '...');
 
 describe('QuestLeaderboard', () => {
+  it('renders nothing while the first fetch is in flight', () => {
+    const { container } = render(<QuestLeaderboard entries={null} />);
+
+    // Not the empty state: "no points yet" would be a claim about the event.
+    expect(container).toBeEmptyDOMElement();
+  });
+
   it('invites the first photo while nobody has scored', () => {
     render(<QuestLeaderboard entries={[]} />);
 

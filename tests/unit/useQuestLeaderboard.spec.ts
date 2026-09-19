@@ -52,7 +52,54 @@ describe('useQuestLeaderboard', () => {
     await flush();
 
     expect(fetch).toHaveBeenCalledWith('e1');
-    expect(result.current.map((e) => e.name)).toEqual(['Maria']);
+    expect(result.current?.map((e) => e.name)).toEqual(['Maria']);
+  });
+
+  it('answers null, not an empty board, until the first fetch lands', async () => {
+    // Empty would read as "nobody has scored" and show a guest 0 points.
+    let answer: (entries: QuestLeaderboardEntry[]) => void = () => undefined;
+    vi.spyOn(questsApi, 'leaderboard').mockImplementation(() => new Promise((resolve) => (answer = resolve)));
+
+    // Every value rendered, including the very first frame, before any effect
+    // has run: that frame is painted too.
+    const rendered: unknown[] = [];
+    const { result } = renderHook(() => {
+      const value = useQuestLeaderboard('e1', true, [], []);
+      rendered.push(value);
+      return value;
+    });
+    await flush();
+    expect(rendered[0]).toBeNull();
+    expect(result.current).toBeNull();
+
+    answer([]);
+    await flush();
+    expect(result.current).toEqual([]);
+  });
+
+  it('stays null when the first fetch fails, rather than claiming an empty board', async () => {
+    vi.spyOn(questsApi, 'leaderboard').mockRejectedValue(new Error('offline'));
+
+    const { result } = renderHook(() => useQuestLeaderboard('e1', true, [], []));
+    await flush();
+
+    expect(result.current).toBeNull();
+  });
+
+  it("forgets one event's board when switching to another", async () => {
+    vi.spyOn(questsApi, 'leaderboard')
+      .mockResolvedValueOnce([entry('Maria', 15)])
+      .mockImplementation(() => new Promise(() => undefined));
+    const { result, rerender } = renderHook(({ eventId }) => useQuestLeaderboard(eventId, true, [], []), {
+      initialProps: { eventId: 'e1' },
+    });
+    await flush();
+    expect(result.current?.map((e) => e.name)).toEqual(['Maria']);
+
+    rerender({ eventId: 'e2' });
+    await flush();
+
+    expect(result.current).toBeNull();
   });
 
   it('does not fetch while disabled — a locked plan or a tab nobody is looking at', async () => {
@@ -120,12 +167,12 @@ describe('useQuestLeaderboard', () => {
     rerender({ quests: [quest(['g1'])] });
     act(() => vi.advanceTimersByTime(1500));
     await flush();
-    expect(result.current.map((e) => e.name)).toEqual(['Newer']);
+    expect(result.current?.map((e) => e.name)).toEqual(['Newer']);
 
     answerFirst([entry('Older', 10)]);
     await flush();
 
-    expect(result.current.map((e) => e.name)).toEqual(['Newer']);
+    expect(result.current?.map((e) => e.name)).toEqual(['Newer']);
   });
 
   it('keeps the last board on screen when a refresh fails', async () => {
@@ -138,7 +185,7 @@ describe('useQuestLeaderboard', () => {
     act(() => vi.advanceTimersByTime(60_000));
     await flush();
 
-    expect(result.current.map((e) => e.name)).toEqual(['Maria']);
+    expect(result.current?.map((e) => e.name)).toEqual(['Maria']);
   });
 
   it('stops asking once unmounted', async () => {

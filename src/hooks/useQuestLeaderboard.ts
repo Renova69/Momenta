@@ -32,16 +32,18 @@ export function leaderboardTrigger(quests: ScavengerQuest[], photos: Photo[]): s
  * A slow poll covers what never reaches this client at all: in a moderated
  * event a guest is not sent other guests' pending photos, yet those score.
  *
- * A failed fetch keeps the last board on screen; the next change or tick
- * tries again.
+ * Returns null until the first answer arrives, so a caller can tell "not
+ * loaded yet" from "nobody has scored": a guest's points must not flash 0
+ * while the request is in flight. A failed fetch keeps the last board on
+ * screen; the next change or tick tries again.
  */
 export function useQuestLeaderboard(
   eventId: string | undefined,
   enabled: boolean,
   quests: ScavengerQuest[],
   photos: Photo[]
-): QuestLeaderboardEntry[] {
-  const [entries, setEntries] = useState<QuestLeaderboardEntry[]>([]);
+): QuestLeaderboardEntry[] | null {
+  const [entries, setEntries] = useState<QuestLeaderboardEntry[] | null>(null);
   // Only the newest request may write: a slow response must not overwrite a
   // fresher one, and nothing may land after the event changes or unmounts.
   const latestRequest = useRef(0);
@@ -58,7 +60,7 @@ export function useQuestLeaderboard(
   }, [eventId, enabled]);
 
   useEffect(() => {
-    setEntries([]);
+    setEntries(null);
   }, [eventId]);
 
   // At once, then on a slow timer.

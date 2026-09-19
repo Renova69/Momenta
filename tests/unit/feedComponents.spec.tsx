@@ -260,6 +260,42 @@ describe('ScavengerHunt', () => {
     expect(screen.getByText(i18n.t('leaderboard.you'))).toBeInTheDocument();
   });
 
+  describe('the points total', () => {
+    const total = () => screen.getByTestId('quest-points-total').textContent;
+
+    it("is the guest's leaderboard score, not the sum of the quests ticked on this phone", () => {
+      // Both quests are ticked here, but the host rejected one of the photos:
+      // the board, which decides the prize, counts only the other.
+      const quests = [quest({ points: 15, completedByGuestIds: [ME.id] }), quest({ points: 25, completedByGuestIds: [ME.id] })];
+      const leaderboard = [{ rank: 1, guestId: ME.id, name: ME.name, avatarUrl: null, points: 15, questsCompleted: 1 }];
+
+      render(<ScavengerHunt quests={quests} currentGuest={ME} leaderboard={leaderboard} onSelectQuestForCapture={vi.fn()} />);
+
+      expect(total()).toBe(`15 ${i18n.t('quests.pts')}`);
+    });
+
+    it('is zero for a guest the board does not list', () => {
+      const leaderboard = [{ rank: 1, guestId: 'guest-other', name: 'Martin', avatarUrl: null, points: 40, questsCompleted: 2 }];
+
+      render(
+        <ScavengerHunt
+          quests={[quest({ completedByGuestIds: [ME.id] })]}
+          currentGuest={ME}
+          leaderboard={leaderboard}
+          onSelectQuestForCapture={vi.fn()}
+        />
+      );
+
+      expect(total()).toBe(`0 ${i18n.t('quests.pts')}`);
+    });
+
+    it('shows a placeholder, not zero, while the board loads', () => {
+      render(<ScavengerHunt quests={[quest()]} currentGuest={ME} leaderboard={null} onSelectQuestForCapture={vi.fn()} />);
+
+      expect(total()).toBe(`… ${i18n.t('quests.pts')}`);
+    });
+  });
+
   it('shows no leaderboard when none was provided', () => {
     render(<ScavengerHunt quests={[quest()]} currentGuest={ME} onSelectQuestForCapture={vi.fn()} />);
 
