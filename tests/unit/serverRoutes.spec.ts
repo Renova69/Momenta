@@ -410,4 +410,23 @@ describe('Express REST Routes Spec', () => {
     expect(cleanSlug('Светлана & Георги 2026!')).toBe('svetlana-and-georgi-2026');
     expect(cleanSlug('Hello World @ Wedding')).toBe('hello-world-wedding-2026');
   });
+
+  it('suffixes the slug with the year of the event date it is given', () => {
+    // The client passes one (HostEventsList calls generateEventSlug(hostName,
+    // eventDate)); every server call site omits it and takes the default. So
+    // the whole dateStr branch is reachable only from the browser, which is
+    // exactly why nothing here was asserting it.
+    expect(cleanSlug('Ivan and Maria', '2027-06-12')).toBe('ivan-and-maria-2027');
+    expect(cleanSlug('Ivan and Maria', '2031-01-02')).toBe('ivan-and-maria-2031');
+    expect(cleanSlug('', '2027-06-12')).toBe('wedding-2027');
+  });
+
+  it('falls back to the default year for a date it cannot parse', () => {
+    expect(cleanSlug('Ivan and Maria', 'not-a-date')).toBe('ivan-and-maria-2026');
+    expect(cleanSlug('Ivan and Maria')).toBe('ivan-and-maria-2026');
+  });
+
+  it('does not repeat a year the name already carries', () => {
+    expect(cleanSlug('Ivan and Maria 2027', '2027-06-12')).toBe('ivan-and-maria-2027');
+  });
 });

@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, afterEach, vi } from 'vitest';
 import sharp from 'sharp';
 import { ingestPhoto, ingestPhotoBuffer, IngestedPhoto } from '../../server/lib/ingestPipeline';
 import { pool } from '../../server/lib/db';
@@ -54,6 +54,13 @@ afterAll(async () => {
   await deleteEventFixtures(createdEvents);
 });
 
+// Restored here rather than at the end of each test: a failing assertion skips
+// an inline restore, and the leaked spy then fails every test after it, so one
+// real defect reads as eight.
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
 describe('what the pipeline refuses', () => {
   it('refuses an empty buffer', async () => {
     const eventId = await makeEvent();
@@ -96,7 +103,6 @@ describe('what the pipeline refuses', () => {
     const outcome = await ingestPhoto(eventId, CORRUPT_JPEG, 'truncated.jpg', 'image/jpeg', {});
 
     expect(outcome).toEqual({ ok: false, reason: 'not_an_image' });
-    vi.restoreAllMocks();
   }, 20_000);
 
   it('reports a plan limit as a refusal with the reason attached', async () => {
@@ -114,7 +120,6 @@ describe('what the pipeline refuses', () => {
       reason: 'tier_limit',
       message: 'Storage limit reached for this plan',
     });
-    vi.restoreAllMocks();
   }, 20_000);
 
   it('still explains itself when the gate gives no reason', async () => {
@@ -128,7 +133,29 @@ describe('what the pipeline refuses', () => {
 
     expect(outcome).toMatchObject({ ok: false, reason: 'tier_limit' });
     expect((outcome as { message: string }).message).toBeTruthy();
-    vi.restoreAllMocks();
+  }, 20_000);
+
+  it('names an event deleted underneath the upload, rather than saying nothing', async () => {
+    // The tier gate refuses a missing event long before the write, so this
+    // branch is only reached when the event is deleted *between* the two — an
+    // FTP drop racing a host deleting the album. `event_not_found` is the one
+    // refusal photoWrite returns with no message attached, which is why the
+    // pipeline supplies the text; without it the caller is handed
+    // `message: undefined` and the photographer sees an empty failure.
+    const eventId = await makeEvent();
+    const photoWrite = await import('../../server/lib/photoWrite');
+    vi.spyOn(photoWrite, 'insertPhotoUnderQuota').mockResolvedValue({
+      ok: false,
+      reason: 'event_not_found',
+    } as Awaited<ReturnType<typeof photoWrite.insertPhotoUnderQuota>>);
+
+    const outcome = await ingestPhoto(eventId, JPEG, 'frame.jpg', 'image/jpeg', {});
+
+    expect(outcome).toEqual({
+      ok: false,
+      reason: 'tier_limit',
+      message: 'Event not found',
+    });
   }, 20_000);
 });
 
