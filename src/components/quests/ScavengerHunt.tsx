@@ -1,9 +1,13 @@
 import React from 'react';
-import { ScavengerQuest, Guest, QuestLeaderboardEntry } from '../../types';
+import { ScavengerQuest, Guest, Photo, QuestLeaderboardEntry } from '../../types';
 import { i18n } from '../../i18n';
 import { QuestLeaderboard } from './QuestLeaderboard';
+import { QuestCardState, questCardState, scoredQuestIds, isScoringState } from './questProgress';
 import {
   CheckCircle2,
+  Clock,
+  CloudUpload,
+  AlertCircle,
   Camera,
   Heart,
   Music,
@@ -18,11 +22,15 @@ import {
 interface ScavengerHuntProps {
   quests: ScavengerQuest[];
   currentGuest: Guest;
+  /** This phone's photos: its own quest photos decide a card before the server's answer lands. */
+  photos?: Photo[];
   prize?: string | null;
   /** Null while loading; omitted, neither the board nor a points total is shown. */
   leaderboard?: QuestLeaderboardEntry[] | null;
   onSelectQuestForCapture: (questId: string) => void;
 }
+
+const NO_PHOTOS: Photo[] = [];
 
 /** A phone screen's worth; the guest's own row is pinned below when further down. */
 const GUEST_LEADERBOARD_ROWS = 10;
@@ -38,16 +46,69 @@ const ICON_MAP: Record<string, React.ReactNode> = {
   users: <Users className="w-5 h-5 text-sage-300" />,
 };
 
+const CAPTURE_BUTTON = 'flex items-center gap-1.5 text-xs font-bold text-gold-400 hover:text-gold-300 hover:underline transition-all';
+
+/** The foot of a quest card: where this guest stands on it, and what they can do next. */
+const QuestCardAction: React.FC<{ state: QuestCardState; onCapture: () => void }> = ({ state, onCapture }) => {
+  switch (state) {
+    case 'completed':
+      return (
+        <div className="flex items-center gap-1.5 text-sage-400 text-xs font-medium">
+          <CheckCircle2 className="w-4 h-4" />
+          <span>{i18n.t('quests.done')}</span>
+        </div>
+      );
+    case 'awaiting':
+      return (
+        <div className="flex items-center gap-1.5 text-gold-300 text-xs font-medium">
+          <Clock className="w-4 h-4" />
+          <span>{i18n.t('quests.awaiting_approval')}</span>
+        </div>
+      );
+    case 'uploading':
+      return (
+        <div className="flex items-center gap-1.5 text-cream-300 text-xs font-medium animate-pulse">
+          <CloudUpload className="w-4 h-4" />
+          <span>{i18n.t('quests.uploading')}</span>
+        </div>
+      );
+    case 'not_counted':
+      return (
+        <div className="flex flex-col gap-1">
+          <span className="flex items-center gap-1.5 text-rosewood-300 text-xs font-medium">
+            <AlertCircle className="w-4 h-4" />
+            {i18n.t('quests.not_counted')}
+          </span>
+          <button onClick={onCapture} className={CAPTURE_BUTTON}>
+            <Camera className="w-4 h-4" />
+            <span>{i18n.t('quests.snap_again')}</span>
+          </button>
+        </div>
+      );
+    default:
+      return (
+        <button onClick={onCapture} className={CAPTURE_BUTTON}>
+          <Camera className="w-4 h-4" />
+          <span>{i18n.t('quests.snap_challenge')}</span>
+        </button>
+      );
+  }
+};
+
 export const ScavengerHunt: React.FC<ScavengerHuntProps> = ({
   quests,
   currentGuest,
+  photos = NO_PHOTOS,
   prize,
   leaderboard,
   onSelectQuestForCapture,
 }) => {
-  const completedCount = quests.filter((q) =>
-    q.completedByGuestIds.includes(currentGuest.id)
-  ).length;
+  const scored = scoredQuestIds(leaderboard, currentGuest.id);
+  const cardStates = new Map(
+    quests.map((q) => [q.id, questCardState(q, currentGuest.id, photos, scored)] as const)
+  );
+  // Counts what scores, so the bar agrees with the cards and the points.
+  const completedCount = quests.filter((q) => isScoringState(cardStates.get(q.id) ?? 'open')).length;
 
   // The same number the leaderboard shows, not a sum of this phone's ticks.
   // A tick is a claim, recorded before the photo uploads; the board counts
@@ -129,7 +190,8 @@ export const ScavengerHunt: React.FC<ScavengerHuntProps> = ({
       {/* Quests Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {quests.map((quest) => {
-          const isCompleted = quest.completedByGuestIds.includes(currentGuest.id);
+          const state = cardStates.get(quest.id) ?? 'open';
+          const isCompleted = state === 'completed';
           const icon = ICON_MAP[quest.iconName] || <Camera className="w-5 h-5 text-gold-400" />;
 
           return (
@@ -163,20 +225,7 @@ export const ScavengerHunt: React.FC<ScavengerHuntProps> = ({
 
               {/* Action */}
               <div className="pt-3 border-t border-cream-400/10 flex items-center justify-between">
-                {isCompleted ? (
-                  <div className="flex items-center gap-1.5 text-sage-400 text-xs font-medium">
-                    <CheckCircle2 className="w-4 h-4" />
-                    <span>{i18n.t('quests.done')}</span>
-                  </div>
-                ) : (
-                  <button
-                    onClick={() => onSelectQuestForCapture(quest.id)}
-                    className="flex items-center gap-1.5 text-xs font-bold text-gold-400 hover:text-gold-300 hover:underline transition-all"
-                  >
-                    <Camera className="w-4 h-4" />
-                    <span>{i18n.t('quests.snap_challenge')}</span>
-                  </button>
-                )}
+                <QuestCardAction state={state} onCapture={() => onSelectQuestForCapture(quest.id)} />
                 
                 <span className="text-[11px] text-cream-400/60">
                   {quest.completedByGuestIds.length} {i18n.t('hero.guests_joined').toLowerCase()}

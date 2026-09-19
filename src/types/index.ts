@@ -135,6 +135,8 @@ export interface QuestLeaderboardEntry {
   avatarUrl: string | null;
   points: number;
   questsCompleted: number;
+  /** The quests that scored for this guest. */
+  questIds: string[];
 }
 
 export interface AudioGuestbookEntry {

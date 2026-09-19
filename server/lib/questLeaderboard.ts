@@ -38,6 +38,12 @@ export interface LeaderboardEntry {
   avatarUrl: string | null;
   points: number;
   questsCompleted: number;
+  /**
+   * The quests that scored. A guest's own phone uses these to mark each quest
+   * card: its photo list is paginated, so it cannot tell by itself whether an
+   * older quest photo still counts.
+   */
+  questIds: string[];
 }
 
 /** A wedding has a few hundred guests at most; this only bounds a pathological event. */
@@ -52,7 +58,8 @@ export async function getQuestLeaderboard(eventId: string): Promise<LeaderboardE
             g.name,
             g.avatar_url                   AS "avatarUrl",
             SUM(sq.points)::int            AS points,
-            COUNT(*)::int                  AS "questsCompleted"
+            COUNT(*)::int                  AS "questsCompleted",
+            array_agg(sq.id::text ORDER BY sq.id) AS "questIds"
        FROM guest_quest_completions gqc
        JOIN scavenger_quests sq ON sq.id = gqc.quest_id
        JOIN guests g            ON g.id = gqc.guest_id AND g.event_id = sq.event_id

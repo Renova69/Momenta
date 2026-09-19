@@ -389,8 +389,8 @@ describe('the grand prize editor', () => {
 describe('the quest leaderboard', () => {
   it('shows the host every ranked guest, and what does and does not score', async () => {
     vi.mocked(questsApi.leaderboard).mockResolvedValue([
-      { rank: 1, guestId: 'g1', name: 'Maria', avatarUrl: null, points: 45, questsCompleted: 3 },
-      { rank: 2, guestId: 'g2', name: 'Ivan', avatarUrl: null, points: 30, questsCompleted: 2 },
+      { rank: 1, guestId: 'g1', name: 'Maria', avatarUrl: null, points: 45, questsCompleted: 3, questIds: [] },
+      { rank: 2, guestId: 'g2', name: 'Ivan', avatarUrl: null, points: 30, questsCompleted: 2, questIds: [] },
     ]);
     const { container } = renderDashboard({ planTier: 'pro_planner' });
 

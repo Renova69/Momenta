@@ -38,6 +38,7 @@ interface Entry {
   name: string;
   points: number;
   questsCompleted: number;
+  questIds: string[];
 }
 
 const createdEvents: string[] = [];
@@ -176,6 +177,9 @@ describe('quest leaderboard', () => {
       [1, 'Ivan', 35, 2],
       [2, 'Elena', 25, 1],
     ]);
+    // Each guest's phone marks its quest cards from these.
+    expect(ranked[0].questIds.sort()).toEqual([dance, cake].sort());
+    expect(ranked[1].questIds).toEqual([cake]);
   });
 
   it('gives a tie to whoever reached the score first', async () => {
@@ -255,7 +259,7 @@ describe('quest leaderboard', () => {
 
     expect((await claim(hard, guest, photo.guestId, photo.id)).status).toBe(200);
 
-    expect(await board(host.eventId)).toEqual([expect.objectContaining({ name: 'Stoyan', points: 5 })]);
+    expect(await board(host.eventId)).toEqual([expect.objectContaining({ name: 'Stoyan', points: 5, questIds: [easy] })]);
   });
 
   it("does not let an upload to one wedding score on another wedding's quest", async () => {

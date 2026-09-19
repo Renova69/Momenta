@@ -22,6 +22,7 @@ function ranked(count: number): QuestLeaderboardEntry[] {
     avatarUrl: null,
     points: 100 - i,
     questsCompleted: 1,
+    questIds: [],
   }));
 }
 

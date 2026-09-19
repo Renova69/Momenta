@@ -247,8 +247,8 @@ describe('ScavengerHunt', () => {
 
   it('shows the leaderboard with the guest marked, once it has been fetched', () => {
     const leaderboard = [
-      { rank: 1, guestId: 'guest-other', name: 'Martin', avatarUrl: null, points: 40, questsCompleted: 2 },
-      { rank: 2, guestId: ME.id, name: ME.name, avatarUrl: null, points: 15, questsCompleted: 1 },
+      { rank: 1, guestId: 'guest-other', name: 'Martin', avatarUrl: null, points: 40, questsCompleted: 2, questIds: [] },
+      { rank: 2, guestId: ME.id, name: ME.name, avatarUrl: null, points: 15, questsCompleted: 1, questIds: [] },
     ];
 
     render(
@@ -260,6 +260,55 @@ describe('ScavengerHunt', () => {
     expect(screen.getByText(i18n.t('leaderboard.you'))).toBeInTheDocument();
   });
 
+  describe('each card, against the leaderboard', () => {
+    const board = (questIds: string[]) => [
+      { rank: 1, guestId: ME.id, name: ME.name, avatarUrl: null, points: 10, questsCompleted: questIds.length, questIds },
+    ];
+
+    it('offers a retake on a ticked quest whose photo no longer counts', () => {
+      const onSelect = vi.fn();
+      const lost = quest({ title: 'Rejected one', completedByGuestIds: [ME.id] });
+
+      render(<ScavengerHunt quests={[lost]} currentGuest={ME} photos={[]} leaderboard={board([])} onSelectQuestForCapture={onSelect} />);
+
+      expect(screen.getByText(i18n.t('quests.not_counted'))).toBeInTheDocument();
+      expect(screen.queryByText(i18n.t('quests.done'))).toBeNull();
+      fireEvent.click(screen.getByRole('button', { name: i18n.t('quests.snap_again') }));
+      expect(onSelect).toHaveBeenCalledWith(lost.id);
+    });
+
+    it('says a photo is awaiting the host, and counts it', () => {
+      const waiting = quest({ completedByGuestIds: [ME.id] });
+      const mine = photo({ id: 'b1a2c3d4-0000-4000-8000-000000000001', guestId: ME.id, questId: waiting.id, status: 'pending' });
+
+      render(
+        <ScavengerHunt quests={[waiting, quest()]} currentGuest={ME} photos={[mine]} leaderboard={board([waiting.id])} onSelectQuestForCapture={vi.fn()} />
+      );
+
+      expect(screen.getByText(i18n.t('quests.awaiting_approval'))).toBeInTheDocument();
+      expect(screen.getByText(/\(1 \/ 2 /)).toBeInTheDocument();
+    });
+
+    it('counts only scoring quests in the progress bar', () => {
+      const scoredQuest = quest({ completedByGuestIds: [ME.id] });
+      const lostQuest = quest({ completedByGuestIds: [ME.id] });
+
+      render(
+        <ScavengerHunt
+          quests={[scoredQuest, lostQuest]}
+          currentGuest={ME}
+          photos={[]}
+          leaderboard={board([scoredQuest.id])}
+          onSelectQuestForCapture={vi.fn()}
+        />
+      );
+
+      // Both are ticked on this phone; one scores.
+      expect(screen.getByText(/\(1 \/ 2 /)).toBeInTheDocument();
+      expect(screen.getByText('50%')).toBeInTheDocument();
+    });
+  });
+
   describe('the points total', () => {
     const total = () => screen.getByTestId('quest-points-total').textContent;
 
@@ -267,7 +316,7 @@ describe('ScavengerHunt', () => {
       // Both quests are ticked here, but the host rejected one of the photos:
       // the board, which decides the prize, counts only the other.
       const quests = [quest({ points: 15, completedByGuestIds: [ME.id] }), quest({ points: 25, completedByGuestIds: [ME.id] })];
-      const leaderboard = [{ rank: 1, guestId: ME.id, name: ME.name, avatarUrl: null, points: 15, questsCompleted: 1 }];
+      const leaderboard = [{ rank: 1, guestId: ME.id, name: ME.name, avatarUrl: null, points: 15, questsCompleted: 1, questIds: [] }];
 
       render(<ScavengerHunt quests={quests} currentGuest={ME} leaderboard={leaderboard} onSelectQuestForCapture={vi.fn()} />);
 
@@ -275,7 +324,7 @@ describe('ScavengerHunt', () => {
     });
 
     it('is zero for a guest the board does not list', () => {
-      const leaderboard = [{ rank: 1, guestId: 'guest-other', name: 'Martin', avatarUrl: null, points: 40, questsCompleted: 2 }];
+      const leaderboard = [{ rank: 1, guestId: 'guest-other', name: 'Martin', avatarUrl: null, points: 40, questsCompleted: 2, questIds: [] }];
 
       render(
         <ScavengerHunt

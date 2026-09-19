@@ -196,8 +196,8 @@ describe('LiveProjectorScreen', () => {
 
   describe('the quest leaderboard slide', () => {
     const leaders: QuestLeaderboardEntry[] = [
-      { rank: 1, guestId: 'g1', name: 'Maria', avatarUrl: null, points: 45, questsCompleted: 3 },
-      { rank: 2, guestId: 'g2', name: 'Ivan', avatarUrl: null, points: 30, questsCompleted: 2 },
+      { rank: 1, guestId: 'g1', name: 'Maria', avatarUrl: null, points: 45, questsCompleted: 3, questIds: [] },
+      { rank: 2, guestId: 'g2', name: 'Ivan', avatarUrl: null, points: 30, questsCompleted: 2, questIds: [] },
     ];
     const SLIDE_MS = 6000;
     const tick = () => act(() => void vi.advanceTimersByTime(SLIDE_MS));

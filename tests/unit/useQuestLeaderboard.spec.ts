@@ -12,7 +12,7 @@ import { Photo, QuestLeaderboardEntry, ScavengerQuest } from '../../src/types';
  */
 
 function entry(name: string, points: number, rank = 1): QuestLeaderboardEntry {
-  return { rank, guestId: `g-${name}`, name, avatarUrl: null, points, questsCompleted: 1 };
+  return { rank, guestId: `g-${name}`, name, avatarUrl: null, points, questsCompleted: 1, questIds: [] };
 }
 
 function quest(completedByGuestIds: string[] = []): ScavengerQuest {

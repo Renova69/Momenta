@@ -389,6 +389,7 @@ function WeddingAppContent() {
                     <ScavengerHunt
                       quests={quests}
                       currentGuest={safeGuest}
+                      photos={photos}
                       prize={event.questPrize}
                       leaderboard={guestLeaderboard}
                       onSelectQuestForCapture={handleOpenCaptureForQuest}
