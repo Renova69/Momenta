@@ -8,6 +8,7 @@
 
 import { z } from 'zod';
 import { BackendPlanTier } from '../../middleware/tierGate';
+import { QUEST_PRIZE_MAX_LENGTH } from '../../../shared/eventLimits';
 
 /**
  * M2 — a slug is not free text. It addresses the event in a URL that QR codes
@@ -44,7 +45,7 @@ export const UpdateEventSchema = z.object({
   isPublic: z.boolean().optional(),
   revealAt: z.string().nullable().optional(),
   maxPhotosPerGuest: z.number().int().positive().max(500).optional(),
-  questPrize: z.string().max(500).nullable().optional(),
+  questPrize: z.string().max(QUEST_PRIZE_MAX_LENGTH).nullable().optional(),
   showTvLeaderboard: z.boolean().optional(),
 });
 

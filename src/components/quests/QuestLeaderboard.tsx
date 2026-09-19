@@ -2,7 +2,8 @@ import React from 'react';
 import { Crown } from 'lucide-react';
 import { i18n } from '../../i18n';
 import { QuestLeaderboardEntry } from '../../types';
-import { avatarFor, rankBadgeClass } from './leaderboardStyle';
+import { rankBadgeClass } from './leaderboardStyle';
+import { guestAvatarUrl } from '../../utils/avatar';
 
 interface QuestLeaderboardProps {
   /** Null while the first fetch is in flight; nothing renders until it lands. */
@@ -15,7 +16,12 @@ interface QuestLeaderboardProps {
   hint?: string;
 }
 
-const Row: React.FC<{ entry: QuestLeaderboardEntry; isYou: boolean }> = ({ entry, isYou }) => (
+interface RowProps {
+  entry: QuestLeaderboardEntry;
+  isYou: boolean;
+}
+
+const Row: React.FC<RowProps> = ({ entry, isYou }) => (
   <li
     className={`flex items-center gap-3 px-3 py-2.5 rounded-2xl border transition-colors ${
       isYou ? 'bg-gold-400/15 border-gold-400/50' : 'bg-noir-900/60 border-cream-400/10'
@@ -30,7 +36,7 @@ const Row: React.FC<{ entry: QuestLeaderboardEntry; isYou: boolean }> = ({ entry
       {entry.rank}
     </span>
     <img
-      src={avatarFor(entry)}
+      src={guestAvatarUrl(entry.avatarUrl, entry.name)}
       alt=""
       className="w-8 h-8 rounded-full border border-gold-400/30 object-cover shrink-0"
     />

@@ -269,6 +269,24 @@ describe('LiveProjectorScreen', () => {
       expect(await screen.findByText('Maria')).toBeInTheDocument();
     });
 
+    it('refetches when a quest is deleted, which no photo broadcast would announce', async () => {
+      vi.useFakeTimers();
+      vi.mocked(questsApi.leaderboard).mockResolvedValue(leaders);
+      const onClose = vi.fn();
+      const quest = { id: 'q1', eventId: 'e1', title: 'Toast', description: '', iconName: 'wine', points: 10, isActive: true, completedByGuestIds: ['g1'] };
+      const photos = threePhotos();
+      const { rerender } = render(
+        <LiveProjectorScreen event={SWITCHED_ON} photos={photos} quests={[quest]} onClose={onClose} />
+      );
+      await act(async () => undefined);
+      expect(questsApi.leaderboard).toHaveBeenCalledTimes(1);
+
+      rerender(<LiveProjectorScreen event={SWITCHED_ON} photos={photos} quests={[]} onClose={onClose} />);
+      act(() => void vi.advanceTimersByTime(1500));
+
+      expect(questsApi.leaderboard).toHaveBeenCalledTimes(2);
+    });
+
     it('stays off on a plan without quests, whatever the switch says', async () => {
       renderScreen(threePhotos(), vi.fn(), { ...SWITCHED_ON, planTier: 'free' });
       await act(async () => undefined);

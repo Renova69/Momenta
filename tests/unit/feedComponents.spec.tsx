@@ -277,6 +277,19 @@ describe('ScavengerHunt', () => {
       expect(onSelect).toHaveBeenCalledWith(lost.id);
     });
 
+    it('says the photo was rejected, and offers another try', () => {
+      const onSelect = vi.fn();
+      const target = quest({ completedByGuestIds: [ME.id] });
+      const mine = photo({ id: 'b1a2c3d4-0000-4000-8000-000000000002', guestId: ME.id, questId: target.id, status: 'rejected' });
+
+      render(<ScavengerHunt quests={[target]} currentGuest={ME} photos={[mine]} leaderboard={board([])} onSelectQuestForCapture={onSelect} />);
+
+      expect(screen.getByText(i18n.t('quests.photo_rejected'))).toBeInTheDocument();
+      expect(screen.queryByText(i18n.t('quests.not_counted'))).toBeNull();
+      fireEvent.click(screen.getByRole('button', { name: i18n.t('quests.try_again') }));
+      expect(onSelect).toHaveBeenCalledWith(target.id);
+    });
+
     it('says a photo is awaiting the host, and counts it', () => {
       const waiting = quest({ completedByGuestIds: [ME.id] });
       const mine = photo({ id: 'b1a2c3d4-0000-4000-8000-000000000001', guestId: ME.id, questId: waiting.id, status: 'pending' });

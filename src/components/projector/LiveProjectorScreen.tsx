@@ -18,6 +18,7 @@ import {
   X,
   Sparkles,
 } from 'lucide-react';
+import { guestAvatarUrl } from '../../utils/avatar';
 
 // Emoji are built from code points so the source stays plain ASCII.
 const REACTION_GLYPHS: Record<ReactionKind, string> = {
@@ -28,7 +29,7 @@ const REACTION_GLYPHS: Record<ReactionKind, string> = {
   party: String.fromCodePoint(0x1f389),
 };
 
-/** The wall has no quest list; photos alone drive its leaderboard refetches. */
+/** Stable default, so a caller that passes no quests does not re-render the trigger. */
 const NO_QUESTS: ScavengerQuest[] = [];
 
 /** Cycle the four Ken Burns variants so neighbouring slides never pan alike. */
@@ -39,12 +40,20 @@ function kenBurnsVariant(index: number): 0 | 1 | 2 | 3 {
 interface LiveProjectorScreenProps {
   event: WeddingEvent;
   photos: Photo[];
+  /**
+   * The quest list, so the leaderboard column refetches when a quest is
+   * completed or deleted. Photos alone miss both: deleting a quest sends no
+   * photo broadcast, and in a moderated event a pending photo reaches only the
+   * host, though it scores and its QUEST_COMPLETED reaches the wall.
+   */
+  quests?: ScavengerQuest[];
   onClose: () => void;
 }
 
 export const LiveProjectorScreen: React.FC<LiveProjectorScreenProps> = ({
   event,
   photos,
+  quests = NO_QUESTS,
   onClose,
 }) => {
   // Official photographer photos (priority > 0) rotate first, then newest-first.
@@ -76,7 +85,7 @@ export const LiveProjectorScreen: React.FC<LiveProjectorScreenProps> = ({
   // rather than in place of them, only when the host has switched it on —
   // and it is not fetched at all otherwise.
   const showLeaderboard = !!event.showTvLeaderboard && isFeatureUnlocked(event.planTier, 'scavenger_quests');
-  const leaderboard = useQuestLeaderboard(event.id, showLeaderboard, NO_QUESTS, photos);
+  const leaderboard = useQuestLeaderboard(event.id, showLeaderboard, quests, photos);
 
   const prefersReducedMotion =
     typeof window !== 'undefined' &&
@@ -295,7 +304,7 @@ export const LiveProjectorScreen: React.FC<LiveProjectorScreenProps> = ({
               {/* Subtitle / Guest Card Overlay */}
               <div className="mt-4 px-6 py-3 rounded-2xl bg-black/70 backdrop-blur-md border border-white/10 flex items-center gap-4 max-w-2xl text-center">
                 <img
-                  src={currentPhoto.guestAvatar || `https://api.dicebear.com/7.x/micah/svg?seed=${encodeURIComponent(currentPhoto.guestName)}`}
+                  src={guestAvatarUrl(currentPhoto.guestAvatar, currentPhoto.guestName)}
                   alt={currentPhoto.guestName}
                   className="w-10 h-10 rounded-full border border-gold-400/40 object-cover"
                 />

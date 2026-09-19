@@ -8,11 +8,14 @@ import { Photo, QuestLeaderboardEntry, ScavengerQuest } from '../../types';
  *   approval, and the host can still reject it.
  * - `uploading` — the photo is on this phone but the server has not
  *   confirmed it yet.
- * - `not_counted` — ticked on this phone, but no photo backs it: the host
- *   rejected or deleted it, or it never uploaded. The guest can take another.
+ * - `rejected` — the host rejected this guest's photo for it. The guest can
+ *   take another.
+ * - `not_counted` — ticked on this phone, but no photo backs it: deleted,
+ *   never uploaded, or rejected somewhere this phone cannot see. The guest can
+ *   take another.
  * - `open` — not attempted.
  */
-export type QuestCardState = 'completed' | 'awaiting' | 'uploading' | 'not_counted' | 'open';
+export type QuestCardState = 'completed' | 'awaiting' | 'uploading' | 'rejected' | 'not_counted' | 'open';
 
 /** An optimistic capture carries this id until the server confirms it (see photoService.addPhoto). */
 export const isUnconfirmedPhoto = (photo: Photo): boolean => photo.id.startsWith('photo-');
@@ -49,13 +52,17 @@ export function questCardState(
   photos: Photo[],
   scored: Set<string> | null
 ): QuestCardState {
-  const own = photos.filter((p) => p.guestId === guestId && p.questId === quest.id && p.status !== 'rejected');
+  const mine = photos.filter((p) => p.guestId === guestId && p.questId === quest.id);
+  const own = mine.filter((p) => p.status !== 'rejected');
   const confirmed = own.filter((p) => !isUnconfirmedPhoto(p));
 
   if (confirmed.some((p) => p.status === 'approved' || p.status === 'featured')) return 'completed';
   if (confirmed.some((p) => p.status === 'pending')) return 'awaiting';
   if (scored?.has(quest.id)) return 'completed';
   if (own.length > 0) return 'uploading';
+  // Named for what happened when this phone can see it, so the guest is not
+  // left to guess why a quest they did stopped counting.
+  if (mine.some((p) => p.status === 'rejected')) return 'rejected';
 
   const claimed = quest.completedByGuestIds.includes(guestId);
   if (!claimed) return 'open';

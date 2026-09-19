@@ -48,8 +48,13 @@ const ICON_MAP: Record<string, React.ReactNode> = {
 
 const CAPTURE_BUTTON = 'flex items-center gap-1.5 text-xs font-bold text-gold-400 hover:text-gold-300 hover:underline transition-all';
 
+interface QuestCardActionProps {
+  state: QuestCardState;
+  onCapture: () => void;
+}
+
 /** The foot of a quest card: where this guest stands on it, and what they can do next. */
-const QuestCardAction: React.FC<{ state: QuestCardState; onCapture: () => void }> = ({ state, onCapture }) => {
+const QuestCardAction: React.FC<QuestCardActionProps> = ({ state, onCapture }) => {
   switch (state) {
     case 'completed':
       return (
@@ -70,6 +75,19 @@ const QuestCardAction: React.FC<{ state: QuestCardState; onCapture: () => void }
         <div className="flex items-center gap-1.5 text-cream-300 text-xs font-medium animate-pulse">
           <CloudUpload className="w-4 h-4" />
           <span>{i18n.t('quests.uploading')}</span>
+        </div>
+      );
+    case 'rejected':
+      return (
+        <div className="flex flex-col gap-1">
+          <span className="flex items-center gap-1.5 text-rosewood-300 text-xs font-medium">
+            <AlertCircle className="w-4 h-4" />
+            {i18n.t('quests.photo_rejected')}
+          </span>
+          <button onClick={onCapture} className={CAPTURE_BUTTON}>
+            <Camera className="w-4 h-4" />
+            <span>{i18n.t('quests.try_again')}</span>
+          </button>
         </div>
       );
     case 'not_counted':

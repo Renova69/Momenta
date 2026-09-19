@@ -76,8 +76,23 @@ describe('questCardState', () => {
     expect(questCardState(quest([ME]), ME, [], loadedNothingScored)).toBe('not_counted');
   });
 
-  it('is not counted once the host rejects the photo', () => {
-    expect(questCardState(quest([ME]), ME, [photo({ status: 'rejected' })], loadedNothingScored)).toBe('not_counted');
+  it('says rejected when the host rejected the photo, so the guest knows why', () => {
+    expect(questCardState(quest([ME]), ME, [photo({ status: 'rejected' })], loadedNothingScored)).toBe('rejected');
+  });
+
+  it('says rejected even before the board loads, because the phone already knows', () => {
+    expect(questCardState(quest([ME]), ME, [photo({ status: 'rejected' })], null)).toBe('rejected');
+  });
+
+  it("does not call a quest rejected for someone else's rejected photo", () => {
+    expect(questCardState(quest([ME]), ME, [photo({ guestId: 'guest-other', status: 'rejected' })], loadedNothingScored)).toBe(
+      'not_counted'
+    );
+  });
+
+  it('prefers a counting retake to an older rejection', () => {
+    const photos = [photo({ id: 'r1', status: 'rejected' }), photo({ id: 'r2', status: 'approved' })];
+    expect(questCardState(quest([ME]), ME, photos, loadedNothingScored)).toBe('completed');
   });
 
   it('shows a retake in flight after a rejection as uploading', () => {
@@ -116,7 +131,7 @@ describe('scoredQuestIds', () => {
 
 describe('isScoringState', () => {
   it('counts completed and awaiting, and nothing else', () => {
-    expect(['completed', 'awaiting', 'uploading', 'not_counted', 'open'].filter((s) => isScoringState(s as never))).toEqual([
+    expect(['completed', 'awaiting', 'uploading', 'rejected', 'not_counted', 'open'].filter((s) => isScoringState(s as never))).toEqual([
       'completed',
       'awaiting',
     ]);

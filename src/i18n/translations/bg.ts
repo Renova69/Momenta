@@ -114,6 +114,8 @@ export const bg: Record<string, string> = {
   'quests.uploading': 'Качва се…',
   'quests.not_counted': 'Снимката не се брои',
   'quests.snap_again': 'Снимайте отново',
+  'quests.photo_rejected': 'Снимката е отхвърлена',
+  'quests.try_again': 'Опитайте отново',
   'quests.grand_prize': 'Голямата награда',
   'quests.default_prize': 'Победителят с най-много точки печели бутилка шампанско и първото парче от сватбената торта! 🍾🍰',
   'quests.prize_hint': 'Вдъхновете гостите да се състезават за голямата награда на вечерта!',

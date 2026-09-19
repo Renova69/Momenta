@@ -12,6 +12,7 @@ import {
   Volume2,
   Clock
 } from 'lucide-react';
+import { guestAvatarUrl } from '../../utils/avatar';
 
 interface AudioGuestbookProps {
   entries: AudioGuestbookEntry[];
@@ -336,7 +337,7 @@ export const AudioGuestbook: React.FC<AudioGuestbookProps> = ({
                 >
                   <div className="flex items-start gap-3 min-w-0">
                     <img
-                      src={entry.guestAvatar || `https://api.dicebear.com/7.x/micah/svg?seed=${encodeURIComponent(entry.guestName)}`}
+                      src={guestAvatarUrl(entry.guestAvatar, entry.guestName)}
                       alt={entry.guestName}
                       className="w-10 h-10 rounded-full border border-gold-400/30 object-cover shrink-0"
                     />

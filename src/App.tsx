@@ -459,6 +459,7 @@ function WeddingAppContent() {
             <LiveProjectorScreen
               event={event}
               photos={photos}
+              quests={quests}
               onClose={() => navigateView('guest')}
             />
           )

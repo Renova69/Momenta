@@ -119,24 +119,6 @@ export const commentIpLimiter = rateLimit({
 });
 
 /**
- * Other guest-initiated writes that are not uploads, likes or comments —
- * quest completions, today (H8).
- *
- * Naturally bounded by the handful of quests an event has and an
- * ON CONFLICT DO NOTHING insert, so this is defence in depth rather than the
- * thing doing the real work; what actually closed the abuse was no longer
- * minting a guest row per request.
- */
-export const guestActionLimiter = rateLimit({
-  windowMs: 60 * 1000,
-  max: 30,
-  keyGenerator: deviceKey,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { error: 'Too many requests from this device. Please wait a moment.' },
-});
-
-/**
  * General API ceiling.
  *
  * Applied to every /api route, so it carries the whole venue's browsing: feed

@@ -4,6 +4,7 @@ import React from 'react';
 import { HostDashboard } from '../../src/components/host/HostDashboard';
 import { eventsApi } from '../../src/api/eventsApi';
 import { questsApi } from '../../src/api/questsApi';
+import { QUEST_PRIZE_MAX_LENGTH } from '../../shared/eventLimits';
 import { i18n } from '../../src/i18n';
 import { WeddingEvent, QRCanvasConfig, PlanTier } from '../../src/types';
 
@@ -324,6 +325,14 @@ describe('the grand prize editor', () => {
 
     // Trimmed, because a host who types a trailing space has not chosen one.
     expect(props.onUpdateEvent).toHaveBeenCalledWith({ questPrize: 'A weekend in Sozopol' });
+  });
+
+  it('caps the box at the same length the server enforces', () => {
+    const { container } = openPrizeEditor();
+    const textarea = container.querySelector('textarea') as HTMLTextAreaElement;
+
+    // Otherwise a long prize is refused after the tick has said "saved".
+    expect(textarea.maxLength).toBe(QUEST_PRIZE_MAX_LENGTH);
   });
 
   it('treats an emptied box as a return to the default, not as an empty prize', async () => {

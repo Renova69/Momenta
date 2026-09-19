@@ -2,6 +2,7 @@ import { Guest } from '../types';
 import { guestsApi } from '../api/guestsApi';
 import { STORAGE_KEYS, getOrCreateDeviceFingerprint } from './storageKeys';
 import { ServiceContext } from './storageServiceContext';
+import { generatedAvatarUrl } from '../utils/avatar';
 
 export function getGuests(ctx: ServiceContext, eventId?: string): Guest[] {
   const targetId = eventId || ctx.getEvent().id;
@@ -62,7 +63,7 @@ export async function registerGuest(
     eventId: event.id,
     name: name.trim() || 'Anonymous Guest',
     tableNumber: tableNumber?.trim() || undefined,
-    avatarUrl: avatarUrl || current?.avatarUrl || `https://api.dicebear.com/7.x/micah/svg?seed=${encodeURIComponent(name)}`,
+    avatarUrl: avatarUrl || current?.avatarUrl || generatedAvatarUrl(name),
     createdAt: current?.createdAt || new Date().toISOString(),
   };
 

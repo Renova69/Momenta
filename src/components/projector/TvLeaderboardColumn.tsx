@@ -2,7 +2,8 @@ import React from 'react';
 import { Crown, Trophy } from 'lucide-react';
 import { i18n } from '../../i18n';
 import { QuestLeaderboardEntry } from '../../types';
-import { avatarFor, rankBadgeClass } from '../quests/leaderboardStyle';
+import { rankBadgeClass } from '../quests/leaderboardStyle';
+import { guestAvatarUrl } from '../../utils/avatar';
 
 interface TvLeaderboardColumnProps {
   /** Null while the first fetch is in flight. */
@@ -61,7 +62,7 @@ export const TvLeaderboardColumn: React.FC<TvLeaderboardColumnProps> = ({ entrie
               {entry.rank}
             </span>
             <img
-              src={avatarFor(entry)}
+              src={guestAvatarUrl(entry.avatarUrl, entry.name)}
               alt=""
               className="w-[3.6vh] h-[3.6vh] rounded-full border border-gold-400/40 object-cover shrink-0"
             />
