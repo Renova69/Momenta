@@ -126,6 +126,25 @@ describe('WebSocket message throttling (SEC-D6)', () => {
     ws.close();
   });
 
+  it('dispatches a frame on its type, not on whether it carries a token', async () => {
+    // The AUTH branch ends in an unconditional return, so anything it claims
+    // is never dispatched. Widen its guard from "type is AUTH *and* there is
+    // a token" to "either" and a guest frame that happens to carry a token
+    // field is swallowed — the join never happens and the client is left
+    // waiting for a ROOM_JOINED that is not coming.
+    const ws = await connect();
+    let roomJoined = false;
+    ws.on('message', (raw) => {
+      if (JSON.parse(raw.toString()).type === 'ROOM_JOINED') roomJoined = true;
+    });
+
+    ws.send(JSON.stringify({ type: 'JOIN_EVENT_ROOM', eventId, token: 'not-a-session-token' }));
+    await new Promise((resolve) => setTimeout(resolve, 300));
+
+    expect(roomJoined).toBe(true);
+    ws.close();
+  });
+
   // The heartbeat is what decides a guest's phone is gone: a wedding venue is
   // the worst case for mobile TCP, and a connection that dies without a FIN
   // sits in the room forever, counted, broadcast to, and holding a socket.
