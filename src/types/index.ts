@@ -60,6 +60,7 @@ export interface WeddingEvent {
   isPublic: boolean;
   revealAt: string | null;
   maxPhotosPerGuest: number;
+  questPrize?: string | null;
   createdAt: string;
   updatedAt: string;
 }

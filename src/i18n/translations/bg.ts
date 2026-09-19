@@ -110,6 +110,13 @@ export const bg: Record<string, string> = {
   'quests.snap_challenge': 'Изпълни предизвикателството',
   'quests.done': 'Завършено',
   'quests.pts': 'т.',
+  'quests.grand_prize': 'Голямата награда',
+  'quests.default_prize': 'Победителят с най-много точки печели бутилка шампанско и първото парче от сватбената торта! 🍾🍰',
+  'quests.prize_hint': 'Вдъхновете гостите да се състезават за голямата награда на вечерта!',
+  'quests.prize_label': 'Съобщение за голямата награда',
+  'quests.save_prize': 'Запази наградата',
+  'quests.reset_prize': 'По подразбиране',
+  'quests.prize_saved': 'Наградата е запазена успешно!',
 
   // Audio Guestbook
   'audio.title': 'Ретро аудио книга за гости',

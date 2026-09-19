@@ -229,6 +229,21 @@ describe('ScavengerHunt', () => {
     expect(screen.queryByRole('button', { name: i18n.t('quests.snap_challenge') })).toBeNull();
     expect(onSelect).not.toHaveBeenCalled();
   });
+
+  it("announces the host's grand prize", () => {
+    render(
+      <ScavengerHunt quests={[quest()]} currentGuest={ME} prize="A weekend in Sozopol" onSelectQuestForCapture={vi.fn()} />
+    );
+
+    expect(screen.getByText('A weekend in Sozopol')).toBeInTheDocument();
+    expect(screen.queryByText(i18n.t('quests.default_prize'))).toBeNull();
+  });
+
+  it.each([null, undefined, ''])('falls back to the localized default prize for %j', (prize) => {
+    render(<ScavengerHunt quests={[quest()]} currentGuest={ME} prize={prize} onSelectQuestForCapture={vi.fn()} />);
+
+    expect(screen.getByText(i18n.t('quests.default_prize'))).toBeInTheDocument();
+  });
 });
 
 describe('PhotoCard emoji reactions', () => {

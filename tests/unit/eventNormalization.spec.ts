@@ -166,6 +166,24 @@ describe('normalizePartialEvent — emits only what arrived', () => {
       expect(out.revealAt).toBe('2026-09-20T18:00:00Z');
     });
   });
+
+  describe('questPrize — null returns the prize to its default', () => {
+    it('carries a broadcast null through, so guests fall back to the default live', () => {
+      // The broadcast is snake_case. Folding null away with `??` would leave
+      // every watching guest on the old prize after the host reset it.
+      const out = normalizePartialEvent({ quest_prize: null });
+      expect('questPrize' in out).toBe(true);
+      expect(out.questPrize).toBeNull();
+    });
+
+    it('carries a broadcast prize through', () => {
+      expect(normalizePartialEvent({ quest_prize: 'Champagne' }).questPrize).toBe('Champagne');
+    });
+
+    it('leaves the prize alone when a broadcast does not mention it', () => {
+      expect('questPrize' in normalizePartialEvent({ title: 'x' })).toBe(false);
+    });
+  });
 });
 
 describe('normalizeEvent — fills a default for everything absent', () => {
@@ -197,6 +215,11 @@ describe('normalizeEvent — fills a default for everything absent', () => {
   it('never assumes consent from a missing field', () => {
     // isPublic absent means not opted in to the public showcase.
     expect(normalizeEvent(minimal).isPublic).toBe(false);
+  });
+
+  it('reads the grand prize from the slug response, and leaves it null when unset', () => {
+    expect(normalizeEvent({ ...minimal, quest_prize: 'Champagne' }).questPrize).toBe('Champagne');
+    expect(normalizeEvent(minimal).questPrize).toBeNull();
   });
 
   it('prefers camelCase across the board', () => {

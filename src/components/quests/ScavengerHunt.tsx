@@ -10,12 +10,14 @@ import {
   Wine,
   Sparkles,
   Award,
-  Users
+  Users,
+  Trophy,
 } from 'lucide-react';
 
 interface ScavengerHuntProps {
   quests: ScavengerQuest[];
   currentGuest: Guest;
+  prize?: string | null;
   onSelectQuestForCapture: (questId: string) => void;
 }
 
@@ -33,6 +35,7 @@ const ICON_MAP: Record<string, React.ReactNode> = {
 export const ScavengerHunt: React.FC<ScavengerHuntProps> = ({
   quests,
   currentGuest,
+  prize,
   onSelectQuestForCapture,
 }) => {
   const completedCount = quests.filter((q) =>
@@ -84,6 +87,27 @@ export const ScavengerHunt: React.FC<ScavengerHuntProps> = ({
               className="h-full bg-gradient-to-r from-gold-500 to-gold-400 rounded-full transition-all duration-700 shadow-glow"
               style={{ width: `${progressPercent}%` }}
             />
+          </div>
+        </div>
+      </div>
+
+      {/* Grand Prize Announcement Banner */}
+      <div className="bg-gradient-to-r from-noir-800 via-[#231a0e] to-noir-800 rounded-2xl p-4 sm:p-5 border border-gold-400/40 shadow-xl relative overflow-hidden">
+        <div className="absolute -right-6 -top-6 w-32 h-32 bg-gold-400/10 rounded-full blur-2xl pointer-events-none" />
+        <div className="flex items-start sm:items-center gap-3.5 relative z-10">
+          <div className="w-12 h-12 rounded-2xl bg-gold-400/20 border border-gold-400/50 flex items-center justify-center shrink-0 shadow-glow text-gold-400">
+            <Trophy className="w-6 h-6 text-gold-400" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 mb-1">
+              <span className="font-serif text-sm sm:text-base font-bold text-gold-300 tracking-wide">
+                🏆 {i18n.t('quests.grand_prize')}
+              </span>
+              <Sparkles className="w-3.5 h-3.5 text-gold-400" />
+            </div>
+            <p className="text-xs sm:text-sm text-cream-100 font-medium leading-relaxed">
+              {prize || i18n.t('quests.default_prize')}
+            </p>
           </div>
         </div>
       </div>

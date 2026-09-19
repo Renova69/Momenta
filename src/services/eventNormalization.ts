@@ -47,6 +47,8 @@ export interface RemoteEventPayload {
   reveal_at?: string | null;
   maxPhotosPerGuest?: number;
   max_photos_per_guest?: number;
+  questPrize?: string | null;
+  quest_prize?: string | null;
 
   createdAt?: string;
   created_at?: string;
@@ -65,9 +67,10 @@ export interface RemoteEventPayload {
  * (`host_email`, `host_user_id`), so defaulting them would blank a host's own
  * details the moment they changed a setting (M1).
  *
- * `revealAt` is the one field where `null` is a real value — clearing a
- * disposable reveal — so it is distinguished from absent rather than folded
- * away with `??`.
+ * `revealAt` and `questPrize` are the fields where `null` is a real value —
+ * clearing a disposable reveal, or returning the grand prize to its localized
+ * default — so they are distinguished from absent rather than folded away
+ * with `??`.
  */
 export function normalizePartialEvent(remote: RemoteEventPayload | Partial<RemoteEventPayload>): Partial<WeddingEvent> {
   const source = (remote || {}) as Partial<RemoteEventPayload>;
@@ -115,6 +118,9 @@ export function normalizePartialEvent(remote: RemoteEventPayload | Partial<Remot
   if (has('maxPhotosPerGuest', 'max_photos_per_guest')) {
     updates.maxPhotosPerGuest = source.maxPhotosPerGuest ?? source.max_photos_per_guest;
   }
+  if ('questPrize' in source || 'quest_prize' in source) {
+    updates.questPrize = source.questPrize !== undefined ? source.questPrize : source.quest_prize;
+  }
   if (has('createdAt', 'created_at')) updates.createdAt = source.createdAt ?? source.created_at;
   if (has('updatedAt', 'updated_at')) updates.updatedAt = source.updatedAt ?? source.updated_at;
 
@@ -147,6 +153,7 @@ export function normalizeEvent(remote: RemoteEventPayload): WeddingEvent {
     isPublic: remote.isPublic ?? remote.is_public ?? false,
     revealAt: remote.revealAt || remote.reveal_at || null,
     maxPhotosPerGuest: remote.maxPhotosPerGuest || remote.max_photos_per_guest || 50,
+    questPrize: remote.questPrize ?? remote.quest_prize ?? null,
     createdAt: remote.createdAt || remote.created_at || now,
     updatedAt: remote.updatedAt || remote.updated_at || now,
   };

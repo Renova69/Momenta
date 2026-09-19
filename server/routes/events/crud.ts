@@ -365,6 +365,7 @@ eventsRouter.put('/:id', requireAuth, requireUuidParams('id'), validateBody(Upda
       isPublic: 'is_public',
       revealAt: 'reveal_at',
       maxPhotosPerGuest: 'max_photos_per_guest',
+      questPrize: 'quest_prize',
     };
 
     const setClauses: string[] = [];
