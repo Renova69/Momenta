@@ -125,6 +125,50 @@ describe('WebSocket message throttling (SEC-D6)', () => {
     expect(joined).toBe(true);
     ws.close();
   });
+
+  // The heartbeat is what decides a guest's phone is gone: a wedding venue is
+  // the worst case for mobile TCP, and a connection that dies without a FIN
+  // sits in the room forever, counted, broadcast to, and holding a socket.
+  // On a 30-second timer nothing exercised it; `runHeartbeat` is the pass
+  // itself, so a test can drive two of them instead of faking the clock.
+  it('reaps a connection that did not answer the previous ping', async () => {
+    const ws = await connect();
+    const closed = new Promise<void>((resolve) => ws.on('close', () => resolve()));
+
+    // Both passes in the same tick. The first marks the client unanswered and
+    // pings it; the pong cannot be processed before the second pass runs, so
+    // the second sees isAlive === false — exactly what a phone that walked
+    // into a tunnel looks like.
+    wsManager.runHeartbeat();
+    wsManager.runHeartbeat();
+
+    // Bounded for the same reason as below: a heartbeat that never reaps
+    // leaves this waiting for a close that is not coming, and a hung test
+    // says less than a failed assertion.
+    await Promise.race([closed, new Promise((resolve) => setTimeout(resolve, 2000))]);
+    expect(ws.readyState).toBe(WebSocket.CLOSED);
+  });
+
+  it('leaves a connection that did answer alone', async () => {
+    // Otherwise the assertion above is satisfied by a heartbeat that reaps
+    // everything, which is the same outage seen from the other side.
+    const ws = await connect();
+    const pinged = new Promise<void>((resolve) => ws.once('ping', () => resolve()));
+
+    wsManager.runHeartbeat();
+    // Bounded: if the first pass reaped this client instead of pinging it, the
+    // ping never arrives, and the assertion below should say so in a second
+    // rather than after the whole test budget.
+    await Promise.race([pinged, new Promise((resolve) => setTimeout(resolve, 1000))]);
+    // The client library answers a ping automatically; this is the pong
+    // getting back to the server, which is what clears the flag.
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    wsManager.runHeartbeat();
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    expect(ws.readyState).toBe(WebSocket.OPEN);
+    ws.close();
+  });
 });
 
 describe('Reaction batching (P6)', () => {

@@ -154,21 +154,7 @@ export class WsEventManager {
     });
 
     // 30-second heartbeat to detect dead mobile TCP connections
-    this.heartbeatInterval = setInterval(() => {
-      if (!this.wss) return;
-      this.wss.clients.forEach((ws) => {
-        const meta = this.clientMeta.get(ws);
-        if (meta && meta.isAlive === false) {
-          this.removeClient(ws);
-          return ws.terminate();
-        }
-        if (meta) meta.isAlive = false;
-        ws.ping();
-      });
-
-      // DB-07: piggy-backing on the existing heartbeat avoids a second timer.
-      this.sweepHostCheckCache();
-    }, 30000);
+    this.heartbeatInterval = setInterval(() => this.runHeartbeat(), 30000);
 
     this.wss.on('close', () => {
       if (this.heartbeatInterval) clearInterval(this.heartbeatInterval);
@@ -321,6 +307,31 @@ export class WsEventManager {
   }
 
   // Scoped broadcast in O(K) time using room index
+  /**
+   * One pass of the heartbeat: reap anything that did not answer the last
+   * ping, then ping everyone still here.
+   *
+   * A method rather than a closure inside `setInterval` only so it can be
+   * driven directly. On a 30-second timer the alternative is fake timers
+   * against live sockets, and the reaper — the thing that decides a wedding
+   * guest's phone is gone — was the one part of this file nothing exercised.
+   */
+  public runHeartbeat(): void {
+    if (!this.wss) return;
+    this.wss.clients.forEach((ws) => {
+      const meta = this.clientMeta.get(ws);
+      if (meta && meta.isAlive === false) {
+        this.removeClient(ws);
+        return ws.terminate();
+      }
+      if (meta) meta.isAlive = false;
+      ws.ping();
+    });
+
+    // DB-07: piggy-backing on the existing heartbeat avoids a second timer.
+    this.sweepHostCheckCache();
+  }
+
   public broadcastToEvent(eventId: string, type: string, payload: BroadcastPayload) {
     this.send(eventId, type, payload, false);
   }
