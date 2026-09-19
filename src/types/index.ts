@@ -127,6 +127,16 @@ export interface ScavengerQuest {
   completedByGuestIds: string[];
 }
 
+/** One row of `GET /api/events/:id/leaderboard`, already ranked by the server. */
+export interface QuestLeaderboardEntry {
+  rank: number;
+  guestId: string;
+  name: string;
+  avatarUrl: string | null;
+  points: number;
+  questsCompleted: number;
+}
+
 export interface AudioGuestbookEntry {
   id: string;
   eventId: string;

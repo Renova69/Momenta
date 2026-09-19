@@ -244,6 +244,27 @@ describe('ScavengerHunt', () => {
 
     expect(screen.getByText(i18n.t('quests.default_prize'))).toBeInTheDocument();
   });
+
+  it('shows the leaderboard with the guest marked, once it has been fetched', () => {
+    const leaderboard = [
+      { rank: 1, guestId: 'guest-other', name: 'Martin', avatarUrl: null, points: 40, questsCompleted: 2 },
+      { rank: 2, guestId: ME.id, name: ME.name, avatarUrl: null, points: 15, questsCompleted: 1 },
+    ];
+
+    render(
+      <ScavengerHunt quests={[quest()]} currentGuest={ME} leaderboard={leaderboard} onSelectQuestForCapture={vi.fn()} />
+    );
+
+    expect(screen.getByRole('heading', { name: i18n.t('leaderboard.title') })).toBeInTheDocument();
+    expect(screen.getByText('Martin')).toBeInTheDocument();
+    expect(screen.getByText(i18n.t('leaderboard.you'))).toBeInTheDocument();
+  });
+
+  it('shows no leaderboard when none was provided', () => {
+    render(<ScavengerHunt quests={[quest()]} currentGuest={ME} onSelectQuestForCapture={vi.fn()} />);
+
+    expect(screen.queryByRole('heading', { name: i18n.t('leaderboard.title') })).toBeNull();
+  });
 });
 
 describe('PhotoCard emoji reactions', () => {

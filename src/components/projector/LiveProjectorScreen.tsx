@@ -1,8 +1,11 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { WeddingEvent, Photo } from '../../types';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { WeddingEvent, Photo, ScavengerQuest } from '../../types';
 import { QRCodeSVG } from 'qrcode.react';
 import { i18n } from '../../i18n';
 import { storageService, LiveReaction, ReactionKind } from '../../services/storageService';
+import { isFeatureUnlocked } from '../../config/tierGating';
+import { useQuestLeaderboard } from '../../hooks/useQuestLeaderboard';
+import { ProjectorLeaderboard } from './ProjectorLeaderboard';
 import {
   Heart,
   Maximize2,
@@ -24,6 +27,15 @@ const REACTION_GLYPHS: Record<ReactionKind, string> = {
   laugh: String.fromCodePoint(0x1f602),
   party: String.fromCodePoint(0x1f389),
 };
+
+/** Every Nth slide is the quest leaderboard, held for one slide's time. */
+const LEADERBOARD_EVERY_N_SLIDES = 6;
+
+/** As many rows as read comfortably from the back of the room. */
+const PROJECTOR_LEADERBOARD_ROWS = 5;
+
+/** The wall has no quest list; photos alone drive its leaderboard refetches. */
+const NO_QUESTS: ScavengerQuest[] = [];
 
 /** Cycle the four Ken Burns variants so neighbouring slides never pan alike. */
 function kenBurnsVariant(index: number): 0 | 1 | 2 | 3 {
@@ -65,6 +77,17 @@ export const LiveProjectorScreen: React.FC<LiveProjectorScreenProps> = ({
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [slideSpeed, setSlideSpeed] = useState<number>(6000);
   const [reactions, setReactions] = useState<(LiveReaction & { left: number; drift: number })[]>([]);
+
+  const leaderboard = useQuestLeaderboard(
+    event.id,
+    isFeatureUnlocked(event.planTier, 'scavenger_quests'),
+    NO_QUESTS,
+    photos
+  );
+  const podium = useMemo(() => leaderboard.slice(0, PROJECTOR_LEADERBOARD_ROWS), [leaderboard]);
+  const hasBoard = podium.length > 0;
+  const [isBoardSlide, setIsBoardSlide] = useState(false);
+  const slidesShown = useRef(0);
 
   const prefersReducedMotion =
     typeof window !== 'undefined' &&
@@ -135,24 +158,36 @@ export const LiveProjectorScreen: React.FC<LiveProjectorScreenProps> = ({
     };
   }, []);
 
-  // Auto slideshow ticker
+  // Auto slideshow ticker. The leaderboard takes every Nth slot rather than
+  // an extra index, so the photo order and the Ken Burns rhythm stay as they
+  // were.
   useEffect(() => {
-    if (!isPlaying || displayPhotos.length <= 1) return;
+    if (!isPlaying || (displayPhotos.length <= 1 && !hasBoard)) return;
 
     const timer = setInterval(() => {
-      setCurrentIndex((prev) => (prev + 1) % displayPhotos.length);
+      slidesShown.current += 1;
+      if (hasBoard && slidesShown.current % LEADERBOARD_EVERY_N_SLIDES === 0) {
+        setIsBoardSlide(true);
+        return;
+      }
+      setIsBoardSlide(false);
+      if (displayPhotos.length > 1) {
+        setCurrentIndex((prev) => (prev + 1) % displayPhotos.length);
+      }
     }, slideSpeed);
 
     return () => clearInterval(timer);
-  }, [isPlaying, displayPhotos.length, slideSpeed]);
+  }, [isPlaying, displayPhotos.length, slideSpeed, hasBoard]);
 
   const handleNext = () => {
+    setIsBoardSlide(false);
     if (displayPhotos.length > 0) {
       setCurrentIndex((prev) => (prev + 1) % displayPhotos.length);
     }
   };
 
   const handlePrev = () => {
+    setIsBoardSlide(false);
     if (displayPhotos.length > 0) {
       setCurrentIndex((prev) => (prev - 1 + displayPhotos.length) % displayPhotos.length);
     }
@@ -261,7 +296,9 @@ export const LiveProjectorScreen: React.FC<LiveProjectorScreenProps> = ({
       </div>
 
       <div className="relative flex-1 flex items-center justify-center p-4 sm:p-8 overflow-hidden">
-        {currentPhoto ? (
+        {isBoardSlide && hasBoard ? (
+          <ProjectorLeaderboard entries={podium} prize={event.questPrize} />
+        ) : currentPhoto ? (
           <div className="relative max-w-6xl max-h-full flex flex-col items-center justify-center">
             <div className="relative rounded-3xl overflow-hidden shadow-2xl border border-white/15 max-h-[70vh] bg-noir-950 flex items-center justify-center">
               <img
@@ -371,7 +408,10 @@ export const LiveProjectorScreen: React.FC<LiveProjectorScreenProps> = ({
           {displayPhotos.slice(0, 8).map((p, idx) => (
             <button
               key={p.id}
-              onClick={() => setCurrentIndex(idx)}
+              onClick={() => {
+                setIsBoardSlide(false);
+                setCurrentIndex(idx);
+              }}
               className={`w-12 h-12 rounded-xl overflow-hidden border-2 transition-all shrink-0 ${
                 idx === currentIndex ? 'border-gold-400 scale-105 shadow-glow' : 'border-transparent opacity-60 hover:opacity-100'
               }`}

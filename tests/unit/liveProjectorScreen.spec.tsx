@@ -4,7 +4,8 @@ import React from 'react';
 
 import { LiveProjectorScreen } from '../../src/components/projector/LiveProjectorScreen';
 import { storageService } from '../../src/services/storageService';
-import { WeddingEvent, Photo } from '../../src/types';
+import { questsApi } from '../../src/api/questsApi';
+import { WeddingEvent, Photo, QuestLeaderboardEntry } from '../../src/types';
 import { i18n } from '../../src/i18n';
 
 // This screen is on a physical TV in front of every guest at the reception —
@@ -51,12 +52,16 @@ function photo(overrides: Partial<Photo> = {}): Photo {
   } as Photo;
 }
 
-function renderScreen(photos: Photo[], onClose = vi.fn()) {
-  return render(<LiveProjectorScreen event={EVENT} photos={photos} onClose={onClose} />);
+function renderScreen(photos: Photo[], onClose = vi.fn(), event: WeddingEvent = EVENT) {
+  return render(<LiveProjectorScreen event={event} photos={photos} onClose={onClose} />);
 }
 
 describe('LiveProjectorScreen', () => {
   beforeEach(() => {
+    // The wall fetches the quest leaderboard on a paid plan; nobody has scored
+    // unless a test says so.
+    vi.spyOn(questsApi, 'leaderboard').mockResolvedValue([]);
+
     // toggleFullscreen calls these directly (no `in document` guard), so a
     // real jsdom document without them throws synchronously before the
     // .catch() chain can even attach.
@@ -187,5 +192,87 @@ describe('LiveProjectorScreen', () => {
     // URL from window.location.origin + event.slug — verified indirectly by
     // the QR block rendering at all rather than throwing during render.
     expect(screen.getByText(i18n.t('projector.scan_share'))).toBeInTheDocument();
+  });
+
+  describe('the quest leaderboard slide', () => {
+    const leaders: QuestLeaderboardEntry[] = [
+      { rank: 1, guestId: 'g1', name: 'Maria', avatarUrl: null, points: 45, questsCompleted: 3 },
+      { rank: 2, guestId: 'g2', name: 'Ivan', avatarUrl: null, points: 30, questsCompleted: 2 },
+    ];
+    const SLIDE_MS = 6000;
+    const tick = () => act(() => void vi.advanceTimersByTime(SLIDE_MS));
+    const boardTitle = () => screen.queryByRole('heading', { name: i18n.t('leaderboard.title') });
+
+    function threePhotos() {
+      return [
+        photo({ id: 'a', guestName: 'Guest A', createdAt: '2026-01-03T00:00:00Z' }),
+        photo({ id: 'b', guestName: 'Guest B', createdAt: '2026-01-02T00:00:00Z' }),
+        photo({ id: 'c', guestName: 'Guest C', createdAt: '2026-01-01T00:00:00Z' }),
+      ];
+    }
+
+    it('takes every sixth slide, announces the prize, then hands back to the photos', async () => {
+      vi.useFakeTimers();
+      vi.mocked(questsApi.leaderboard).mockResolvedValue(leaders);
+      renderScreen(threePhotos(), vi.fn(), { ...EVENT, questPrize: 'A weekend in Sozopol' });
+      await act(async () => undefined);
+
+      for (let i = 0; i < 5; i++) tick();
+      expect(boardTitle()).toBeNull();
+
+      tick();
+      expect(boardTitle()).toBeInTheDocument();
+      expect(screen.getByText('Maria')).toBeInTheDocument();
+      expect(screen.getByText('A weekend in Sozopol')).toBeInTheDocument();
+
+      tick();
+      expect(boardTitle()).toBeNull();
+    });
+
+    it('keeps the photo order it would have had without the leaderboard', async () => {
+      vi.useFakeTimers();
+      vi.mocked(questsApi.leaderboard).mockResolvedValue(leaders);
+      renderScreen(threePhotos());
+      await act(async () => undefined);
+
+      // A on screen, five ticks through B, C, A, B, C, then the board; the
+      // photo after it is A, the one the board delayed rather than skipped.
+      for (let i = 0; i < 5; i++) tick();
+      expect(screen.getByText('Guest C')).toBeInTheDocument();
+      tick();
+      tick();
+      expect(screen.getByText('Guest A')).toBeInTheDocument();
+    });
+
+    it('leaves the board at once when the host steps to a photo', async () => {
+      vi.useFakeTimers();
+      vi.mocked(questsApi.leaderboard).mockResolvedValue(leaders);
+      renderScreen(threePhotos());
+      await act(async () => undefined);
+      for (let i = 0; i < 6; i++) tick();
+      expect(boardTitle()).toBeInTheDocument();
+
+      const next = screen.getAllByRole('button').find((b) => b.querySelector('svg.lucide-chevron-right'))!;
+      fireEvent.click(next);
+
+      expect(boardTitle()).toBeNull();
+    });
+
+    it('never shows an empty board', async () => {
+      vi.useFakeTimers();
+      renderScreen(threePhotos());
+      await act(async () => undefined);
+
+      for (let i = 0; i < 12; i++) tick();
+
+      expect(boardTitle()).toBeNull();
+    });
+
+    it('does not ask for one on a plan without quests', async () => {
+      renderScreen(threePhotos(), vi.fn(), { ...EVENT, planTier: 'free' });
+      await act(async () => undefined);
+
+      expect(questsApi.leaderboard).not.toHaveBeenCalled();
+    });
   });
 });

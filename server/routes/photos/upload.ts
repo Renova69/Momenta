@@ -277,7 +277,7 @@ async function persistPhotoFiles(
 interface InsertPhotoArgs {
   eventId: string;
   guestId: string;
-  questId?: string;
+  questId: string | null;
   caption?: string;
   filterApplied?: string;
   deviceFingerprint?: string;
@@ -365,9 +365,27 @@ async function insertPhotoAtomically(args: InsertPhotoArgs): Promise<Step<{ row:
   return { ok: true, value: { row: written.row, hostUserId: written.hostUserId } };
 }
 
+/**
+ * The client's quest id, but only if it names a quest in this event.
+ *
+ * It arrives from the request body. Taken as given, a photo uploaded to one
+ * wedding could name another wedding's quest: the feed would then label it
+ * with that quest's title, and the completion would credit this guest on the
+ * other wedding's leaderboard. Anything that is not a quest of this event is
+ * dropped rather than refused — the photo itself is still a good upload.
+ */
+async function resolveEventQuestId(eventId: string, questId: string | undefined): Promise<string | null> {
+  if (!questId || !isValidUuid(questId)) return null;
+  const { rows } = await pool.query('SELECT 1 FROM scavenger_quests WHERE id = $1 AND event_id = $2', [
+    questId,
+    eventId,
+  ]);
+  return rows.length > 0 ? questId : null;
+}
+
 /** Best-effort: a failed quest credit must not fail an upload that succeeded. */
-async function recordQuestCompletion(questId: string | undefined, guestId: string, photoId: string): Promise<void> {
-  if (!questId || !isValidUuid(questId)) return;
+async function recordQuestCompletion(questId: string | null, guestId: string, photoId: string): Promise<void> {
+  if (!questId) return;
   await pool
     .query(
       `INSERT INTO guest_quest_completions (quest_id, guest_id, photo_id)
@@ -456,6 +474,8 @@ photosRouter.post(
       // express.static has no concept of "pending."
       const needsQuarantine = initialStatus === 'pending' || isLocked;
 
+      const scopedQuestId = await resolveEventQuestId(eventId, questId);
+
       const files = await persistPhotoFiles(eventId, images, needsQuarantine);
       const urls = {
         full: toAbsoluteUrl(files.display.storagePath),
@@ -466,7 +486,7 @@ photosRouter.post(
       const inserted = await insertPhotoAtomically({
         eventId,
         guestId: guest.guestId,
-        questId,
+        questId: scopedQuestId,
         caption,
         filterApplied,
         deviceFingerprint,
@@ -482,7 +502,7 @@ photosRouter.post(
       if (!inserted.ok) return res.status(inserted.status).json(inserted.body);
       const { row: created, hostUserId } = inserted.value;
 
-      await recordQuestCompletion(questId, guest.guestId, created.id);
+      await recordQuestCompletion(scopedQuestId, guest.guestId, created.id);
 
       const newPhoto = {
         id: created.id,
@@ -491,8 +511,8 @@ photosRouter.post(
         guestName: guestName || 'Guest',
         guestAvatar,
         guestTable,
-        questId,
-        questTitle,
+        questId: scopedQuestId ?? undefined,
+        questTitle: scopedQuestId ? questTitle : undefined,
         storagePath: files.display.storagePath,
         thumbnailUrl: urls.thumb,
         fullUrl: urls.full,

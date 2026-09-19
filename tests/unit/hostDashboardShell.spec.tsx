@@ -3,6 +3,7 @@ import { render, fireEvent, cleanup, screen, waitFor } from '@testing-library/re
 import React from 'react';
 import { HostDashboard } from '../../src/components/host/HostDashboard';
 import { eventsApi } from '../../src/api/eventsApi';
+import { questsApi } from '../../src/api/questsApi';
 import { i18n } from '../../src/i18n';
 import { WeddingEvent, QRCanvasConfig, PlanTier } from '../../src/types';
 
@@ -27,6 +28,7 @@ afterEach(() => {
 
 beforeEach(() => {
   vi.spyOn(window, 'alert').mockImplementation(() => undefined);
+  vi.spyOn(questsApi, 'leaderboard').mockResolvedValue([]);
 });
 
 const baseEvent: WeddingEvent = {
@@ -381,5 +383,30 @@ describe('the grand prize editor', () => {
     // Without the re-arm the first timer survives and clears the tick while
     // the second save is still fresh.
     expect(cleared.length).toBeGreaterThan(0);
+  });
+});
+
+describe('the quest leaderboard', () => {
+  it('shows the host every ranked guest, and what does and does not score', async () => {
+    vi.mocked(questsApi.leaderboard).mockResolvedValue([
+      { rank: 1, guestId: 'g1', name: 'Maria', avatarUrl: null, points: 45, questsCompleted: 3 },
+      { rank: 2, guestId: 'g2', name: 'Ivan', avatarUrl: null, points: 30, questsCompleted: 2 },
+    ]);
+    const { container } = renderDashboard({ planTier: 'pro_planner' });
+
+    openTab(container, 'host.quests_mgr');
+
+    expect(await screen.findByText('Maria')).toBeTruthy();
+    expect(screen.getByText('Ivan')).toBeTruthy();
+    expect(screen.getByText(i18n.t('leaderboard.host_hint'))).toBeTruthy();
+    expect(questsApi.leaderboard).toHaveBeenCalledWith('event-1');
+  });
+
+  it('is not fetched while the quests tab is locked', () => {
+    const { container } = renderDashboard({ planTier: 'free' });
+
+    openTab(container, 'host.quests_mgr');
+
+    expect(questsApi.leaderboard).not.toHaveBeenCalled();
   });
 });

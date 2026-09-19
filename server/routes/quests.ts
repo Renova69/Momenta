@@ -11,6 +11,7 @@ import { RESERVED_DEVICE_FINGERPRINTS, issueGuestToken } from '../lib/guestAuth'
 import { resolveGuestIdentity } from '../lib/guestIdentity';
 import { wsManager } from '../ws/wsServer';
 import { errorLabel } from '../lib/errors';
+import { getQuestLeaderboard } from '../lib/questLeaderboard';
 
 export const questsRouter = Router();
 
@@ -68,6 +69,23 @@ questsRouter.get('/events/:id/quests', requireUuidParams('id'), async (req, res)
     res.status(500).json({ error: 'Failed to fetch scavenger quests' });
   }
 });
+
+// GET /api/events/:id/leaderboard — ranked guests, photo-backed completions
+// only (see lib/questLeaderboard.ts). Public like the quest list, and sold
+// with it, so gated at the same tier as creating a quest.
+questsRouter.get(
+  '/events/:id/leaderboard',
+  requireUuidParams('id'),
+  requireEventTier('celebration_pass'),
+  async (req, res) => {
+    try {
+      res.json(await getQuestLeaderboard(String(req.params.id)));
+    } catch (err) {
+      console.error('[Error in GET /api/events/:id/leaderboard]:', errorLabel(err));
+      res.status(500).json({ error: 'Failed to fetch the leaderboard' });
+    }
+  }
+);
 
 // 2. POST /api/events/:id/quests (Create Quest - Host Only)
 questsRouter.post(

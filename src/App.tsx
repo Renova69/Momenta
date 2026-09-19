@@ -34,6 +34,7 @@ import { HostAuthPage } from './components/host/HostAuthPage';
 import { LandingHomePage } from './components/home/LandingHomePage';
 import { PhotographerIngestPortal } from './components/ingest/PhotographerIngestPortal';
 import { isFeatureUnlocked } from './config/tierGating';
+import { useQuestLeaderboard } from './hooks/useQuestLeaderboard';
 import { LockedFeatureCard } from './components/common/LockedFeatureBadge';
 import {
   Heart,
@@ -191,6 +192,14 @@ function WeddingAppContent() {
   );
 
   const handleOpenLightbox = useCallback((photo: Photo) => setActiveLightboxPhoto(photo), []);
+
+  // Fetched only while a guest is looking at it; see useQuestLeaderboard.
+  const guestLeaderboard = useQuestLeaderboard(
+    event?.id,
+    activeView === 'guest' && activeGuestTab === 'quests' && isFeatureUnlocked(event?.planTier, 'scavenger_quests'),
+    quests,
+    photos
+  );
 
   // Loading state
   if (isLoadingEvent) {
@@ -381,6 +390,7 @@ function WeddingAppContent() {
                       quests={quests}
                       currentGuest={safeGuest}
                       prize={event.questPrize}
+                      leaderboard={guestLeaderboard}
                       onSelectQuestForCapture={handleOpenCaptureForQuest}
                     />
                   )

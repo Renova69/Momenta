@@ -1,6 +1,7 @@
 import React from 'react';
-import { ScavengerQuest, Guest } from '../../types';
+import { ScavengerQuest, Guest, QuestLeaderboardEntry } from '../../types';
 import { i18n } from '../../i18n';
+import { QuestLeaderboard } from './QuestLeaderboard';
 import {
   CheckCircle2,
   Camera,
@@ -18,8 +19,13 @@ interface ScavengerHuntProps {
   quests: ScavengerQuest[];
   currentGuest: Guest;
   prize?: string | null;
+  /** Omitted, the leaderboard is not shown at all. */
+  leaderboard?: QuestLeaderboardEntry[];
   onSelectQuestForCapture: (questId: string) => void;
 }
+
+/** A phone screen's worth; the guest's own row is pinned below when further down. */
+const GUEST_LEADERBOARD_ROWS = 10;
 
 const ICON_MAP: Record<string, React.ReactNode> = {
   heart: <Heart className="w-5 h-5 text-rosewood-400" />,
@@ -36,6 +42,7 @@ export const ScavengerHunt: React.FC<ScavengerHuntProps> = ({
   quests,
   currentGuest,
   prize,
+  leaderboard,
   onSelectQuestForCapture,
 }) => {
   const completedCount = quests.filter((q) =>
@@ -172,6 +179,8 @@ export const ScavengerHunt: React.FC<ScavengerHuntProps> = ({
           );
         })}
       </div>
+
+      {leaderboard && <QuestLeaderboard entries={leaderboard} currentGuestId={currentGuest.id} limit={GUEST_LEADERBOARD_ROWS} />}
     </div>
   );
 };

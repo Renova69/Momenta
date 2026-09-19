@@ -12,6 +12,8 @@ import { Plus, Trophy, Sparkles, RotateCcw, Check } from 'lucide-react';
 import { i18n } from '../../../i18n';
 import { QUEST_ICONS } from './questIcons';
 import { useHostDashboard } from './context';
+import { useQuestLeaderboard } from '../../../hooks/useQuestLeaderboard';
+import { QuestLeaderboard } from '../../quests/QuestLeaderboard';
 
 export const QuestsTab: React.FC = () => {
   const {
@@ -23,11 +25,15 @@ export const QuestsTab: React.FC = () => {
     newQuestPoints,
     newQuestTitle,
     quests,
+    photos,
     setNewQuestDesc,
     setNewQuestIcon,
     setNewQuestPoints,
     setNewQuestTitle,
   } = useHostDashboard();
+
+  // This tab only mounts once the plan unlocks quests, so it can always fetch.
+  const leaderboard = useQuestLeaderboard(event.id, true, quests, photos);
 
   const [prizeDraft, setPrizeDraft] = useState(event.questPrize || '');
   const [justSaved, setJustSaved] = useState(false);
@@ -143,6 +149,9 @@ export const QuestsTab: React.FC = () => {
           </div>
         </form>
       </div>
+
+      <QuestLeaderboard entries={leaderboard} hint={i18n.t('leaderboard.host_hint')} />
+
       {/* Add New Quest Form */}
       <div className="bg-noir-800/90 rounded-3xl p-6 border border-cream-400/10">
         <h4 className="font-serif text-lg font-bold text-cream-100 mb-4 flex items-center gap-2">

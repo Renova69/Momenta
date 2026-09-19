@@ -117,6 +117,11 @@ export const bg: Record<string, string> = {
   'quests.save_prize': 'Запази наградата',
   'quests.reset_prize': 'По подразбиране',
   'quests.prize_saved': 'Наградата е запазена успешно!',
+  'leaderboard.title': 'Класация',
+  'leaderboard.empty': 'Все още няма точки. Първата снимка от мисия поема водачеството.',
+  'leaderboard.you': 'Вие',
+  'leaderboard.quests_done': 'Мисии: {{count}}',
+  'leaderboard.host_hint': 'Точки носят само снимките от мисии. Отхвърлена или изтрита снимка губи точките си.',
 
   // Audio Guestbook
   'audio.title': 'Ретро аудио книга за гости',

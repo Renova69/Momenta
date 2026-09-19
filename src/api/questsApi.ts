@@ -1,10 +1,15 @@
 import { apiFetch } from './apiClient';
-import { ScavengerQuest } from '../types';
+import { QuestLeaderboardEntry, ScavengerQuest } from '../types';
 
 export const questsApi = {
   // List quests for an event
   list: async (eventId: string): Promise<ScavengerQuest[]> => {
     return apiFetch<ScavengerQuest[]>(`/api/events/${eventId}/quests`);
+  },
+
+  // Ranked guests; only photo-backed completions score
+  leaderboard: async (eventId: string): Promise<QuestLeaderboardEntry[]> => {
+    return apiFetch<QuestLeaderboardEntry[]>(`/api/events/${eventId}/leaderboard`);
   },
 
   // Create quest (host only)
