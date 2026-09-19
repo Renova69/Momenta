@@ -7,7 +7,7 @@ Two runners, run separately:
 | Command | What it runs | Needs PostgreSQL |
 | :--- | :--- | :---: |
 | `npm run test:unit` | Vitest over `tests/**/*.spec.ts` | Yes — the route specs hit a real database |
-| `npm run test:e2e` | The full-stack harness in `tests/run-all-tests.ts` | Yes |
+| `npm run test:e2e` | The full-stack harness in `tests/e2e.test.ts` | Yes |
 | `npm run test` | Both of the above, in order | Yes |
 | `npm run test:coverage` | Vitest with V8 coverage | Yes |
 | `npm run typecheck` | `src`, `server` + `shared`, and `tests` | No |
@@ -119,12 +119,14 @@ nothing, not "use the default"), `offlineQueue.spec.ts` and
 `offlineQueueAudioAndResilience.spec.ts` (the flush path, including rebuilding a
 queued voice message into multipart and not running two flushes at once).
 
-Plus `tests/e2e.test.ts` (full-stack API, PostgreSQL & WebSocket suite) and
-`tests/run-all-tests.ts` (E2E harness entry point, `npm run test:e2e`).
+Plus `tests/e2e.test.ts` (full-stack API, PostgreSQL & WebSocket suite, run by
+`npm run test:e2e`).
 
 Unit suites used to exist twice — once for Vitest and once for a bespoke
 `tsx` runner — with two sets of assertions covering the same modules. The
-duplicates were removed; `run-all-tests.ts` now owns only the live-stack pass.
+duplicates were removed. The runner that remained, `tests/run-all-tests.ts`,
+was an older copy of the e2e harness that nothing invoked, and was deleted on
+2026-09-19 rather than kept in step by hand.
 
 ---
 
