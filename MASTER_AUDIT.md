@@ -9,11 +9,11 @@
 > that every confirmed finding now carries a **FIXED** line naming the commit,
 > and §9 records what is actually left.
 >
-> **State on 2026-09-18:** all three production blockers cleared in code. Of the
-> 20 findings the audit itself produced (12 in §§2–3, 8 in §4): **18 fixed**,
-> **1 partly** — H-4, whose lifecycle rule is written and waiting on a
-> credential — and **1 resolved as not a defect**: L-1's premise was wrong,
-> `vercel.json` is genuinely in use.
+> **State on 2026-09-19:** all three production blockers cleared in code. Of the
+> 20 findings the audit itself produced (12 in §§2–3, 8 in §4): **19 fixed** —
+> H-4's last net, the R2 lifecycle rule, confirmed on the bucket on 2026-09-19 —
+> and **1 resolved as not a defect**: L-1's premise was wrong, `vercel.json` is
+> genuinely in use.
 >
 > **§3b records 14 further findings the audit did not produce, all of them
 > fixed.** All but one were found by *running* something the audit had only
@@ -46,10 +46,9 @@ by inspection, not by preference; each is recorded with its evidence in §6 or �
 **Totals as audited:** Critical 0 · High 4 · Medium 8 · Low 8 · Unfinished 4 ·
 False positives 3 · Needs manual verification 5 · Production blockers 3.
 
-**Totals as of 2026-09-19:** of the audit's own 20 findings — 18 fixed, H-4
-partly (lifecycle rule written, not applied), L-1 resolved as not a defect. Of
-the 14 post-audit findings in §3b — 14 fixed. Production blockers 0 in code, 4
-operational actions outstanding (§9). The 4 unfinished features are unchanged
+**Totals as of 2026-09-19:** of the audit's own 20 findings — 19 fixed, L-1
+resolved as not a defect. Of the 14 post-audit findings in §3b — 14 fixed.
+Production blockers 0 in code, 3 operational actions outstanding (§9). The 4 unfinished features are unchanged
 and none is a defect; of the 5 verification items, V-5 is substantially
 addressed by mutation testing rather than by reading, and V-1 to V-4 still need
 real credentials, real hardware or real third-party services.
@@ -153,7 +152,7 @@ capacity benchmark, so nothing has accumulated yet.
 **Regression test required** Partly — orphan detection needs an R2 path; the
 lifecycle application is an operational action.
 **Blocker** No (no data at risk today) — but blocks go-live with customers.
-**PARTLY FIXED.** Two of the three nets are up; the third needs a credential.
+**FIXED** 2026-09-19. All three nets are up.
 
 1. **Orphan detection sees R2** — `bfbbcb7`. Paginated listing that aborts on a
    truncated page rather than reporting a partial one as complete, an
@@ -165,13 +164,15 @@ lifecycle application is an operational action.
    quarantine tree at all and reported removals it had not performed.
 3. **Orphan production stopped** — `fadbd7c` (H-3).
 
-2. **Lifecycle rules are still not on the bucket.** `4bf398d` made the script
-   usable — it takes `R2_ADMIN_*` credentials instead of requiring you to
-   overwrite the app's token in `.env`, refuses to write over a configuration it
-   could not read, and names any rule on the bucket the policy would destroy
-   rather than dropping it silently. Applying it remains an **owner action**: it
-   needs an Admin Read & Write token, which is deliberately not what the
-   application carries.
+2. **Lifecycle rules are on the bucket** — confirmed 2026-09-19. `4bf398d` made
+   the script usable: it takes `R2_ADMIN_*` credentials instead of requiring you
+   to overwrite the app's token in `.env`, refuses to write over a configuration
+   it could not read, and names any rule on the bucket the policy would destroy
+   rather than dropping it silently. Run by the owner with a temporary Admin
+   Read & Write token, `npm run r2:lifecycle` read back both rules the policy
+   carries — `Abandoned quarantine objects` (`quarantine/`, 400 days) and
+   `Default Multipart Abort Rule` (7 days) — already in place and identical to
+   the file, so nothing needed applying.
 
 ---
 
@@ -906,10 +907,12 @@ not coming. `ws/wsServer` is 20/22; the two survivors are both the
 
 | # | Action | Why it matters |
 |---|---|---|
-| 1 | Apply the R2 lifecycle policy with an Admin Read & Write token | The last of H-4's three nets. The script is ready (`4bf398d`); it needs a credential the application deliberately does not carry. |
-| 2 | Add the R2 repository secrets | Without them the `live-storage` job skips nightly and M-4 is closed only on paper. |
-| 3 | Regenerate the exposed R2 keys | `.env` still carries the warning that the stored keys were exposed and must be replaced in the Cloudflare dashboard (OPEN_ITEMS M14). Not verifiable from the repository. |
-| 4 | Configure SMTP, then notices, then `RETENTION_ENFORCED=true` — in that order | U-1 and U-4. Nothing deletes until the third step; `npm run retention:rehearse` passes 24/24 against a local sink. |
+| 1 | Add the R2 repository secrets | Without them the `live-storage` job skips nightly and M-4 is closed only on paper. |
+| 2 | Regenerate the exposed R2 keys | `.env` still carries the warning that the stored keys were exposed and must be replaced in the Cloudflare dashboard (OPEN_ITEMS M14). Not verifiable from the repository. |
+| 3 | Configure SMTP, then notices, then `RETENTION_ENFORCED=true` — in that order | U-1 and U-4. Nothing deletes until the third step; `npm run retention:rehearse` passes 24/24 against a local sink. |
+
+Done 2026-09-19: the R2 lifecycle policy, H-4's last net, confirmed on the
+bucket with an Admin Read & Write token.
 
 **No longer close to blocking:** V-5. The sweep is finished — every module under
 `server/` and `shared/` bar the three named in §8, with no survivor left
