@@ -184,6 +184,22 @@ describe('normalizePartialEvent — emits only what arrived', () => {
       expect('questPrize' in normalizePartialEvent({ title: 'x' })).toBe(false);
     });
   });
+
+  describe('showTvLeaderboard — the TV-wall switch', () => {
+    it('carries a broadcast false through, so switching it off reaches a running wall', () => {
+      const out = normalizePartialEvent({ show_tv_leaderboard: false });
+      expect('showTvLeaderboard' in out).toBe(true);
+      expect(out.showTvLeaderboard).toBe(false);
+    });
+
+    it('carries a broadcast true through', () => {
+      expect(normalizePartialEvent({ show_tv_leaderboard: true }).showTvLeaderboard).toBe(true);
+    });
+
+    it('leaves the switch alone when a broadcast does not mention it', () => {
+      expect('showTvLeaderboard' in normalizePartialEvent({ title: 'x' })).toBe(false);
+    });
+  });
 });
 
 describe('normalizeEvent — fills a default for everything absent', () => {
@@ -220,6 +236,11 @@ describe('normalizeEvent — fills a default for everything absent', () => {
   it('reads the grand prize from the slug response, and leaves it null when unset', () => {
     expect(normalizeEvent({ ...minimal, quest_prize: 'Champagne' }).questPrize).toBe('Champagne');
     expect(normalizeEvent(minimal).questPrize).toBeNull();
+  });
+
+  it('reads the TV-wall switch from the slug response, and leaves it off when absent', () => {
+    expect(normalizeEvent({ ...minimal, show_tv_leaderboard: true }).showTvLeaderboard).toBe(true);
+    expect(normalizeEvent(minimal).showTvLeaderboard).toBe(false);
   });
 
   it('prefers camelCase across the board', () => {

@@ -126,6 +126,8 @@ export const bg: Record<string, string> = {
   'leaderboard.you': 'Вие',
   'leaderboard.quests_done': 'Мисии: {{count}}',
   'leaderboard.host_hint': 'Точки носят само снимките от мисии. Отхвърлена или изтрита снимка губи точките си.',
+  'host.tv_leaderboard_label': 'Показвай класацията на стената на живо',
+  'host.tv_leaderboard_hint': 'Тясна колона до снимките. Изключено — стената показва само снимки.',
 
   // Audio Guestbook
   'audio.title': 'Ретро аудио книга за гости',

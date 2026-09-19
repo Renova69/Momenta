@@ -113,6 +113,8 @@ export const en: Record<string, string> = {
   'leaderboard.you': 'You',
   'leaderboard.quests_done': 'Quests: {{count}}',
   'leaderboard.host_hint': 'Only quest photos score. Rejecting or deleting a photo takes its points away.',
+  'host.tv_leaderboard_label': 'Show the leaderboard on the TV wall',
+  'host.tv_leaderboard_hint': 'A narrow column beside the photos. Off, the wall shows photos only.',
   'audio.title': 'Vintage Audio Guestbook',
   'audio.subtitle': 'Leave a spoken toast, funny memory, or heartfelt marriage advice.',
   'audio.record_btn': 'Tap to Record Audio Toast',

@@ -366,6 +366,7 @@ eventsRouter.put('/:id', requireAuth, requireUuidParams('id'), validateBody(Upda
       revealAt: 'reveal_at',
       maxPhotosPerGuest: 'max_photos_per_guest',
       questPrize: 'quest_prize',
+      showTvLeaderboard: 'show_tv_leaderboard',
     };
 
     const setClauses: string[] = [];

@@ -61,6 +61,8 @@ export interface WeddingEvent {
   revealAt: string | null;
   maxPhotosPerGuest: number;
   questPrize?: string | null;
+  /** Host choice: the quest leaderboard beside the photos on the TV wall. Off by default. */
+  showTvLeaderboard?: boolean;
   createdAt: string;
   updatedAt: string;
 }

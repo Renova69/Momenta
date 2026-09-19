@@ -49,6 +49,8 @@ export interface RemoteEventPayload {
   max_photos_per_guest?: number;
   questPrize?: string | null;
   quest_prize?: string | null;
+  showTvLeaderboard?: boolean;
+  show_tv_leaderboard?: boolean;
 
   createdAt?: string;
   created_at?: string;
@@ -121,6 +123,9 @@ export function normalizePartialEvent(remote: RemoteEventPayload | Partial<Remot
   if ('questPrize' in source || 'quest_prize' in source) {
     updates.questPrize = source.questPrize !== undefined ? source.questPrize : source.quest_prize;
   }
+  if (has('showTvLeaderboard', 'show_tv_leaderboard')) {
+    updates.showTvLeaderboard = source.showTvLeaderboard ?? source.show_tv_leaderboard;
+  }
   if (has('createdAt', 'created_at')) updates.createdAt = source.createdAt ?? source.created_at;
   if (has('updatedAt', 'updated_at')) updates.updatedAt = source.updatedAt ?? source.updated_at;
 
@@ -154,6 +159,7 @@ export function normalizeEvent(remote: RemoteEventPayload): WeddingEvent {
     revealAt: remote.revealAt || remote.reveal_at || null,
     maxPhotosPerGuest: remote.maxPhotosPerGuest || remote.max_photos_per_guest || 50,
     questPrize: remote.questPrize ?? remote.quest_prize ?? null,
+    showTvLeaderboard: remote.showTvLeaderboard ?? remote.show_tv_leaderboard ?? false,
     createdAt: remote.createdAt || remote.created_at || now,
     updatedAt: remote.updatedAt || remote.updated_at || now,
   };

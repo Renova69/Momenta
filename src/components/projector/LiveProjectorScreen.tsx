@@ -1,11 +1,11 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { WeddingEvent, Photo, ScavengerQuest } from '../../types';
 import { QRCodeSVG } from 'qrcode.react';
 import { i18n } from '../../i18n';
 import { storageService, LiveReaction, ReactionKind } from '../../services/storageService';
 import { isFeatureUnlocked } from '../../config/tierGating';
 import { useQuestLeaderboard } from '../../hooks/useQuestLeaderboard';
-import { ProjectorLeaderboard } from './ProjectorLeaderboard';
+import { TvLeaderboardColumn } from './TvLeaderboardColumn';
 import {
   Heart,
   Maximize2,
@@ -27,12 +27,6 @@ const REACTION_GLYPHS: Record<ReactionKind, string> = {
   laugh: String.fromCodePoint(0x1f602),
   party: String.fromCodePoint(0x1f389),
 };
-
-/** Every Nth slide is the quest leaderboard, held for one slide's time. */
-const LEADERBOARD_EVERY_N_SLIDES = 6;
-
-/** As many rows as read comfortably from the back of the room. */
-const PROJECTOR_LEADERBOARD_ROWS = 5;
 
 /** The wall has no quest list; photos alone drive its leaderboard refetches. */
 const NO_QUESTS: ScavengerQuest[] = [];
@@ -78,16 +72,11 @@ export const LiveProjectorScreen: React.FC<LiveProjectorScreenProps> = ({
   const [slideSpeed, setSlideSpeed] = useState<number>(6000);
   const [reactions, setReactions] = useState<(LiveReaction & { left: number; drift: number })[]>([]);
 
-  const leaderboard = useQuestLeaderboard(
-    event.id,
-    isFeatureUnlocked(event.planTier, 'scavenger_quests'),
-    NO_QUESTS,
-    photos
-  );
-  const podium = useMemo(() => (leaderboard ?? []).slice(0, PROJECTOR_LEADERBOARD_ROWS), [leaderboard]);
-  const hasBoard = podium.length > 0;
-  const [isBoardSlide, setIsBoardSlide] = useState(false);
-  const slidesShown = useRef(0);
+  // The wall is a photo album first. The board joins it, beside the photos
+  // rather than in place of them, only when the host has switched it on —
+  // and it is not fetched at all otherwise.
+  const showLeaderboard = !!event.showTvLeaderboard && isFeatureUnlocked(event.planTier, 'scavenger_quests');
+  const leaderboard = useQuestLeaderboard(event.id, showLeaderboard, NO_QUESTS, photos);
 
   const prefersReducedMotion =
     typeof window !== 'undefined' &&
@@ -158,36 +147,24 @@ export const LiveProjectorScreen: React.FC<LiveProjectorScreenProps> = ({
     };
   }, []);
 
-  // Auto slideshow ticker. The leaderboard takes every Nth slot rather than
-  // an extra index, so the photo order and the Ken Burns rhythm stay as they
-  // were.
+  // Auto slideshow ticker
   useEffect(() => {
-    if (!isPlaying || (displayPhotos.length <= 1 && !hasBoard)) return;
+    if (!isPlaying || displayPhotos.length <= 1) return;
 
     const timer = setInterval(() => {
-      slidesShown.current += 1;
-      if (hasBoard && slidesShown.current % LEADERBOARD_EVERY_N_SLIDES === 0) {
-        setIsBoardSlide(true);
-        return;
-      }
-      setIsBoardSlide(false);
-      if (displayPhotos.length > 1) {
-        setCurrentIndex((prev) => (prev + 1) % displayPhotos.length);
-      }
+      setCurrentIndex((prev) => (prev + 1) % displayPhotos.length);
     }, slideSpeed);
 
     return () => clearInterval(timer);
-  }, [isPlaying, displayPhotos.length, slideSpeed, hasBoard]);
+  }, [isPlaying, displayPhotos.length, slideSpeed]);
 
   const handleNext = () => {
-    setIsBoardSlide(false);
     if (displayPhotos.length > 0) {
       setCurrentIndex((prev) => (prev + 1) % displayPhotos.length);
     }
   };
 
   const handlePrev = () => {
-    setIsBoardSlide(false);
     if (displayPhotos.length > 0) {
       setCurrentIndex((prev) => (prev - 1 + displayPhotos.length) % displayPhotos.length);
     }
@@ -295,79 +272,81 @@ export const LiveProjectorScreen: React.FC<LiveProjectorScreenProps> = ({
         ))}
       </div>
 
-      <div className="relative flex-1 flex items-center justify-center p-4 sm:p-8 overflow-hidden">
-        {isBoardSlide && hasBoard ? (
-          <ProjectorLeaderboard entries={podium} prize={event.questPrize} />
-        ) : currentPhoto ? (
-          <div className="relative max-w-6xl max-h-full flex flex-col items-center justify-center">
-            <div className="relative rounded-3xl overflow-hidden shadow-2xl border border-white/15 max-h-[70vh] bg-noir-950 flex items-center justify-center">
-              <img
-                key={currentPhoto.id}
-                src={currentPhoto.fullUrl}
-                alt={currentPhoto.caption || 'Wedding celebration'}
-                className={`max-h-[70vh] w-auto object-contain will-change-transform ${kenBurnsClass}`}
-              />
+      <div className="relative flex-1 min-h-0 flex overflow-hidden">
+        <div className="relative flex-1 min-w-0 flex items-center justify-center p-4 sm:p-8 overflow-hidden">
+          {currentPhoto ? (
+            <div className="relative max-w-6xl max-h-full flex flex-col items-center justify-center">
+              <div className="relative rounded-3xl overflow-hidden shadow-2xl border border-white/15 max-h-[70vh] bg-noir-950 flex items-center justify-center">
+                <img
+                  key={currentPhoto.id}
+                  src={currentPhoto.fullUrl}
+                  alt={currentPhoto.caption || 'Wedding celebration'}
+                  className={`max-h-[70vh] w-auto object-contain will-change-transform ${kenBurnsClass}`}
+                />
 
-              {currentPhoto.questTitle && (
-                <div className="absolute top-4 left-4 px-3 py-1.5 rounded-full bg-noir-900/80 backdrop-blur-md text-gold-300 text-xs font-semibold flex items-center gap-2 border border-gold-400/40">
-                  <Trophy className="w-4 h-4 text-gold-400" />
-                  <span>{currentPhoto.questTitle}</span>
-                </div>
-              )}
-            </div>
-
-            {/* Subtitle / Guest Card Overlay */}
-            <div className="mt-4 px-6 py-3 rounded-2xl bg-black/70 backdrop-blur-md border border-white/10 flex items-center gap-4 max-w-2xl text-center">
-              <img
-                src={currentPhoto.guestAvatar || `https://api.dicebear.com/7.x/micah/svg?seed=${encodeURIComponent(currentPhoto.guestName)}`}
-                alt={currentPhoto.guestName}
-                className="w-10 h-10 rounded-full border border-gold-400/40 object-cover"
-              />
-              <div className="text-left">
-                <div className="font-serif font-bold text-sm sm:text-base text-cream-100 flex items-center gap-2">
-                  <span>{currentPhoto.guestName}</span>
-                  {currentPhoto.guestTable && (
-                    <span className="text-xs font-sans text-gold-400 font-normal">
-                      • {currentPhoto.guestTable}
-                    </span>
-                  )}
-                </div>
-                {currentPhoto.caption && (
-                  <p className="text-xs sm:text-sm text-cream-200/90 font-serif italic mt-0.5 line-clamp-2">
-                    "{currentPhoto.caption}"
-                  </p>
+                {currentPhoto.questTitle && (
+                  <div className="absolute top-4 left-4 px-3 py-1.5 rounded-full bg-noir-900/80 backdrop-blur-md text-gold-300 text-xs font-semibold flex items-center gap-2 border border-gold-400/40">
+                    <Trophy className="w-4 h-4 text-gold-400" />
+                    <span>{currentPhoto.questTitle}</span>
+                  </div>
                 )}
               </div>
-            </div>
-          </div>
-        ) : (
-          <div className="text-center space-y-4 max-w-md p-8 rounded-3xl bg-noir-900/80 border border-gold-400/20">
-            <h3 className="font-serif text-2xl font-bold text-cream-100">
-              {i18n.t('feed.empty_title')}
-            </h3>
-            <p className="text-xs text-cream-300/80">
-              {i18n.t('projector.point_cam')}
-            </p>
-          </div>
-        )}
 
-        {/* Navigation Chevrons */}
-        {displayPhotos.length > 1 && (
-          <>
-            <button
-              onClick={handlePrev}
-              className="absolute left-6 p-3 rounded-full bg-black/50 text-white/80 hover:text-white hover:bg-black/80 transition-colors border border-white/10"
-            >
-              <ChevronLeft className="w-6 h-6" />
-            </button>
-            <button
-              onClick={handleNext}
-              className="absolute right-6 p-3 rounded-full bg-black/50 text-white/80 hover:text-white hover:bg-black/80 transition-colors border border-white/10"
-            >
-              <ChevronRight className="w-6 h-6" />
-            </button>
-          </>
-        )}
+              {/* Subtitle / Guest Card Overlay */}
+              <div className="mt-4 px-6 py-3 rounded-2xl bg-black/70 backdrop-blur-md border border-white/10 flex items-center gap-4 max-w-2xl text-center">
+                <img
+                  src={currentPhoto.guestAvatar || `https://api.dicebear.com/7.x/micah/svg?seed=${encodeURIComponent(currentPhoto.guestName)}`}
+                  alt={currentPhoto.guestName}
+                  className="w-10 h-10 rounded-full border border-gold-400/40 object-cover"
+                />
+                <div className="text-left">
+                  <div className="font-serif font-bold text-sm sm:text-base text-cream-100 flex items-center gap-2">
+                    <span>{currentPhoto.guestName}</span>
+                    {currentPhoto.guestTable && (
+                      <span className="text-xs font-sans text-gold-400 font-normal">
+                        • {currentPhoto.guestTable}
+                      </span>
+                    )}
+                  </div>
+                  {currentPhoto.caption && (
+                    <p className="text-xs sm:text-sm text-cream-200/90 font-serif italic mt-0.5 line-clamp-2">
+                      "{currentPhoto.caption}"
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="text-center space-y-4 max-w-md p-8 rounded-3xl bg-noir-900/80 border border-gold-400/20">
+              <h3 className="font-serif text-2xl font-bold text-cream-100">
+                {i18n.t('feed.empty_title')}
+              </h3>
+              <p className="text-xs text-cream-300/80">
+                {i18n.t('projector.point_cam')}
+              </p>
+            </div>
+          )}
+
+          {/* Navigation Chevrons */}
+          {displayPhotos.length > 1 && (
+            <>
+              <button
+                onClick={handlePrev}
+                className="absolute left-6 p-3 rounded-full bg-black/50 text-white/80 hover:text-white hover:bg-black/80 transition-colors border border-white/10"
+              >
+                <ChevronLeft className="w-6 h-6" />
+              </button>
+              <button
+                onClick={handleNext}
+                className="absolute right-6 p-3 rounded-full bg-black/50 text-white/80 hover:text-white hover:bg-black/80 transition-colors border border-white/10"
+              >
+                <ChevronRight className="w-6 h-6" />
+              </button>
+            </>
+          )}
+        </div>
+
+        {showLeaderboard && <TvLeaderboardColumn entries={leaderboard} prize={event.questPrize} />}
       </div>
 
       {/* BOTTOM BAR: Big Live QR Code & Prompt for Guests */}
@@ -408,10 +387,7 @@ export const LiveProjectorScreen: React.FC<LiveProjectorScreenProps> = ({
           {displayPhotos.slice(0, 8).map((p, idx) => (
             <button
               key={p.id}
-              onClick={() => {
-                setIsBoardSlide(false);
-                setCurrentIndex(idx);
-              }}
+              onClick={() => setCurrentIndex(idx)}
               className={`w-12 h-12 rounded-xl overflow-hidden border-2 transition-all shrink-0 ${
                 idx === currentIndex ? 'border-gold-400 scale-105 shadow-glow' : 'border-transparent opacity-60 hover:opacity-100'
               }`}

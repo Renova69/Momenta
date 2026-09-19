@@ -194,13 +194,13 @@ describe('LiveProjectorScreen', () => {
     expect(screen.getByText(i18n.t('projector.scan_share'))).toBeInTheDocument();
   });
 
-  describe('the quest leaderboard slide', () => {
+  describe('the quest leaderboard column', () => {
     const leaders: QuestLeaderboardEntry[] = [
       { rank: 1, guestId: 'g1', name: 'Maria', avatarUrl: null, points: 45, questsCompleted: 3, questIds: [] },
       { rank: 2, guestId: 'g2', name: 'Ivan', avatarUrl: null, points: 30, questsCompleted: 2, questIds: [] },
     ];
-    const SLIDE_MS = 6000;
-    const tick = () => act(() => void vi.advanceTimersByTime(SLIDE_MS));
+    const SWITCHED_ON: WeddingEvent = { ...EVENT, showTvLeaderboard: true };
+    const tick = () => act(() => void vi.advanceTimersByTime(6000));
     const boardTitle = () => screen.queryByRole('heading', { name: i18n.t('leaderboard.title') });
 
     function threePhotos() {
@@ -211,67 +211,69 @@ describe('LiveProjectorScreen', () => {
       ];
     }
 
-    it('takes every sixth slide, announces the prize, then hands back to the photos', async () => {
+    it('is not there, and not fetched, until the host switches it on', async () => {
       vi.useFakeTimers();
       vi.mocked(questsApi.leaderboard).mockResolvedValue(leaders);
-      renderScreen(threePhotos(), vi.fn(), { ...EVENT, questPrize: 'A weekend in Sozopol' });
-      await act(async () => undefined);
-
-      for (let i = 0; i < 5; i++) tick();
-      expect(boardTitle()).toBeNull();
-
-      tick();
-      expect(boardTitle()).toBeInTheDocument();
-      expect(screen.getByText('Maria')).toBeInTheDocument();
-      expect(screen.getByText('A weekend in Sozopol')).toBeInTheDocument();
-
-      tick();
-      expect(boardTitle()).toBeNull();
-    });
-
-    it('keeps the photo order it would have had without the leaderboard', async () => {
-      vi.useFakeTimers();
-      vi.mocked(questsApi.leaderboard).mockResolvedValue(leaders);
-      renderScreen(threePhotos());
-      await act(async () => undefined);
-
-      // A on screen, five ticks through B, C, A, B, C, then the board; the
-      // photo after it is A, the one the board delayed rather than skipped.
-      for (let i = 0; i < 5; i++) tick();
-      expect(screen.getByText('Guest C')).toBeInTheDocument();
-      tick();
-      tick();
-      expect(screen.getByText('Guest A')).toBeInTheDocument();
-    });
-
-    it('leaves the board at once when the host steps to a photo', async () => {
-      vi.useFakeTimers();
-      vi.mocked(questsApi.leaderboard).mockResolvedValue(leaders);
-      renderScreen(threePhotos());
-      await act(async () => undefined);
-      for (let i = 0; i < 6; i++) tick();
-      expect(boardTitle()).toBeInTheDocument();
-
-      const next = screen.getAllByRole('button').find((b) => b.querySelector('svg.lucide-chevron-right'))!;
-      fireEvent.click(next);
-
-      expect(boardTitle()).toBeNull();
-    });
-
-    it('never shows an empty board', async () => {
-      vi.useFakeTimers();
       renderScreen(threePhotos());
       await act(async () => undefined);
 
       for (let i = 0; i < 12; i++) tick();
 
+      // A photo album, and nothing else, however long it runs.
       expect(boardTitle()).toBeNull();
+      expect(questsApi.leaderboard).not.toHaveBeenCalled();
     });
 
-    it('does not ask for one on a plan without quests', async () => {
-      renderScreen(threePhotos(), vi.fn(), { ...EVENT, planTier: 'free' });
+    it('sits beside the photo when switched on, with the prize', async () => {
+      vi.mocked(questsApi.leaderboard).mockResolvedValue(leaders);
+      renderScreen(threePhotos(), vi.fn(), { ...SWITCHED_ON, questPrize: 'A weekend in Sozopol' });
+
+      expect(await screen.findByText('Maria')).toBeInTheDocument();
+      expect(boardTitle()).toBeInTheDocument();
+      expect(screen.getByText('A weekend in Sozopol')).toBeInTheDocument();
+      // Beside, not instead: the photo is on screen at the same time.
+      expect(screen.getByText('Guest A')).toBeInTheDocument();
+    });
+
+    it('never interrupts the slideshow', async () => {
+      vi.useFakeTimers();
+      vi.mocked(questsApi.leaderboard).mockResolvedValue(leaders);
+      renderScreen(threePhotos(), vi.fn(), SWITCHED_ON);
       await act(async () => undefined);
 
+      // Every tick moves to the next photo, as it did before the board existed.
+      const seen: string[] = [];
+      for (let i = 0; i < 6; i++) {
+        tick();
+        seen.push(['Guest A', 'Guest B', 'Guest C'].find((name) => screen.queryByText(name)) ?? 'none');
+      }
+      expect(seen).toEqual(['Guest B', 'Guest C', 'Guest A', 'Guest B', 'Guest C', 'Guest A']);
+      expect(boardTitle()).toBeInTheDocument();
+    });
+
+    it('invites the first quest photo while nobody has scored', async () => {
+      renderScreen(threePhotos(), vi.fn(), SWITCHED_ON);
+
+      expect(await screen.findByText(i18n.t('leaderboard.empty'))).toBeInTheDocument();
+    });
+
+    it('appears on a wall already running when the host switches it on', async () => {
+      vi.mocked(questsApi.leaderboard).mockResolvedValue(leaders);
+      const onClose = vi.fn();
+      const { rerender } = renderScreen(threePhotos(), onClose);
+      await act(async () => undefined);
+      expect(boardTitle()).toBeNull();
+
+      rerender(<LiveProjectorScreen event={SWITCHED_ON} photos={threePhotos()} onClose={onClose} />);
+
+      expect(await screen.findByText('Maria')).toBeInTheDocument();
+    });
+
+    it('stays off on a plan without quests, whatever the switch says', async () => {
+      renderScreen(threePhotos(), vi.fn(), { ...SWITCHED_ON, planTier: 'free' });
+      await act(async () => undefined);
+
+      expect(boardTitle()).toBeNull();
       expect(questsApi.leaderboard).not.toHaveBeenCalled();
     });
   });

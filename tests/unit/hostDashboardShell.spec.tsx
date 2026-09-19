@@ -410,3 +410,45 @@ describe('the quest leaderboard', () => {
     expect(questsApi.leaderboard).not.toHaveBeenCalled();
   });
 });
+
+describe('the TV-wall leaderboard switch', () => {
+  function switchButton() {
+    return screen.getByRole('button', { name: i18n.t('host.tv_leaderboard_label') });
+  }
+
+  it('is off for an event that never set it, and switching it on asks for exactly that', () => {
+    const { container, props } = renderDashboard({ planTier: 'pro_planner' });
+    openTab(container, 'host.quests_mgr');
+
+    expect(switchButton().getAttribute('aria-pressed')).toBe('false');
+    fireEvent.click(switchButton());
+
+    expect(props.onUpdateEvent).toHaveBeenCalledWith({ showTvLeaderboard: true });
+  });
+
+  it('switches off from on', () => {
+    const onUpdateEvent = vi.fn();
+    const props = {
+      event: { ...baseEvent, planTier: 'pro_planner', showTvLeaderboard: true } as WeddingEvent,
+      guests: [],
+      photos: [],
+      quests: [],
+      audioEntries: [],
+      qrConfig,
+      onUpdateEvent,
+      onUpdateQRConfig: vi.fn(),
+      onSetPhotoStatus: vi.fn(),
+      onDeletePhoto: vi.fn(),
+      onAddQuest: vi.fn(),
+      onResetData: vi.fn(),
+      onOpenPricing: vi.fn(),
+    };
+    const { container } = render(<HostDashboard {...(props as unknown as React.ComponentProps<typeof HostDashboard>)} />);
+    openTab(container, 'host.quests_mgr');
+
+    expect(switchButton().getAttribute('aria-pressed')).toBe('true');
+    fireEvent.click(switchButton());
+
+    expect(onUpdateEvent).toHaveBeenCalledWith({ showTvLeaderboard: false });
+  });
+});

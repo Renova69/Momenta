@@ -30,6 +30,7 @@ export const INITIAL_EVENT: WeddingEvent = {
   revealAt: null,
   maxPhotosPerGuest: 50,
   questPrize: null,
+  showTvLeaderboard: false,
   createdAt: '2026-08-01T10:00:00.000Z',
   updatedAt: '2026-08-25T12:00:00.000Z',
 };
