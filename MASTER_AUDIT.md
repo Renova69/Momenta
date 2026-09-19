@@ -638,7 +638,7 @@ including conversation logs) are all correctly gitignored and not exposed.
 | **V-2** | SMTP with a real provider | Deliverability, SPF/DKIM, bounce-webhook ingestion. The rehearsal used a local sink. |
 | **V-3** | FTP ingest against real photographer software | Lightroom tethering / camera FTP. The integration test drives `basic-ftp` only. |
 | **V-4** | Service capacity ceiling (G2, second half) | The 2026-09-13 benchmark saturated the host uplink at 8.7 MB/s — CPU 17–49%, pool 12/40 — so the service's own limit was never reached. Needs real hosting with the generator elsewhere. |
-| **V-5** | ~84 unread spec files | **Substantially addressed, by a different method than proposed.** Reading was the wrong instrument: every bad test found this session was invisible on the page. A mechanical scan of all 126 spec files for shapes that cannot fail found two more (N-11), and mutation testing — breaking the source and checking the suite notices — found gaps in files that *had* been read. 22 modules swept; see §8 for scores and what is left. |
+| **V-5** | ~84 unread spec files | **Substantially addressed, by a different method than proposed.** Reading was the wrong instrument: every bad test found this session was invisible on the page. A mechanical scan of all 126 spec files for shapes that cannot fail found two more (N-11), and mutation testing — breaking the source and checking the suite notices — found gaps in files that *had* been read. 35 modules swept, every one under `server/` and `shared/` bar three named in §8; see §8 for scores and what is left. |
 
 ---
 
@@ -660,66 +660,110 @@ Lines 88.55%. `npm run test:e2e` → 27 passed. No skipped or disabled suites.
 | 6 | Advertised plan features map to implemented capabilities | H-1, at authorship |
 | 7 | R2 adapter contract runs in CI | M-4 — the tests exist, unwired |
 
-**Mutation testing, 2026-09-17 / 18.** The method that actually worked: apply
+**Mutation testing, 2026-09-17 to 19.** The method that actually worked: apply
 one small semantic change to a module, run every spec that reaches it, and
 record whether any failed. A mutation that survives is a behaviour nothing
-asserts. 22 modules swept.
+asserts. Every module under `server/` and `shared/` was swept except three,
+named below with the reason.
 
-| Module | Score | Real gap found |
+Scores are *after* the gaps below were closed. A score of n/n means every
+mutation the harness could make was caught; where survivors remain they are
+listed, and each was determined equivalent by reading the code rather than
+assumed to be.
+
+| Module | Score | What the sweep found |
 |---|---|---|
 | `middleware/tierGate` | 18/18 | unrecognised tier must fail closed to free |
 | `middleware/auth` | 18/18 | both session-token guards had no direct test |
 | `middleware/rateLimit` | 8/8 | body and query fingerprint branches unasserted |
-| `ws/wsServer` | 18/22 | N-7, two cross-tenant holes |
-| `lib/retention` | 11/13 | both byte figures reported to a human |
-| `lib/guestAuth` | 11/12 | no direct test at all; impersonation unasserted |
-| `lib/retentionNotice` | 7/7 | `escapeHtml` only asserted for one of four characters |
-| `routes/auth` | 12/15 | `companyName` never persisted-tested |
-| `lib/photoWrite` · `lib/planLimits` · `lib/images` · `shared/planCaps` | full | — |
-| `lib/downloadToken` · `lib/previewToken` · `lib/subscriptionUpgrade` | full | — |
-| `lib/storage` | 15/20 | survivors all equivalent or the R2 hole (M-4) |
-| `lib/migrate` | 7/10 | survivors all in the CLI `main()`, no spec reaches it |
-| `routes/billingWebhook` | 17/18 | one survivor, open |
-| `routes/photos/engagement` | 5/8 | three survivors, open |
-| `lib/photoQuarantine` | 8/10 | two survivors, open |
-| `lib/guestIdentity` | 9/11 | two survivors, open |
-| `middleware/validate` | 0/3 | all three in an unreachable fallback |
+| `middleware/uuid` | 0/1 | 1 equivalent: the `['id']` default is unreachable, every call site names its params |
+| `middleware/validate` | 0/3 | all three sites in a fallback `instanceof ZodError` makes unreachable |
+| `lib/guestIdentity` | 11/11 | no direct test; impersonation and token version unasserted |
+| `lib/guestAuth` | 11/12 | 1 equivalent: `typeof` check both branches end at the same catch |
+| `lib/retention` | 11/13 | 2 equivalent: Date comparisons at exact equality |
+| `lib/retentionNotice` | 7/7 | `escapeHtml` asserted for one of four characters |
+| `lib/photoWrite` | 13/13 | — |
+| `lib/photoQuarantine` | 10/10 | promotion skipped a photo in a mixed state |
+| `lib/planLimits` | 3/3 | — |
+| `lib/images` | 2/2 | — |
+| `lib/downloadToken` · `lib/previewToken` | 4/4 · 4/4 | — |
+| `lib/subscriptionUpgrade` | 9/9 | — |
+| `lib/ingest` | 9/9 | — |
+| `lib/ingestPipeline` | 8/9 | magic-byte gate removable without changing the outcome; 1 message-only |
+| `lib/emailBounces` | 7/7 | — |
+| `lib/storage` | 15/20 | survivors equivalent, or the R2 coverage hole (M-4) |
+| `lib/migrate` | 7/10 | 3 survivors in the CLI `main()`, reached by no spec |
+| `ws/wsServer` | 18/22 | N-7, two cross-tenant holes; 2 equivalent; heartbeat untested |
+| `routes/photos/upload` | 13/14 | four survivors in one block, all identity; 1 dead assignment |
+| `routes/photos/engagement` | 8/8 | uuid guard vacuous; reveal rule uncovered |
+| `routes/photos/moderation` | 7/10 | rejecting a photo would have published it |
+| `routes/photos/feed` | 7/8 | 1 equivalent: millisecond boundary |
+| `routes/auth` | 9/15 | `companyName` never persisted-tested; 6 open — see below |
+| `routes/billingWebhook` | 18/18 | which customer the advisory lock keys on |
+| `routes/quests` | 9/9 | defaults nulled; malformed photoId reached a uuid column |
+| `routes/guests` | 4/4 | table number and avatar silently nulled |
+| `routes/events/reactions` | 2/2 | the reactor's name silently nulled |
+| `routes/events/export` | 14/16 | 2 equivalent, both guarded twice already |
+| `routes/subscriptions` | 4/5 | 1 equivalent: unreachable past the CHECKOUT_REQUIRED return |
+| `shared/planCaps` | 2/2 | — |
+| `shared/transliterate` | 3/4 | 1 open |
+| `routes/events/qr` | 3/6 | 3 open, all on one line of defaults |
+| `lib/stripe` | 2/3 | 1 open, and it fails the wrong way — see below |
 
-**Open leads from the second batch, not yet chased.** Recorded rather than
-fixed, so the next pass starts from evidence instead of re-deriving it:
+**Three lessons, each learned by getting it wrong first.**
 
-- `routes/photos/engagement:38` — `!isValidUuid(id) || !isValidUuid(guestId)`.
-  With `&&` the route rejects only when *both* are malformed, so a bad guestId
-  reaches the query. Nothing covers the guestId-format refusal on this route.
-- `routes/photos/engagement:57` — the disposable-reveal visibility rule
-  (`!is_locked || !reveal_at || reveal_at <= now`). Its branches are not all
-  covered, which is SEC-07 territory: a guest reacting to a photo before the
-  couple's reveal.
-- `lib/guestIdentity:69,99` — `Number(token_version) || 0`. Forcing it to 0
-  changes nothing any test sees, and this is the value the M10 revocation check
-  compares against.
-- `lib/photoQuarantine:43` — the early return when *nothing* is quarantined. No
-  test covers a partially-quarantined photo, where display and original disagree.
-- `middleware/validate:7` — 0 of 3 killed because all three sites are in a
-  fallback that `err instanceof ZodError` makes unreachable. It exists for two
-  copies of zod in the tree, which is a real npm hazard; it is defensive code
-  with no consumer, not a gap.
+*Equivalent mutants are not gaps.* Several survivors change no observable
+behaviour: `>` versus `>=` on Date instants that are equal either way, a
+redundant `existsSync` whose caller already guarantees the file exists, a
+conjunct made unreachable by an earlier return. Each was read before being
+dismissed, and one that looked serious — `export:237`, a containment check
+whose failure would leak another event's files — turned out to be guarded
+twice over. A line number is never enough; the statement has to be read.
 
-Roughly 30 modules remain unswept. The highest-value are `routes/photos/upload`
-(the hot path), `routes/photos/moderation`, `lib/ingest`, `routes/events/export`
-and `lib/emailBounces`.
+*A test written for an equivalent mutant is worse than no test.* One was
+written for `subscriptions:65` and passed with the mutation applied. It was
+deleted rather than tightened: it killed nothing and duplicated an existing
+assertion. Adding a test that cannot fail, in a sweep whose purpose is finding
+tests that cannot fail, would have been perverse.
 
-Two notes on method, both learned by getting it wrong first:
+*A harness that under-selects specs manufactures survivors.* Selecting only
+direct importers reported 10 survivors in `guestAuth` where the transitive set
+reported 4. The harness runs a canary — it corrupts the module outright and
+refuses to report if the specs still pass — because a survivor list containing
+impossible mutations is a list nobody trusts.
 
-- **Equivalent mutants are not gaps.** Several survivors change no observable
-  behaviour — `>` versus `>=` on Date instants that are equal either way, a
-  redundant `existsSync` whose caller already guarantees the file exists. They
-  are recorded as such rather than chased.
-- **A harness that under-selects specs manufactures survivors.** Selecting only
-  direct importers reported 10 survivors in `guestAuth` where the transitive set
-  reported 4. The harness now runs a canary — corrupt the module outright and
-  refuse to report if the specs still pass — because a survivor list that
-  includes impossible mutations is a list nobody trusts.
+**Not swept, deliberately.** `lib/config.ts`, `lib/db.ts` and `lib/errors.ts`
+are imported by nearly everything, so each mutation re-runs all 131 spec files —
+roughly three quarters of an hour for config parsing, a pool constructor and a
+string formatter. The cost is real and the information is not; a sweep is worth
+running where a surviving mutant would mean something.
+
+**Open leads, measured but not yet chased.** Recorded with line numbers so the
+next pass starts from evidence rather than re-deriving it:
+
+- `lib/stripe:80` — the `return false` in `isSubscriptionLiveAtStripe`'s catch.
+  Flipped to `true`, a Stripe outage reports every subscription as live, and the
+  downgrade route refuses to let anyone leave a paid plan. The comment above it
+  says a stale id "must not strand the customer"; nothing checks that it does
+  not. The most interesting of the remaining leads.
+- `routes/events/qr:105` — three defaults on one line
+  (`canvasSize || null` and friends), none asserted. Same shape as the guests,
+  quests and reactions findings already fixed.
+- `shared/transliterate:33` — the slug year fallback.
+- `routes/auth` — six, all low value: two slug-naming branches whose only
+  observable difference is the shape of a generated slug, the retry-on-collision
+  guard (needs a forced unique violation), and defaulting expressions where the
+  supplied and default values coincide in every existing fixture.
+- `lib/ingestPipeline:176` — message text only.
+
+**Still genuinely uncovered, and recorded rather than closed:**
+
+- `ws/wsServer`'s heartbeat reaper. Covering it means either fake timers against
+  live sockets, which this suite does not need more of, or extracting the reap
+  decision into a predicate — a testability refactor of production code, left
+  as a decision rather than taken unilaterally.
+- `lib/storage`'s R2 branch, which is M-4: the tests exist and the CI lane is
+  wired, but it skips until the repository secrets are set.
 
 **Structural gaps:**
 - **The production storage adapter has no automated coverage at all** (M-4).
