@@ -708,7 +708,7 @@ assumed to be.
 | `shared/planCaps` | 2/2 | — |
 | `shared/transliterate` | 3/4 | 1 open |
 | `routes/events/qr` | 3/6 | 3 open, all on one line of defaults |
-| `lib/stripe` | 2/3 | 1 open, and it fails the wrong way — see below |
+| `lib/stripe` | 3/3 | the failure path fails open, and nothing checked it |
 
 **Three lessons, each learned by getting it wrong first.**
 
@@ -741,11 +741,6 @@ running where a surviving mutant would mean something.
 **Open leads, measured but not yet chased.** Recorded with line numbers so the
 next pass starts from evidence rather than re-deriving it:
 
-- `lib/stripe:80` — the `return false` in `isSubscriptionLiveAtStripe`'s catch.
-  Flipped to `true`, a Stripe outage reports every subscription as live, and the
-  downgrade route refuses to let anyone leave a paid plan. The comment above it
-  says a stale id "must not strand the customer"; nothing checks that it does
-  not. The most interesting of the remaining leads.
 - `routes/events/qr:105` — three defaults on one line
   (`canvasSize || null` and friends), none asserted. Same shape as the guests,
   quests and reactions findings already fixed.
