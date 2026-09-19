@@ -76,7 +76,7 @@ bytes arrive.
   - `apiClient.ts`: Base fetch wrapper with automatic JWT `Bearer` token injection and typed error handling (`ApiError`).
   - `eventsApi.ts`: Event settings, showcase feed, QR canvas configurations, ZIP exports.
   - `photosApi.ts`: Photo upload, likes toggling, comments, moderation status, photo removal.
-  - `questsApi.ts`: Quest creation, completion tracking.
+  - `questsApi.ts`: Quest listing, creation and deletion, and the quest leaderboard. There is no completion call: uploading a quest photo completes the quest.
   - `audioApi.ts`: Voice toast recordings and list retrieval.
   - `guestsApi.ts`: Guest profile upsert with stable `deviceFingerprint` persistence.
 - **Resilience & UX**:

@@ -35,6 +35,7 @@ Host Login / Register -> bcrypt verification -> JWT Token issued -> Authorizatio
 | `/api/photos/:id` | DELETE | ❌ | ✅ Bearer Token | ❌ |
 | `/api/events/:id/quests` | POST | ❌ | ✅ Bearer Token | 🔒 `celebration_pass`+ |
 | `/api/quests/:id` | DELETE | ❌ | ✅ Bearer Token | ❌ |
+| `/api/events/:id/leaderboard` | GET | ✅ Public | ❌ | 🔒 `celebration_pass`+; photo-backed completions only |
 | `/api/audio` | POST | ✅ Public (multipart) | ❌ | 🔒 `deluxe_keepsake`+; guest identity via `guestToken` |
 | `/api/audio` | GET | ✅ Public (scoped) | ❌ | Non-hosts see `[]` before reveal time in disposable mode |
 | `/api/subscriptions/upgrade` | POST | ❌ | ✅ Bearer Token | No payment gateway — see below |
@@ -88,7 +89,7 @@ lets a client write its own tier.
 - **API Read Limiting**: `apiLimiter` caps general `/api` traffic at 3000 requests per minute — sized per venue (feed loads, likes, comments, gallery refreshes for the whole reception), not per person.
 
 ### 5. Input Validation via Zod Schemas
-- All JSON request payloads (`CreatePhotoSchema`, `RegisterSchema`, `UpdateEventSchema`, `QRConfigSchema`, `CreateQuestSchema`, `CompleteQuestSchema`, `RegisterGuestSchema`, `UpgradeSchema`) are strictly validated against strongly-typed Zod schemas before reaching business logic or SQL queries. `POST /api/audio` is multipart (binary `audio` field), so its fields are validated manually against the actual uploaded bytes (magic-byte check) rather than through a JSON body schema.
+- All JSON request payloads (`CreatePhotoSchema`, `RegisterSchema`, `UpdateEventSchema`, `QRConfigSchema`, `CreateQuestSchema`, `RegisterGuestSchema`, `UpgradeSchema`) are strictly validated against strongly-typed Zod schemas before reaching business logic or SQL queries. `POST /api/audio` is multipart (binary `audio` field), so its fields are validated manually against the actual uploaded bytes (magic-byte check) rather than through a JSON body schema.
 
 ### 6. Parameterized SQL Queries
 - All database queries use PostgreSQL parameterized placeholders (`$1`, `$2`, `$3`) to completely prevent SQL injection attacks.

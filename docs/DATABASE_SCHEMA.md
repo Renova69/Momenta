@@ -145,6 +145,14 @@ Stores wedding/event settings and feature toggles.
   did not bounce. **The retention sweep will not delete an album whose value
   here is null or younger than 14 days** (`RETENTION_NOTICE_DAYS`), which is
   what makes notice a precondition in code rather than a line in a policy.
+- `quest_prize` (TEXT, Nullable): The host's grand prize announcement for the
+  scavenger quests (migration 027). NULL means the client shows its own
+  localized default. The 500-character cap lives in `UpdateEventSchema`
+  (`shared/eventLimits.ts`), not on the column.
+- `show_tv_leaderboard` (BOOLEAN, NOT NULL, default `false`): Whether the TV
+  wall shows the quest leaderboard in a column beside the photos (migration
+  028). Off by default; the wall is a photo album first. Public, because the
+  wall is an unauthenticated screen.
 
 ### `guests`
 Lightweight guest profile (no password required).
@@ -210,6 +218,12 @@ Main photo entity.
 Gamification challenges to get guests taking creative photos.
 - Quests table contains `title`, `description`, `icon_name`, `points`.
 - Completions table records `(quest_id, guest_id, photo_id, completed_at)`.
+  Only a photo upload writes it: a quest is completed by uploading a photo
+  for it, and the upload keeps a `questId` only from its own event (N-14).
+  The leaderboard (`server/lib/questLeaderboard.ts`) counts a completion only
+  when its photo still exists, belongs to the same guest, was uploaded for that
+  quest, and is not rejected — so rows the removed claim route once wrote with
+  any photo id, or none, do not score.
 - `is_active` (BOOLEAN, default `true`) on `scavenger_quests`: A retired quest
   stops being offered without deleting the completions already earned against it.
 
@@ -327,6 +341,8 @@ the strength of mail nobody received.
 | 024 | `024_retention_notice_and_event_deletion.sql` | `events.retention_notified_at` and the `event_deletions` log — notice before deletion (D1) and a real erasure path (D2). |
 | 025 | `025_email_bounces.sql` | `email_bounces` — a warning that bounced is not a warning, so an album whose host cannot be reached stays undeletable. |
 | 026 | `026_case_insensitive_emails.sql` | Lowercases `users.email` and adds a unique index on `lower(email)`. `users_email_key` was case-sensitive, so `Ana@…` and `ana@…` were two accounts — and a host who signed up on a phone (whose keyboard capitalises the first character) could not sign in from a laptop. |
+| 027 | `027_quest_grand_prize.sql` | `events.quest_prize` — the host names the prize for the scavenger quests; NULL shows the client's localized default. |
+| 028 | `028_tv_leaderboard.sql` | `events.show_tv_leaderboard` — the host's choice to show the quest leaderboard beside the photos on the TV wall. Off by default. |
 
 Full detail on the security/architecture-motivated migrations (009-019) is in
 `OPEN_ITEMS.md`, which is kept current as the working audit log for this kind

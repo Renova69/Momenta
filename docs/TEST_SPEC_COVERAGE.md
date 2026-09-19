@@ -162,6 +162,7 @@ was an older copy of the e2e harness that nothing invoked, and was deleted on
 | Nullable columns can be cleared via the update route | `e2e.test.ts` |
 | Guest upsert by `(event_id, device_fingerprint)` | `e2e.test.ts` |
 | Quest completions survive photo moderation | `e2e.test.ts` |
+| An upload cannot name another event's quest, or score on its leaderboard (N-14) | `questLeaderboard.spec.ts` |
 
 The public slug endpoint returns `planTier` deliberately, so the client can gate
 the interface without inventing a default. It does not return `host_email` or
@@ -212,6 +213,23 @@ the interface without inventing a default. It does not return `host_email` or
 | A guest sees their own pending photo but never another guest's | `feedComponents.spec.tsx` |
 | Feed filters and search across name, caption and quest title | `feedComponents.spec.tsx` |
 | Every seeded quest icon name renders an icon | `feedComponents.spec.tsx` |
+
+### Quests, grand prize and leaderboard
+
+| Requirement | Covered by |
+| :--- | :--- |
+| The grand prize round-trips, clears, survives unrelated edits, and caps at exactly 500 | `questGrandPrize.spec.ts` |
+| The prize and the TV switch reach guests on load and live, off as well as on | `questGrandPrize.spec.ts`, `eventNormalization.spec.ts` |
+| Only photo-backed completions score: deleted, rejected, other guest's or other quest's photos do not | `questLeaderboard.spec.ts` |
+| Ties go to whoever reached the score first | `questLeaderboard.spec.ts` |
+| An upload announces QUEST_COMPLETED, and stays silent when the write fails | `questLeaderboard.spec.ts` |
+| There is no route to claim a quest without a photo | `questLeaderboard.spec.ts`, `crossTenantSecurity.spec.ts`, `e2e.test.ts` |
+| The leaderboard is paid-plan only | `questLeaderboard.spec.ts` |
+| The board refetches soon after a change, never in a storm, and never lets an old answer win | `useQuestLeaderboard.spec.ts` |
+| Each quest card states where it stands, including rejected and not counted | `questProgress.spec.ts`, `feedComponents.spec.tsx` |
+| A guest's points and progress equal their leaderboard score | `feedComponents.spec.tsx` |
+| Top 10 on a phone, the viewer pinned when further down; everyone for the host | `questLeaderboardView.spec.tsx`, `hostDashboardShell.spec.tsx` |
+| The TV column appears only when the host switches it on, and never interrupts the slideshow | `liveProjectorScreen.spec.tsx` |
 
 ---
 
