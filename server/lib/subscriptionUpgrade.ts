@@ -2,6 +2,7 @@ import { Pool, PoolClient } from 'pg';
 import { pool } from './db';
 import { errorLabel } from './errors';
 import { BackendPlanTier } from '../middleware/tierGate';
+import { TIER_WEIGHTS } from '../../shared/planCaps';
 import { refreshExpiryDates } from './retention';
 
 // Pro Planner pools its allowance across up to 10 concurrent weddings; every
@@ -13,6 +14,18 @@ const EVENT_LIMIT_FOR_TIER: Record<BackendPlanTier, number> = {
   deluxe_keepsake: 1,
   pro_planner: 10,
 };
+
+/**
+ * The stored tier's rank, as SQL, built from the one table of weights the
+ * whole app shares. Inlining the names and numbers keeps the comparison
+ * inside the single atomic statement — reading the current tier first and
+ * comparing in TypeScript would reopen the race the ON CONFLICT closes — and
+ * building the expression from `TIER_WEIGHTS` keeps it from drifting away
+ * from the gate that enforces the same order.
+ */
+const STORED_TIER_RANK = `CASE subscriptions.tier ${Object.entries(TIER_WEIGHTS)
+  .map(([name, weight]) => `WHEN '${name}' THEN ${weight}`)
+  .join(' ')} ELSE 0 END`;
 
 export interface TierUpgradeResult {
   id: string;
@@ -43,6 +56,13 @@ export interface TierUpgradeOptions {
    */
   pastDueGraceExpiry?: Date | null;
   /**
+   * Let this write LOWER the tier. Only the self-serve route passes it, for
+   * a host choosing "downgrade to free" with no payment involved. Every
+   * payment path leaves it off, so a purchase can raise a tier and never
+   * take one away.
+   */
+  allowLowerTier?: boolean;
+  /**
    * Run against an open transaction instead of the pool. The Stripe webhook
    * passes its transaction client so the tier write, the expiry recompute and
    * the event-idempotency claim all commit or roll back as one unit.
@@ -63,6 +83,7 @@ export async function applyTierUpgrade(
   options: TierUpgradeOptions = {}
 ): Promise<TierUpgradeResult> {
   const eventLimit = EVENT_LIMIT_FOR_TIER[tier];
+  const tierRank = TIER_WEIGHTS[tier] ?? 0;
   const billingType = options.billingType || 'one_time';
   const amountPaidCents = options.amountPaidCents ?? 0;
   const db = options.db ?? pool;
@@ -76,6 +97,21 @@ export async function applyTierUpgrade(
   // the partial UNIQUE(user_id) WHERE status='active' index (migration
   // 009). ON CONFLICT targeting that same partial index is what's actually
   // atomic — its predicate has to match the index's exactly.
+  // A purchase may raise the tier and must never lower it. A Pro Planner
+  // subscriber who buys a one-time Celebration Pass arrives here with the
+  // lower tier, and overwriting would take away the plan they are still
+  // paying for: 100 GB and ten events down to 10 GB and one, with every
+  // album's retention restamped to 90 days by the recompute below. Their
+  // Stripe subscription id stays on file either way, so the eventual
+  // cancellation of the real subscription would then drop them to free —
+  // charging them for a pass and deleting it in the same breath.
+  // `billing.ts` refuses that checkout before any money moves; this is the
+  // net under it, for a payment that arrives another way (a Stripe dashboard
+  // charge, a payment link, a webhook retried out of order).
+  // Deliberate downgrades do not come through here — cancellation and
+  // terminal failure call applyTierDowngradeToFree, which writes 'free'
+  // directly.
+  //
   // Both Stripe id columns COALESCE rather than overwrite, for the same
   // reason: a write that simply doesn't carry an id must not erase one
   // already on file. The subscription id used to overwrite unconditionally,
@@ -94,8 +130,10 @@ export async function applyTierUpgrade(
      VALUES ($1, $2, 'active', $3, $4, 'EUR', $5, $6, $7, $10)
      ON CONFLICT (user_id) WHERE status = 'active'
      DO UPDATE SET
-       tier = EXCLUDED.tier,
-       event_limit = EXCLUDED.event_limit,
+       tier = CASE WHEN $12::boolean OR $11::int >= (${STORED_TIER_RANK})
+                   THEN EXCLUDED.tier ELSE subscriptions.tier END,
+       event_limit = CASE WHEN $12::boolean OR $11::int >= (${STORED_TIER_RANK})
+                          THEN EXCLUDED.event_limit ELSE subscriptions.event_limit END,
        billing_type = EXCLUDED.billing_type,
        amount_paid_cents = EXCLUDED.amount_paid_cents,
        stripe_customer_id = COALESCE(EXCLUDED.stripe_customer_id, subscriptions.stripe_customer_id),
@@ -123,6 +161,8 @@ export async function applyTierUpgrade(
       // means "write this". Only the latter touches the column.
       options.pastDueGraceExpiry !== undefined,
       options.pastDueGraceExpiry ?? null,
+      tierRank,
+      options.allowLowerTier === true,
     ]
   );
 
@@ -169,6 +209,9 @@ export async function applyTierDowngradeToFree(
     billingType: 'one_time',
     amountPaidCents: 0,
     clearStripeSubscriptionId: true,
+    // A cancellation is the one lowering that is meant: the plan is gone.
+    // Purchases never pass this.
+    allowLowerTier: true,
     // Whatever dunning window was open is moot once the plan is gone; leaving
     // it set would strand a stale deadline on a free account for the grace
     // sweep to keep finding.

@@ -8,6 +8,8 @@ import { validateBody } from '../middleware/validate';
 import { errorLabel } from '../lib/errors';
 import { getStripeClient, isStripeConfigured, isSubscriptionLiveAtStripe } from '../lib/stripe';
 import { PAID_TIER_PRICING, PaidPlanTier, isPriceMapConfigured, priceIdForTier } from '../lib/stripePlans';
+import { getEffectiveTierForUser } from '../middleware/tierGate';
+import { TIER_WEIGHTS } from '../../shared/planCaps';
 
 export const billingRouter = Router();
 
@@ -131,8 +133,14 @@ billingRouter.post(
       const stripeCustomerId: string | undefined = existing.rows[0]?.stripe_customer_id || undefined;
       const storedSubscriptionId: string | null = existing.rows[0]?.stripe_subscription_id || null;
 
+      // Asked once, used twice below: whether the subscription this account
+      // has on file is still live at Stripe.
+      const subscriptionLive = storedSubscriptionId
+        ? await isSubscriptionLiveAtStripe(storedSubscriptionId)
+        : false;
+
       if (pricing.mode === 'subscription' && storedSubscriptionId) {
-        if (await isSubscriptionLiveAtStripe(storedSubscriptionId)) {
+        if (subscriptionLive) {
           return res.status(400).json({
             error: 'You already have an active subscription. Manage it instead of starting a new one.',
             code: 'ALREADY_SUBSCRIBED',
@@ -145,6 +153,25 @@ billingRouter.post(
         console.warn(
           `[Billing] user ${userId} has stored subscription ${storedSubscriptionId} that is not live at Stripe — allowing a new checkout`
         );
+      }
+
+      // Nothing to sell: this account already holds an equal or better plan.
+      // Without this a Pro Planner subscriber could buy a one-time Celebration
+      // Pass — €49 for less than they already have — and the tier write behind
+      // it used to take the difference away.
+      //
+      // A stored tier whose subscription Stripe no longer calls live is not an
+      // entitlement, it is a row that outlived it (a missed cancellation
+      // webhook). Blocking on that would lock a returning customer out of ever
+      // paying again, which is the same trap the guard above steps around.
+      const currentTier = await getEffectiveTierForUser(userId);
+      const entitlementIsStale = !!storedSubscriptionId && !subscriptionLive;
+      if (!entitlementIsStale && (TIER_WEIGHTS[currentTier] ?? 0) >= (TIER_WEIGHTS[tier] ?? 0)) {
+        return res.status(400).json({
+          error: 'Your current plan already includes everything in this one.',
+          code: 'ALREADY_ENTITLED',
+          currentTier,
+        });
       }
 
       const session = await getStripeClient().checkout.sessions.create({

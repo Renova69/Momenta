@@ -219,13 +219,18 @@ describe('applyTierUpgrade (the DB write the webhook will call once Stripe is li
     // subscription id with NULL, leaving the eventual
     // customer.subscription.deleted with nothing to match on and the account
     // paid forever.
+    //
+    // The tier is the other half of the same sequence: this purchase is
+    // beneath what the account already holds, so it must leave the plan
+    // alone. Checkout refuses it outright now; arriving here anyway, it can
+    // only ever raise a tier.
     await applyTierUpgrade(userId, 'celebration_pass', { billingType: 'one_time', amountPaidCents: 4900 });
 
     const row = await query(
       'SELECT tier, stripe_subscription_id FROM subscriptions WHERE user_id = $1 AND status = $2',
       [userId, 'active']
     );
-    expect(row.rows[0].tier).toBe('celebration_pass');
+    expect(row.rows[0].tier).toBe('pro_planner');
     expect(row.rows[0].stripe_subscription_id).toBe('sub_still_live');
   });
 

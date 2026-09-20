@@ -143,10 +143,52 @@ describe('duplicate subscription guard', () => {
     expect((await startCheckout(token, 'pro_planner')).status).toBe(200);
   });
 
-  it('never blocks a one-time pass — it is not a second subscription', async () => {
+});
+
+describe('selling a plan the account already has', () => {
+  it('refuses a one-time pass to a subscriber who already has more', async () => {
+    // €49 for less than they already hold, and the tier write behind it used
+    // to swap Pro Planner for the pass — then cancelling Pro erased both.
     const { token, userId } = await registerHost();
     const subscriptionId = uniqueId('sub_live_onetime');
     subscriptionStatuses.set(subscriptionId, 'active');
+    await applyTierUpgrade(userId, 'pro_planner', { billingType: 'monthly', stripeSubscriptionId: subscriptionId });
+
+    const res = await startCheckout(token, 'celebration_pass');
+
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.code).toBe('ALREADY_ENTITLED');
+    expect(body.currentTier).toBe('pro_planner');
+  });
+
+  it('refuses buying the same one-time pass twice', async () => {
+    const { token, userId } = await registerHost();
+    await applyTierUpgrade(userId, 'celebration_pass', { billingType: 'one_time' });
+
+    expect((await startCheckout(token, 'celebration_pass')).status).toBe(400);
+  });
+
+  it('still sells a better plan to an existing customer', async () => {
+    const { token, userId } = await registerHost();
+    await applyTierUpgrade(userId, 'celebration_pass', { billingType: 'one_time' });
+
+    expect((await startCheckout(token, 'deluxe_keepsake')).status).toBe(200);
+  });
+
+  it('still sells anything to a free account', async () => {
+    const { token } = await registerHost();
+
+    expect((await startCheckout(token, 'celebration_pass')).status).toBe(200);
+  });
+
+  it('sells again when the stored plan outlived its cancelled subscription', async () => {
+    // The row still says pro_planner because a cancellation webhook was
+    // missed. That is not an entitlement, and refusing here would lock a
+    // returning customer out of paying at all.
+    const { token, userId } = await registerHost();
+    const subscriptionId = uniqueId('sub_gone');
+    subscriptionStatuses.set(subscriptionId, 'canceled');
     await applyTierUpgrade(userId, 'pro_planner', { billingType: 'monthly', stripeSubscriptionId: subscriptionId });
 
     expect((await startCheckout(token, 'celebration_pass')).status).toBe(200);

@@ -408,6 +408,8 @@ export const en: Record<string, string> = {
     'Your subscription is still active with our payment provider. Cancel it in the billing portal so you stop being charged.',
   'error.no_stripe_customer': 'No billing account exists for this profile yet.',
   'error.confirmation_mismatch': 'Type the album address exactly as written to confirm deletion.',
+  'error.storage_delete_failed': 'The photo could not be removed from storage. Nothing was deleted — please try again.',
+  'error.already_entitled': 'Your current plan already includes everything in this one.',
   'error.stripe_not_configured': 'Payments are not configured yet.',
   'storage.title': 'Storage used',
   'storage.pooled': 'shared across account',

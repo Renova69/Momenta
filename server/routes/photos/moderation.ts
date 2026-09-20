@@ -85,23 +85,44 @@ photosRouter.delete('/:id', requireAuth, requireUuidParams('id'), async (req, re
     if (photoQuery.rows[0].host_user_id !== req.user!.userId) return res.status(403).json({ error: 'Forbidden' });
 
     const { event_id, storage_path, original_storage_path, thumbnail_url } = photoQuery.rows[0];
-    await pool.query('DELETE FROM photos WHERE id = $1', [id]);
 
+    // Files first, then the row — the same order album deletion follows, and
+    // for the same reason. The row is the only record of where the bytes are:
+    // delete it first and anything that stops the file deletes (a deploy
+    // restarting the process mid-request, a storage error) strands them with
+    // nothing left to name them. Neither orphan sweep can recover those,
+    // because both match whole abandoned albums and skip every key under a
+    // live event. Meanwhile the row's removal has already told the trigger to
+    // credit the bytes back, so the quota reports space that is still in use.
+    //
     // All three derivatives, not just the display copy. Deleting only
-    // storage_path left the original - by far the largest file - and the
-    // thumbnail in storage forever, while the row's removal decremented the
-    // event's storage_bytes by the full amount. The quota said the space was
-    // freed; the bytes were still there, and nothing referenced them any more.
+    // storage_path left the original — by far the largest file — and the
+    // thumbnail in storage forever.
+    const failedPaths: string[] = [];
     for (const path of [
       storage_path,
       original_storage_path,
       toStoragePath(thumbnail_url),
     ]) {
       if (!path) continue;
-      await storageAdapter
-        .delete(path)
-        .catch((e: unknown) => console.warn('[Photos] Storage delete failed:', errorLabel(e)));
+      await storageAdapter.delete(path).catch((e: unknown) => {
+        failedPaths.push(path);
+        console.warn('[Photos] Storage delete failed:', errorLabel(e));
+      });
     }
+
+    // A file that would not delete keeps its row, so the bytes stay accounted
+    // for and the next attempt can still find them. Reported as a failure
+    // rather than a half-done success: the photo is still there.
+    if (failedPaths.length > 0) {
+      console.error(`[Photos] delete for ${id} left ${failedPaths.length} object(s) in storage`);
+      return res.status(502).json({
+        error: 'The photo could not be removed from storage. Nothing was deleted — please try again.',
+        code: 'STORAGE_DELETE_FAILED',
+      });
+    }
+
+    await pool.query('DELETE FROM photos WHERE id = $1', [id]);
 
     wsManager.broadcastToEvent(event_id, 'PHOTO_REMOVED', { photoId: id });
     res.json({ success: true, photoId: id });

@@ -214,6 +214,19 @@ describe('Storage Adapter & Path Containment Spec', () => {
       expect(sendSpy.mock.calls[1][0].input.Key).toBe('events/e1/photo.jpg');
     });
 
+    it('R2: raises when a delete fails, instead of reporting success', async () => {
+      // Swallowing it made the whole leaked-object apparatus dead code on the
+      // adapter production runs: the retention purge's failedPaths and the
+      // sweep's leakedPaths were always empty, so a bucket that refused a
+      // delete looked like a clean purge while the bytes stayed — and the
+      // rows naming them were deleted in the same breath.
+      const r2 = new R2StorageAdapter();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (r2 as any).s3 = { send: vi.fn().mockRejectedValue(new Error('R2 said no')) };
+
+      await expect(r2.delete('https://pub-test.r2.dev/events/e1/photo.jpg')).rejects.toThrow('R2 said no');
+    });
+
     it('R2: promotion copies quarantine -> public key, then deletes the quarantine key', async () => {
       const r2 = new R2StorageAdapter();
       const sendSpy = vi.fn().mockResolvedValue({});

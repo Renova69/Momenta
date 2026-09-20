@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { apiFetch, ApiError } from '../../src/api/apiClient';
+import { apiFetch, ApiError, SESSION_EXPIRED_EVENT } from '../../src/api/apiClient';
 import { photosApi } from '../../src/api/photosApi';
 import { eventsApi } from '../../src/api/eventsApi';
 import { guestsApi } from '../../src/api/guestsApi';
@@ -56,6 +56,60 @@ describe('API Client Layer Spec', () => {
     } as unknown as Response);
 
     await expect(apiFetch('/api/test')).rejects.toThrow('HTTP Error 500');
+  });
+
+  describe('a 401 and whose session it ends', () => {
+    /** Fail every request with this status and error code. */
+    function refuseWith(status: number, code?: string) {
+      global.fetch = vi.fn().mockResolvedValue({
+        ok: false,
+        status,
+        json: async () => ({ error: 'nope', ...(code ? { code } : {}) }),
+      } as Response);
+    }
+
+    async function expiryEventsDuring(run: () => Promise<unknown>): Promise<number> {
+      let seen = 0;
+      const listener = () => { seen += 1; };
+      window.addEventListener(SESSION_EXPIRED_EVENT, listener);
+      try {
+        await run().catch(() => undefined);
+      } finally {
+        window.removeEventListener(SESSION_EXPIRED_EVENT, listener);
+      }
+      return seen;
+    }
+
+    beforeEach(() => {
+      localStorage.setItem('wedmoments_host_token', 'host-token');
+    });
+
+    it('leaves the host session alone when it is the guest identity that was refused', async () => {
+      // A host browsing their own album is both parties at once: the host
+      // token rides on every request while a like is the guest. This used to
+      // sign them out of the host studio, and out of every other device.
+      refuseWith(401, 'GUEST_TOKEN_REQUIRED');
+
+      expect(await expiryEventsDuring(() => apiFetch('/api/photos/p1/like', { method: 'POST' }))).toBe(0);
+    });
+
+    it('also ignores a refused guest identity', async () => {
+      refuseWith(401, 'GUEST_IDENTITY_REQUIRED');
+
+      expect(await expiryEventsDuring(() => apiFetch('/api/photos/p1/comments', { method: 'POST' }))).toBe(0);
+    });
+
+    it('ends the host session when the host token itself is refused', async () => {
+      refuseWith(401, 'SESSION_REVOKED');
+
+      expect(await expiryEventsDuring(() => apiFetch('/api/auth/me'))).toBe(1);
+    });
+
+    it('ends it for a 401 that names no reason, rather than assuming the best', async () => {
+      refuseWith(401);
+
+      expect(await expiryEventsDuring(() => apiFetch('/api/auth/me'))).toBe(1);
+    });
   });
 
   it('handles FormData uploads without Content-Type header override', async () => {

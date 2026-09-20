@@ -79,7 +79,10 @@ subscriptionsRouter.post('/upgrade', requireAuth, validateBody(UpgradeSchema), a
       }
     }
 
-    const result = await applyTierUpgrade(userId, tier);
+    // The only caller allowed to lower a tier: this is the host choosing a
+    // downgrade themselves, with no payment behind it. Purchases must never
+    // lower one, so they leave this off.
+    const result = await applyTierUpgrade(userId, tier, { allowLowerTier: true });
     res.json(result);
   } catch (err) {
     console.error('[Subscriptions] upgrade error:', errorLabel(err));

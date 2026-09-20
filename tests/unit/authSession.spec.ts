@@ -87,6 +87,21 @@ describe('session revocation on logout', () => {
 
     expect(authService.isAuthenticated()).toBe(false);
   });
+
+  it('forgets the session locally without asking the server to revoke it', async () => {
+    // The server has just refused this token, so there is nothing to revoke.
+    // Revoking anyway bumps token_version, which signs the host out on every
+    // other device too — a momentary refusal, such as a database blip making
+    // the check fail closed, would become a forced re-login everywhere.
+    const spy = await signIn();
+    spy.mockClear();
+
+    window.dispatchEvent(new CustomEvent(SESSION_EXPIRED_EVENT));
+
+    expect(authService.isAuthenticated()).toBe(false);
+    const revokeCalls = spy.mock.calls.filter(([url]) => String(url).includes('/api/auth/logout'));
+    expect(revokeCalls).toHaveLength(0);
+  });
 });
 
 describe('login failure handling', () => {

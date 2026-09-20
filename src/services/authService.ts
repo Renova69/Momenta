@@ -52,7 +52,12 @@ class AuthService {
   constructor() {
     if (typeof window !== 'undefined') {
       // The API client raises this when the server rejects our token.
-      window.addEventListener(SESSION_EXPIRED_EVENT, () => this.logout());
+      // Clear locally only. The server has just refused this token, so there
+      // is nothing left to revoke, and asking it to revoke would turn a
+      // momentary refusal — a database blip makes `isSessionTokenCurrent`
+      // fail closed — into a forced re-login on every one of the host's
+      // devices.
+      window.addEventListener(SESSION_EXPIRED_EVENT, () => this.clearLocalSession());
 
       try {
         const savedUser = localStorage.getItem(AUTH_USER_KEY);
@@ -194,6 +199,17 @@ class AuthService {
    * stays valid server-side, which is why it is sent before anything is
    * cleared, giving it the best chance of arriving.
    */
+  /** Forget this browser's session without telling the server. */
+  private clearLocalSession() {
+    this.currentUser = null;
+    this.token = null;
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem(AUTH_USER_KEY);
+      localStorage.removeItem(AUTH_TOKEN_KEY);
+    }
+    this.notify();
+  }
+
   public logout() {
     const token = this.token;
     if (token && typeof fetch !== 'undefined') {

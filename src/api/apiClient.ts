@@ -45,6 +45,8 @@ export const ERROR_CODE_KEYS: Record<string, string> = {
   MANAGE_SUBSCRIPTION_IN_PORTAL: 'error.manage_subscription_in_portal',
   NO_STRIPE_CUSTOMER: 'error.no_stripe_customer',
   CONFIRMATION_MISMATCH: 'error.confirmation_mismatch',
+  STORAGE_DELETE_FAILED: 'error.storage_delete_failed',
+  ALREADY_ENTITLED: 'error.already_entitled',
   // Translating this does not disturb `isStripeNotConfigured`, which reads
   // `ApiError.code` and never the message: the pre-Stripe upgrade route still
   // takes over silently.
@@ -53,6 +55,20 @@ export const ERROR_CODE_KEYS: Record<string, string> = {
 
 /** Broadcast so the auth layer can clear the session without a circular import. */
 export const SESSION_EXPIRED_EVENT = 'wedmoments:session-expired';
+
+/**
+ * 401s that are about the guest identity in this browser, not the host's
+ * session.
+ *
+ * A host browsing their own album is both at once: the host token rides on
+ * every request, while likes, comments and uploads are the guest. Treating
+ * any 401 as the host's session ending signed them out of the host studio —
+ * and out of every other device, since the logout revokes the token
+ * server-side — because they tapped a heart with a stale guest token. "Reset
+ * guest sessions" invalidates that guest token deliberately, so the host's
+ * own next tap did it.
+ */
+const GUEST_SCOPE_ERROR_CODES = new Set(['GUEST_TOKEN_REQUIRED', 'GUEST_IDENTITY_REQUIRED']);
 
 function notifySessionExpired(): void {
   if (typeof window === 'undefined') return;
@@ -99,9 +115,10 @@ export async function apiFetch<T>(endpoint: string, options: RequestInit = {}): 
       // ignore JSON parse error
     }
 
-    // A rejected token means the session is over — a JWT expires after 7 days,
-    // and without this the host studio stays rendered while every action fails.
-    if (res.status === 401 && token) {
+    // A rejected HOST token means the session is over — a JWT expires after 7
+    // days, and without this the host studio stays rendered while every action
+    // fails. A refused guest identity says nothing about it.
+    if (res.status === 401 && token && !(code && GUEST_SCOPE_ERROR_CODES.has(code))) {
       notifySessionExpired();
     }
 

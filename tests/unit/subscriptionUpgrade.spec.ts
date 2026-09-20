@@ -23,6 +23,7 @@ import { authRouter } from '../../server/routes/auth';
 import { eventsRouter } from '../../server/routes/events';
 import { subscriptionsRouter } from '../../server/routes/subscriptions';
 import { query } from '../../server/lib/db';
+import { applyTierUpgrade } from '../../server/lib/subscriptionUpgrade';
 import { computeExpiry } from '../../server/lib/retention';
 
 /**
@@ -180,5 +181,65 @@ describe('POST /api/subscriptions/upgrade', () => {
       body: JSON.stringify({ hostName: 'Pro Planner Host', title: 'Second Wedding' }),
     });
     expect(secondEvent.status).toBe(201);
+  });
+
+  /**
+   * A payment may raise a plan and must never lower one.
+   *
+   * A Pro Planner subscriber who buys a one-time Celebration Pass reaches
+   * applyTierUpgrade with the lower tier. Overwriting took away the plan they
+   * were still paying for — 100 GB and ten events down to 10 GB and one — and
+   * cancelling Pro Planner later then dropped them to free, erasing the pass
+   * they had just bought. The checkout route refuses that purchase now; this is
+   * the net under it, for a payment that arrives another way.
+   */
+  describe('a purchase can raise a tier, never lower one', () => {
+    async function tierOf(userId: string) {
+      const { rows } = await query<{ tier: string; event_limit: number }>(
+        "SELECT tier, event_limit FROM subscriptions WHERE user_id = $1 AND status = 'active'",
+        [userId]
+      );
+      return rows[0];
+    }
+
+    it('keeps the higher tier, and its event limit, when a lesser pass is paid for', async () => {
+      const { userId } = await registerHost();
+      await applyTierUpgrade(userId, 'pro_planner', { billingType: 'monthly', stripeSubscriptionId: 'sub_keep_higher' });
+
+      await applyTierUpgrade(userId, 'celebration_pass', { billingType: 'one_time', amountPaidCents: 4900 });
+
+      const row = await tierOf(userId);
+      expect(row.tier).toBe('pro_planner');
+      expect(row.event_limit).toBe(10);
+    });
+
+    it('still raises the tier when the purchase is an upgrade', async () => {
+      const { userId } = await registerHost();
+      await applyTierUpgrade(userId, 'celebration_pass', { billingType: 'one_time' });
+
+      await applyTierUpgrade(userId, 'deluxe_keepsake', { billingType: 'one_time' });
+
+      expect((await tierOf(userId)).tier).toBe('deluxe_keepsake');
+    });
+
+    it('repeats of the same tier are harmless', async () => {
+      const { userId } = await registerHost();
+      await applyTierUpgrade(userId, 'celebration_pass', { billingType: 'one_time' });
+
+      await applyTierUpgrade(userId, 'celebration_pass', { billingType: 'one_time' });
+
+      expect((await tierOf(userId)).tier).toBe('celebration_pass');
+    });
+
+    it('lets the host downgrade themselves, which is not a purchase', async () => {
+      const { userId } = await registerHost();
+      await applyTierUpgrade(userId, 'deluxe_keepsake', { billingType: 'one_time' });
+
+      await applyTierUpgrade(userId, 'free', { allowLowerTier: true });
+
+      const row = await tierOf(userId);
+      expect(row.tier).toBe('free');
+      expect(row.event_limit).toBe(1);
+    });
   });
 });

@@ -263,7 +263,16 @@ export class R2StorageAdapter implements StorageAdapter {
       );
       console.log(`[R2Storage] Deleted file from R2 -> ${key}`);
     } catch (err) {
+      // Raised, not swallowed. Every caller that cares — the retention purge,
+      // the album erase, the single-photo delete — decides what to do with a
+      // failure and reports the paths it could not remove, which is the whole
+      // leaked-object apparatus built after 164 MB went unnoticed. Returning
+      // quietly here made all of it dead code on the only adapter production
+      // runs: `failedPaths` was always empty, the sweep always reported a
+      // clean purge, and the bytes stayed. The local adapter propagates, which
+      // is why the specs never saw it.
       console.error('[R2Storage Error] Failed to delete file from R2:', err);
+      throw err;
     }
   }
 
