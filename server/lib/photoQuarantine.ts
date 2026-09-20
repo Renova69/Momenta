@@ -166,6 +166,15 @@ export async function promoteEligiblePhotos(eventId: string, disposableLocked: b
         console.warn(`[Quarantine] Could not promote photo ${row.id}:`, errorLabel(err));
       });
     });
+    // The lock has expired (or the host switched disposable mode off), so
+    // the rows should stop saying otherwise. Left set, `is_locked` keeps
+    // refusing likes and comments in engagement.ts long after the photos
+    // themselves are public.
+    if (!disposableLocked) {
+      await client
+        .query('UPDATE photos SET is_locked = false WHERE event_id = $1 AND is_locked', [eventId])
+        .catch((err) => console.warn(`[Quarantine] Could not clear the lock flag for ${eventId}:`, errorLabel(err)));
+    }
   } finally {
     if (held) {
       await client

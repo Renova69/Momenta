@@ -101,12 +101,32 @@ const PhotoCardComponent: React.FC<PhotoCardProps> = ({
 
   return (
     <div
-      onClick={() => onOpenLightbox(photo)}
-      className="group relative bg-noir-800/90 rounded-2xl sm:rounded-3xl border border-cream-400/10 hover:border-gold-400/40 shadow-polaroid hover:shadow-glow transition-all duration-300 overflow-hidden flex flex-col cursor-pointer"
+      onClick={() => {
+        // A locked photo is not openable: before the reveal there is nothing
+        // to show. The overlay used to sit on top of a real <img>, and the
+        // card still opened the lightbox, so one tap defeated the whole
+        // feature.
+        if (!photo.isLocked) onOpenLightbox(photo);
+      }}
+      className={`group relative bg-noir-800/90 rounded-2xl sm:rounded-3xl border border-cream-400/10 hover:border-gold-400/40 shadow-polaroid hover:shadow-glow transition-all duration-300 overflow-hidden flex flex-col ${
+        photo.isLocked ? 'cursor-default' : 'cursor-pointer'
+      }`}
     >
       {/* Photo Image Container (Polaroid framing) */}
       <div className="relative aspect-[4/5] w-full bg-noir-950 overflow-hidden">
-        {previewUrl ? (
+        {photo.isLocked ? (
+          // Nothing to draw: the server withholds the image until the reveal,
+          // so there is no URL here to blur, hide behind an overlay, or read
+          // out of the network tab.
+          <div
+            data-testid="photo-locked"
+            className="w-full h-full flex flex-col items-center justify-center gap-2 bg-noir-900 p-4 text-center"
+          >
+            <Lock className="w-8 h-8 text-gold-400 mb-1 animate-pulse" />
+            <span className="font-serif text-sm font-bold text-cream-100">{i18n.t('feed.disposable_title')}</span>
+            <span className="text-[10px] text-cream-400/80 max-w-[200px]">{i18n.t('feed.disposable_locked')}</span>
+          </div>
+        ) : previewUrl ? (
           <img
             src={previewUrl}
             alt={photo.caption || 'Wedding moment'}
@@ -127,19 +147,6 @@ const PhotoCardComponent: React.FC<PhotoCardProps> = ({
           >
             <Camera className="w-7 h-7 text-gold-400/50" />
             <span className="text-[10px] font-semibold tracking-wide">{i18n.t('feed.preview_uploading')}</span>
-          </div>
-        )}
-
-        {/* Disposable Camera Locked Overlay */}
-        {photo.isLocked && (
-          <div className="absolute inset-0 bg-noir-900/80 backdrop-blur-md flex flex-col items-center justify-center p-4 text-center">
-            <Lock className="w-8 h-8 text-gold-400 mb-2 animate-pulse" />
-            <span className="font-serif text-sm font-bold text-cream-100">
-              {i18n.t('feed.disposable_title')}
-            </span>
-            <span className="text-[10px] text-cream-400/80 mt-1 max-w-[200px]">
-              {i18n.t('feed.disposable_locked')}
-            </span>
           </div>
         )}
 

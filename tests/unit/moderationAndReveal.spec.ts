@@ -537,6 +537,76 @@ describe('Moderation and disposable-camera reveal', () => {
       const photo = revealed.find((p: { caption: string }) => p.caption === 'the morning after');
       expect(photo.fullUrl).toBeTruthy();
       expect(photo.thumbnailUrl).toBeTruthy();
+
+      // And it no longer says it is locked. The flag records the upload, not
+      // the present: reporting the raw column left every photo in a
+      // disposable album flagged for ever, and the card draws a "locked
+      // until the reveal" placeholder from it — so the reveal never arrived
+      // on screen, however long anyone waited.
+      expect(photo.isLocked).toBe(false);
+    });
+
+    it('lets guests like a photo once it has been revealed', async () => {
+      // The lock column also gates likes and comments. Left set after the
+      // reveal, the photo was visible but could not be reacted to.
+      const host = await registerHost();
+      createdEvents.push(host.eventId);
+      await enableDisposable(host, new Date(Date.now() + 6 * 60 * 60 * 1000));
+
+      const uploaded = await uploadPhoto(host.eventId, 'likeable in the morning');
+      await query("UPDATE events SET reveal_at = NOW() - INTERVAL '1 minute' WHERE id = $1", [host.eventId]);
+      // The feed load is what promotes and unlocks; a guest opening the album
+      // is exactly what happens in the morning.
+      await listPhotos(host.eventId);
+
+      const likeRes = await fetch(`${BASE_URL}/api/photos/${uploaded.body.id}/like`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ guestId: uploaded.body.guestId, guestToken: uploaded.body.guestToken }),
+      });
+
+      expect(likeRes.status).toBe(200);
+    });
+
+    it('unlocks the photos when the host turns disposable mode off early', async () => {
+      // The reveal time has not passed, but the album is no longer a
+      // disposable one: the feed shows the photos, and likes and comments
+      // must follow. They did not — the lock column was still set, and only
+      // the reveal deadline could clear it, so the photos were visible but
+      // inert until a time the host had just cancelled.
+      const host = await registerHost();
+      createdEvents.push(host.eventId);
+      await enableDisposable(host, new Date(Date.now() + 6 * 60 * 60 * 1000));
+      const uploaded = await uploadPhoto(host.eventId, 'unlocked early');
+
+      const off = await fetch(`${BASE_URL}/api/events/${host.eventId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${host.token}` },
+        body: JSON.stringify({ isDisposableMode: false }),
+      });
+      expect(off.status).toBe(200);
+
+      const visible = await listPhotos(host.eventId);
+      expect(visible.map((p: { caption: string }) => p.caption)).toContain('unlocked early');
+
+      const likeRes = await fetch(`${BASE_URL}/api/photos/${uploaded.body.id}/like`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ guestId: uploaded.body.guestId, guestToken: uploaded.body.guestToken }),
+      });
+      expect(likeRes.status).toBe(200);
+    });
+
+    it('still reports a photo as locked to the host before the reveal', async () => {
+      const host = await registerHost();
+      createdEvents.push(host.eventId);
+      await enableDisposable(host, new Date(Date.now() + 6 * 60 * 60 * 1000));
+
+      await uploadPhoto(host.eventId, 'sealed for now');
+
+      const hostList = await listPhotos(host.eventId, host.token);
+      const photo = hostList.find((p: { caption: string }) => p.caption === 'sealed for now');
+      expect(photo.isLocked).toBe(true);
     });
 
     it('hides voice messages from guests before the reveal but not from the host (SEC-07)', async () => {

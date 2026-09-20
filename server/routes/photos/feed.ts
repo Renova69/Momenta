@@ -79,7 +79,13 @@ photosRouter.get('/', optionalAuth, validateQuery(ListPhotosQuerySchema), async 
         p.original_url as "originalUrl",
         p.caption,
         p.status,
-        p.is_locked as "isLocked",
+        -- Locked *now*, not "was uploaded under a lock". The column records
+        -- the upload; whether it is still withheld depends on the event's
+        -- reveal time, which has usually passed by the time anyone reads
+        -- this. Reporting the raw column left every photo in a disposable
+        -- album flagged as locked for ever, so the reveal — the whole point
+        -- of the feature — never arrived on screen.
+        (p.is_locked AND ${disposableLocked}) as "isLocked",
         p.filter_applied as "filterApplied",
         p.likes_count as "likesCount",
         p.comments_count as "commentsCount",

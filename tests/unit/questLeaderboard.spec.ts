@@ -229,6 +229,49 @@ describe('quest leaderboard', () => {
     expect(await board(host.eventId)).toEqual([]);
   });
 
+  it('keeps a quest already earned when a retake is rejected', async () => {
+    // The completion row points at whichever photo arrived last, so a guest
+    // who retook a shot and had the retake rejected used to score zero for a
+    // quest their first, approved photo still satisfies — while their own
+    // card still read "Completed".
+    const host = await newHost();
+    const quest = await addQuest(host, 'First dance', 20);
+    const guest = guestDevice('Retaker');
+    const first = await upload(host.eventId, guest, quest);
+    const retake = await upload(host.eventId, guest, quest);
+
+    const res = await fetch(`${BASE_URL}/api/photos/${retake.id}/status`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${host.token}` },
+      body: JSON.stringify({ status: 'rejected' }),
+    });
+    expect(res.status).toBe(200);
+
+    expect(await board(host.eventId)).toEqual([
+      expect.objectContaining({ name: 'Retaker', points: 20, questsCompleted: 1 }),
+    ]);
+    // Still one completion, scored by the photo that survived.
+    expect(first.id).not.toBe(retake.id);
+  });
+
+  it('drops the quest once every photo for it is rejected', async () => {
+    const host = await newHost();
+    const quest = await addQuest(host, 'First dance', 20);
+    const guest = guestDevice('Unlucky');
+    const first = await upload(host.eventId, guest, quest);
+    const retake = await upload(host.eventId, guest, quest);
+
+    for (const id of [first.id, retake.id]) {
+      await fetch(`${BASE_URL}/api/photos/${id}/status`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${host.token}` },
+        body: JSON.stringify({ status: 'rejected' }),
+      });
+    }
+
+    expect(await board(host.eventId)).toEqual([]);
+  });
+
   it('takes the points away with a photo the host deletes', async () => {
     const host = await newHost();
     const quest = await addQuest(host, 'Toast', 10);

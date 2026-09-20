@@ -365,6 +365,60 @@ describe('ScavengerHunt', () => {
   });
 });
 
+describe('a photo still locked before the disposable reveal', () => {
+  function renderLocked(onOpenLightbox = vi.fn()) {
+    const locked = photo({ isLocked: true, caption: 'sealed', fullUrl: '', thumbnailUrl: '' });
+    render(
+      <PhotoCard
+        photo={locked}
+        currentGuest={ME}
+        onLike={vi.fn()}
+        onReact={vi.fn()}
+        onOpenComments={vi.fn()}
+        onOpenLightbox={onOpenLightbox}
+      />
+    );
+    return onOpenLightbox;
+  }
+
+  it('shows the locked placeholder and no image at all', () => {
+    // The overlay used to be drawn on top of a real <img> carrying the photo,
+    // so the bytes were in the page and one tap opened them full-screen.
+    renderLocked();
+
+    expect(screen.getByTestId('photo-locked')).toBeInTheDocument();
+    expect(screen.getByText(i18n.t('feed.disposable_title'))).toBeInTheDocument();
+    expect(document.querySelector('img')).toBeNull();
+  });
+
+  it('cannot be opened', () => {
+    const onOpenLightbox = renderLocked();
+
+    fireEvent.click(screen.getByTestId('photo-locked'));
+
+    expect(onOpenLightbox).not.toHaveBeenCalled();
+  });
+
+  it('opens normally once it is no longer locked', () => {
+    const onOpenLightbox = vi.fn();
+    const revealed = photo({ isLocked: false, caption: 'revealed' });
+    render(
+      <PhotoCard
+        photo={revealed}
+        currentGuest={ME}
+        onLike={vi.fn()}
+        onReact={vi.fn()}
+        onOpenComments={vi.fn()}
+        onOpenLightbox={onOpenLightbox}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('img'));
+
+    expect(onOpenLightbox).toHaveBeenCalled();
+  });
+});
+
 describe('PhotoCard emoji reactions', () => {
   function renderCard(overrides: Partial<Photo> = {}, onReact = vi.fn()) {
     const p = photo(overrides);

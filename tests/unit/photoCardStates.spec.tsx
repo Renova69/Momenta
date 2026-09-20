@@ -12,11 +12,11 @@ import { i18n } from '../../src/i18n';
  * `feedComponents.spec.tsx` the reaction call. What was left uncovered is most
  * of what the card actually draws — and one of those states is a privacy
  * control rather than decoration: a disposable-mode album is locked until the
- * couple's reveal moment, and this overlay is what stands between a guest and
- * a photo they are not meant to see yet. The server strips the URLs from the
- * broadcast as well, so this is the second of two independent guards, which is
- * exactly the kind that rots unnoticed because removing it breaks nothing
- * visible in the common case.
+ * couple's reveal moment. The server is what enforces that (it withholds the
+ * image entirely, and strips the URLs from the broadcast); the card's job is
+ * to say so rather than to hide anything, since there is nothing here to
+ * hide. It drew an opaque overlay over the real photo once, which looked the
+ * same and protected nothing.
  */
 
 const EVENT_ID = 'ab12cd34-5678-49ab-8cde-f01234567890';
@@ -72,12 +72,15 @@ afterEach(() => {
 });
 
 describe('a photo locked until the reveal', () => {
-  it('covers it, rather than showing the picture early', () => {
+  it('draws a placeholder instead of the picture, which is not in the page at all', () => {
+    // This used to be an opaque overlay on top of a real <img>: the bytes
+    // were in the page, one tap opened them full-screen, and the network tab
+    // had the URL. The server now withholds the image until the reveal, so
+    // there is nothing here to cover.
     const { container } = renderCard({ isLocked: true });
 
     expect(screen.getByText(i18n.t('feed.disposable_title'))).toBeInTheDocument();
-    // The overlay is opaque and sits over the whole tile.
-    expect(container.querySelector('.absolute.inset-0')).toBeTruthy();
+    expect(container.querySelector('img')).toBeNull();
   });
 
   it('shows the photo once it is not locked', () => {

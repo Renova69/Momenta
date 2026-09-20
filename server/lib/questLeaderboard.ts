@@ -4,12 +4,12 @@ import { pool } from './db';
  * The scavenger-hunt leaderboard.
  *
  * The host hands a real prize to whoever tops this, so it counts only what a
- * guest has shown, not what they have claimed. A completion scores when its
- * photo:
+ * guest has shown, not what they have claimed. A completion scores while the
+ * guest still has at least one photo for that quest which:
  *
- *   - still exists — a host who deletes a photo takes its points with it
- *     (the foreign key sets `photo_id` to NULL, which the join drops);
- *   - belongs to the same guest, and
+ *   - exists — a host who deletes every photo for a quest takes its points
+ *     with them;
+ *   - belongs to that guest, and
  *   - was uploaded for that quest. Completions are only written by the upload
  *     now, which satisfies both by construction, but rows written by the
  *     claim endpoint that used to exist could name any photo id — somebody
@@ -17,6 +17,12 @@ import { pool } from './db';
  *   - is not rejected by moderation. A pending photo does score: the host has
  *     not decided yet, and a guest should not drop off the board while they
  *     wait.
+ *
+ * "At least one", rather than the photo the completion row happens to point
+ * at, because a retake repoints it (upload.ts, ON CONFLICT DO UPDATE). A
+ * guest whose second attempt was rejected would otherwise lose a quest their
+ * first, approved photo still satisfies — scoring zero while their own card
+ * still read "Completed".
  *
  * Completions recorded with no photo at all — left behind by that endpoint, or
  * by a photo since deleted — never score.
@@ -61,12 +67,15 @@ export async function getQuestLeaderboard(eventId: string): Promise<LeaderboardE
        FROM guest_quest_completions gqc
        JOIN scavenger_quests sq ON sq.id = gqc.quest_id
        JOIN guests g            ON g.id = gqc.guest_id AND g.event_id = sq.event_id
-       JOIN photos p            ON p.id = gqc.photo_id
-                               AND p.event_id = sq.event_id
-                               AND p.guest_id = g.id
-                               AND p.quest_id = sq.id
       WHERE sq.event_id = $1
-        AND p.status <> 'rejected'
+        AND EXISTS (
+              SELECT 1
+                FROM photos p
+               WHERE p.event_id = sq.event_id
+                 AND p.guest_id = g.id
+                 AND p.quest_id = sq.id
+                 AND p.status <> 'rejected'
+            )
       GROUP BY g.id
       ORDER BY rank
       LIMIT $2`,
