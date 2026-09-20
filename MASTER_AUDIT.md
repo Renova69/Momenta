@@ -908,8 +908,8 @@ not coming. `ws/wsServer` is 20/22; the two survivors are both the
 | # | Action | Why it matters |
 |---|---|---|
 | 1 | Add the R2 repository secrets | Without them the `live-storage` job skips nightly and M-4 is closed only on paper. |
-| 2 | Regenerate the exposed R2 keys | `.env` still carries the warning that the stored keys were exposed and must be replaced in the Cloudflare dashboard (OPEN_ITEMS M14). Not verifiable from the repository. |
-| 3 | Configure SMTP, then notices, then `RETENTION_ENFORCED=true` — in that order | U-1 and U-4. Nothing deletes until the third step; `npm run retention:rehearse` passes 24/24 against a local sink. |
+| 2 | Regenerate the exposed R2 keys | `.env` still carries the warning that the stored keys were exposed and must be replaced in the Cloudflare dashboard (OPEN_ITEMS M14). Not verifiable from the repository. **Deferred by the owner on 2026-09-19** while this is a development environment. It becomes a go-live prerequisite: the exposed keys reach the same account as production storage. |
+| 3 | Configure SMTP, then notices, then `RETENTION_ENFORCED=true` — in that order | U-1 and U-4. Nothing deletes until the third step; `npm run retention:rehearse` passes 24/24 against a local sink. **Deferred by the owner on 2026-09-19**: no mail provider has been chosen yet. Retention stays off, which is the safe resting state. |
 
 Done 2026-09-19: the R2 lifecycle policy, H-4's last net, confirmed on the
 bucket with an Admin Read & Write token.
