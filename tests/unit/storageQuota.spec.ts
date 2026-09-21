@@ -6,7 +6,12 @@ import { authRouter } from '../../server/routes/auth';
 import { eventsRouter } from '../../server/routes/events';
 import { photosRouter } from '../../server/routes/photos';
 import { query } from '../../server/lib/db';
-import { getStorageUsage, checkPhotoUploadTierLimit } from '../../server/middleware/tierGate';
+import {
+  getStorageUsage,
+  checkPhotoUploadTierLimit,
+  getUploadContext,
+  checkUploadAllowance,
+} from '../../server/middleware/tierGate';
 import { computeExpiry } from '../../server/lib/retention';
 import { limitsFor, formatBytes, PLAN_LIMITS } from '../../server/lib/planLimits';
 import { deleteEventFixture } from '../helpers/cleanup';
@@ -105,6 +110,68 @@ describe('Storage accounting, quotas and retention', () => {
     expect(res.status).toBe(200);
 
     expect((await getStorageUsage(eventId))!.usedBytes).toBe(0);
+  });
+
+  it('stops counting a photo the host rejected against the plan', async () => {
+    // A rejected photo is one the couple refused. Counting it against the
+    // free tier's fifty charges them for a picture nobody can see and they
+    // did not want — and the album fills up on refusals.
+    const upload = await fetch(`${BASE_URL}/api/photos`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        eventId,
+        guestName: 'Rejected Guest',
+        deviceFingerprint: `quota-reject-${Date.now()}`,
+        fullUrl: photoDataUrl,
+      }),
+    });
+    expect(upload.status).toBe(201);
+    const photoId = (await upload.json()).id;
+    const before = (await getStorageUsage(eventId))!.photoCount;
+    expect(before).toBeGreaterThan(0);
+
+    const res = await fetch(`${BASE_URL}/api/photos/${photoId}/status`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${hostToken}` },
+      body: JSON.stringify({ status: 'rejected' }),
+    });
+    expect(res.status).toBe(200);
+
+    expect((await getStorageUsage(eventId))!.photoCount).toBe(before - 1);
+  });
+
+  it('does not let refused photos fill the free tier', async () => {
+    // The same rule on the upload path, which reads its own count: fifty
+    // rejections must not close an album that has never shown a photo.
+    const guest = await query<{ id: string }>(
+      `INSERT INTO guests (event_id, name) VALUES ($1, 'Refused Guest') RETURNING id`,
+      [eventId]
+    );
+    const quotaGuestId = guest.rows[0].id;
+    const filler = Array.from({ length: PLAN_LIMITS.free.maxPhotos ?? 50 }, (_, i) => i);
+    for (const i of filler) {
+      await query(
+        `INSERT INTO photos (event_id, guest_id, storage_path, full_url, status, storage_bytes)
+         VALUES ($1, $2, $3, $4, 'rejected', 0)`,
+        [eventId, quotaGuestId, `/uploads/events/${eventId}/rejected-${i}.jpg`, `http://x/rejected-${i}.jpg`]
+      );
+    }
+
+    const context = await getUploadContext(eventId, undefined);
+    expect(context).not.toBeNull();
+    expect(checkUploadAllowance(context!).allowed).toBe(true);
+
+    // One accepted photo among them still counts, as any other does.
+    await query("UPDATE photos SET status = 'approved' WHERE event_id = $1 AND status = 'rejected'", [eventId]);
+    const afterApproval = await getUploadContext(eventId, undefined);
+    expect(checkUploadAllowance(afterApproval!).allowed).toBe(false);
+    expect(checkUploadAllowance(afterApproval!).code).toBe('TIER_LIMIT_REACHED');
+
+    // These rows are fixtures, not uploads, and the rest of this file shares
+    // the album with them.
+    await query('DELETE FROM photos WHERE guest_id = $1', [quotaGuestId]);
+    await query('DELETE FROM guests WHERE id = $1', [quotaGuestId]);
   });
 
   it('refuses an upload that would exceed the plan allowance', async () => {

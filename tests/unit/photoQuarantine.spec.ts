@@ -223,6 +223,61 @@ describe('Photo quarantine (MED-03/SEC-M5)', () => {
     expect(guestPhoto.fullUrl).not.toContain('/preview?');
   });
 
+  it('takes the file back when the host withdraws an approval', async () => {
+    // Approving moves the file to the publicly served root. Sending the photo
+    // back to pending only changed the row: the feed hid it while the file
+    // stayed reachable to anyone holding the URL — which is exactly what
+    // is_quarantined is documented to prevent.
+    const host = await registerHost();
+    createdEvents.push(host.eventId);
+    await query("UPDATE subscriptions SET tier = 'celebration_pass' WHERE user_id = $1", [host.userId]);
+    await fetch(`${BASE_URL}/api/events/${host.eventId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${host.token}` },
+      body: JSON.stringify({ isModerationEnabled: true }),
+    });
+    const uploaded = await uploadPhoto(host.eventId, 'approved then withdrawn');
+    const setStatus = (status: string) =>
+      fetch(`${BASE_URL}/api/photos/${uploaded.body.id}/status`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${host.token}` },
+        body: JSON.stringify({ status }),
+      });
+
+    expect((await setStatus('approved')).status).toBe(200);
+    const approved = await query('SELECT storage_path FROM photos WHERE id = $1', [uploaded.body.id]);
+    const publicSegment = relativeSegment(approved.rows[0].storage_path, '/uploads/');
+    expect(fs.existsSync(path.join(CONFIG.UPLOADS_DIR, publicSegment))).toBe(true);
+
+    expect((await setStatus('pending')).status).toBe(200);
+
+    const withdrawn = await query(
+      'SELECT storage_path, is_quarantined FROM photos WHERE id = $1',
+      [uploaded.body.id]
+    );
+    expect(withdrawn.rows[0].storage_path).toMatch(/^\/quarantine\//);
+    expect(withdrawn.rows[0].is_quarantined).toBe(true);
+    expect(fs.existsSync(path.join(CONFIG.UPLOADS_DIR, publicSegment))).toBe(false);
+    expect(fs.existsSync(path.join(CONFIG.QUARANTINE_DIR, publicSegment))).toBe(true);
+  });
+
+  it('withholds a photo the host rejects outright', async () => {
+    const host = await registerHost();
+    createdEvents.push(host.eventId);
+    const uploaded = await uploadPhoto(host.eventId, 'rejected after the fact');
+
+    const reject = await fetch(`${BASE_URL}/api/photos/${uploaded.body.id}/status`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${host.token}` },
+      body: JSON.stringify({ status: 'rejected' }),
+    });
+    expect(reject.status).toBe(200);
+
+    const row = await query('SELECT storage_path, is_quarantined FROM photos WHERE id = $1', [uploaded.body.id]);
+    expect(row.rows[0].is_quarantined).toBe(true);
+    expect(row.rows[0].storage_path).toMatch(/^\/quarantine\//);
+  });
+
   it('lazily promotes a disposable-locked photo once its reveal deadline passes', async () => {
     const host = await registerHost();
     createdEvents.push(host.eventId);

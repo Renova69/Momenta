@@ -18,6 +18,8 @@ export interface ServiceContext {
   updateEvent: (updates: Partial<WeddingEvent>, syncBackend?: boolean) => WeddingEvent;
   notify: () => void;
   notifyError: (message: string) => void;
+  /** The album itself is gone — the host erased it while people were looking. */
+  notifyEventGone: (eventId: string) => void;
   syncGuestFromServer: (eventId: string, guestId?: string, guestToken?: string) => void;
   /** Drop the stored guest identity for an event once the server stops accepting it (M10). */
   forgetGuestIdentity: (eventId: string) => void;

@@ -29,6 +29,12 @@ interface AppContextType {
   activeGuestTab: 'feed' | 'quests' | 'audio';
   isLoadingEvent: boolean;
   eventError: string | null;
+  /** Whether the album is missing, or the server could not be reached to ask. */
+  eventErrorKind: 'missing' | 'unreachable' | 'deleted';
+  /** The address that failed — not the album that happens to be loaded. */
+  missingSlug: string | null;
+  /** Try the failed address again, for the unreachable case. */
+  retryEventLoad: () => void;
   queuedUploadCount: number;
   isNetworkOnline: boolean;
   pendingPhotosCount: number;
@@ -84,6 +90,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [activeGuestTab, setActiveGuestTab] = useState<'feed' | 'quests' | 'audio'>(() => router.getRoute().subTab || 'feed');
   const [isLoadingEvent, setIsLoadingEvent] = useState<boolean>(false);
   const [eventError, setEventError] = useState<string | null>(null);
+  /** Which kind of failure `eventError` describes: no such album, or could not ask. */
+  const [eventErrorKind, setEventErrorKind] = useState<'missing' | 'unreachable' | 'deleted'>('missing');
+  /** The address that failed, which is not the album currently loaded. */
+  const [missingSlug, setMissingSlug] = useState<string | null>(null);
 
   const [syncError, setSyncError] = useState<string | null>(null);
   const [queuedUploadCount, setQueuedUploadCount] = useState<number>(0);
@@ -101,10 +111,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       setIsLoadingEvent(true);
       storageService.loadEventBySlug(initialRoute.slug)
         .then((res) => {
-          if (!res) setEventError(`Event not found: ${initialRoute.slug}`);
+          if (!res) failEventLoad(initialRoute.slug!, 'missing', `Event not found: ${initialRoute.slug}`);
           else setEventError(null);
         })
-        .catch((e) => setEventError(e.message))
+        .catch((e) => failEventLoad(initialRoute.slug!, 'unreachable', e.message))
         .finally(() => setIsLoadingEvent(false));
     }
 
@@ -127,10 +137,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         setIsLoadingEvent(true);
         storageService.loadEventBySlug(route.slug)
           .then((res) => {
-            if (!res) setEventError(`Event not found: ${route.slug}`);
+            if (!res) failEventLoad(route.slug!, 'missing', `Event not found: ${route.slug}`);
             else setEventError(null);
           })
-          .catch((e) => setEventError(e.message))
+          .catch((e) => failEventLoad(route.slug!, 'unreachable', e.message))
           .finally(() => setIsLoadingEvent(false));
       }
     });
@@ -151,9 +161,20 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       setSyncError(message);
     });
 
+    // The host erased the album while this browser was in it. Nothing here is
+    // valid any more; say so instead of letting the guest carry on until
+    // their next upload fails for no stated reason.
+    const unsubGone = storageService.subscribeEventGone((goneEventId) => {
+      const route = router.getRoute();
+      setMissingSlug(route.slug ?? storageService.getEvent().slug ?? null);
+      setEventErrorKind('deleted');
+      setEventError(`Event deleted: ${goneEventId}`);
+    });
+
     return () => {
       unsubStorage();
       unsubRouter();
+      unsubGone();
       unsubQueue();
       unsubI18n();
       unsubErrors();
@@ -161,11 +182,23 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const failEventLoad = (slug: string, kind: 'missing' | 'unreachable' | 'deleted', message: string) => {
+    setMissingSlug(slug);
+    setEventErrorKind(kind);
+    setEventError(message);
+  };
+
   const navigateView = (view: ActiveView, tab?: 'feed' | 'quests' | 'audio') => {
+    // Leaving a failed address has to drop it. Carrying the slug along meant
+    // the router immediately tried to load it again, re-raised the same
+    // error, and bounced the guest back to the dead end they had just left —
+    // escapable only by editing the URL.
+    const leavingFailure = eventError !== null;
     setEventError(null);
+    if (leavingFailure) setMissingSlug(null);
     setActiveView(view);
     if (tab) setActiveGuestTab(tab);
-    const currentSlug = router.getRoute().slug;
+    const currentSlug = leavingFailure ? undefined : router.getRoute().slug;
     router.navigate(view, currentSlug, tab || activeGuestTab);
   };
 
@@ -176,20 +209,27 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     router.navigate('guest', currentSlug, tab);
   };
 
+  /** Ask again for the address that failed. Only useful for the unreachable case. */
+  const retryEventLoad = () => {
+    const slug = missingSlug ?? router.getRoute().slug;
+    if (slug) void loadEventBySlug(slug);
+  };
+
   const loadEventBySlug = async (slug: string): Promise<WeddingEvent | null> => {
     setIsLoadingEvent(true);
     try {
       const loaded = await storageService.loadEventBySlug(slug);
       if (!loaded) {
-        setEventError(`Event not found: ${slug}`);
+        failEventLoad(slug, 'missing', `Event not found: ${slug}`);
       } else {
         setEventError(null);
+        setMissingSlug(null);
         router.navigate('guest', slug, 'feed');
       }
       return loaded;
     } catch (err: unknown) {
       const errorMsg = err instanceof Error ? err.message : String(err);
-      setEventError(errorMsg || 'Error loading event');
+      failEventLoad(slug, 'unreachable', errorMsg || 'Error loading event');
       return null;
     } finally {
       setIsLoadingEvent(false);
@@ -293,6 +333,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           activeGuestTab,
           isLoadingEvent,
           eventError,
+          eventErrorKind,
+          missingSlug,
+          retryEventLoad,
           queuedUploadCount,
           isNetworkOnline,
           pendingPhotosCount,
@@ -332,6 +375,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           activeGuestTab,
           isLoadingEvent,
           eventError,
+          eventErrorKind,
+          missingSlug,
+          retryEventLoad,
           queuedUploadCount,
           isNetworkOnline,
           pendingPhotosCount,

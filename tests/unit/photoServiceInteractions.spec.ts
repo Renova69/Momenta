@@ -48,7 +48,7 @@ function harness(seed: Partial<Photo>[] = []) {
     syncFromBackend: vi.fn().mockResolvedValue(undefined),
     emitReaction: vi.fn(),
   } as unknown as ServiceContext;
-  return { ctx, notify, forgetGuestIdentity, syncGuestFromServer };
+  return { ctx, notify, forgetGuestIdentity, syncGuestFromServer, notifyError: ctx.notifyError as ReturnType<typeof vi.fn> };
 }
 
 const stored = (): Photo[] =>
@@ -244,14 +244,19 @@ describe('setPhotoStatus', () => {
     expect(notify).toHaveBeenCalled();
   });
 
-  it('swallows a sync failure without disturbing the local state', async () => {
-    const { ctx } = harness([photo({ status: 'pending' })]);
-    vi.spyOn(photosApi, 'setStatus').mockRejectedValue(new Error('offline'));
+  it('puts the photo back and tells the host when the server refuses', async () => {
+    // This used to be swallowed: the badge moved, the count dropped, the
+    // server said no, and the host heard nothing — the photo reappeared as
+    // pending at the next sync, looking like the app had lost their decision.
+    const { ctx, notifyError } = harness([photo({ status: 'pending' })]);
+    vi.spyOn(photosApi, 'setStatus').mockRejectedValue(new Error('Session expired'));
 
     setPhotoStatus(ctx, 'p1', 'approved');
     await Promise.resolve();
+    await Promise.resolve();
 
-    expect(stored()[0].status).toBe('approved');
+    expect(stored()[0].status).toBe('pending');
+    expect(notifyError).toHaveBeenCalledWith('Session expired');
   });
 });
 

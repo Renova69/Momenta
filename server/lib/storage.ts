@@ -38,6 +38,8 @@ export interface StorageAdapter {
    * never quarantined, so callers can call this unconditionally.
    */
   promoteFromQuarantine(storagePath: string): Promise<{ publicUrl: string; storagePath: string }>;
+  /** The inverse: move a public file back behind the quarantine root. */
+  demoteToQuarantine(storagePath: string): Promise<{ publicUrl: string; storagePath: string }>;
 }
 
 // 1. Local Disk Storage Adapter
@@ -119,6 +121,39 @@ export class LocalStorageAdapter implements StorageAdapter {
       return fs.createReadStream(absPath);
     }
     return null;
+  }
+
+  public async demoteToQuarantine(storagePath: string): Promise<{ publicUrl: string; storagePath: string }> {
+    if (!storagePath || !storagePath.startsWith('/uploads/')) {
+      // Already withheld, or not a path this adapter serves — a no-op, so a
+      // caller can demote unconditionally.
+      return { publicUrl: storagePath, storagePath };
+    }
+
+    const sourcePath = this.getAbsolutePath(storagePath);
+    if (!sourcePath || !fs.existsSync(sourcePath)) {
+      throw new Error(`[LocalStorage] Cannot withhold — file missing: ${storagePath}`);
+    }
+
+    const relative = storagePath.replace('/uploads/', '');
+    const targetPath = path.resolve(this.quarantineDir, relative);
+    const quarantineRoot = path.resolve(this.quarantineDir);
+    if (!targetPath.startsWith(quarantineRoot + path.sep)) {
+      throw new Error(`[LocalStorage] Refusing to withhold outside the quarantine root: ${storagePath}`);
+    }
+
+    await fs.promises.mkdir(path.dirname(targetPath), { recursive: true });
+    await fs.promises.copyFile(sourcePath, targetPath);
+    await fs.promises.unlink(sourcePath).catch((err) => {
+      console.warn(
+        `[LocalStorage] Withheld ${storagePath} but could not remove the public copy:`,
+        err instanceof Error ? err.message : err
+      );
+    });
+
+    const quarantinePath = `/quarantine/${relative}`;
+    console.log(`[LocalStorage] Withheld into quarantine: ${storagePath} -> ${quarantinePath}`);
+    return { publicUrl: quarantinePath, storagePath: quarantinePath };
   }
 
   public async promoteFromQuarantine(storagePath: string): Promise<{ publicUrl: string; storagePath: string }> {
@@ -306,6 +341,31 @@ export class R2StorageAdapter implements StorageAdapter {
       console.error(`[R2Storage] Failed to fetch stream for ${storagePath}:`, (err instanceof Error ? err.message : String(err)));
       throw err;
     }
+  }
+
+  public async demoteToQuarantine(storagePath: string): Promise<{ publicUrl: string; storagePath: string }> {
+    const key = this.extractKey(storagePath);
+    if (key.startsWith('quarantine/')) {
+      return { publicUrl: storagePath, storagePath };
+    }
+
+    const targetKey = `quarantine/${key}`;
+
+    await this.s3.send(
+      new CopyObjectCommand({
+        Bucket: this.bucketName,
+        CopySource: `${this.bucketName}/${key}`,
+        Key: targetKey,
+      })
+    );
+    await this.s3.send(new DeleteObjectCommand({ Bucket: this.bucketName, Key: key }));
+
+    const url = this.publicBaseUrl
+      ? `${this.publicBaseUrl}/${targetKey}`
+      : `https://${this.bucketName}.${CONFIG.R2_ACCOUNT_ID}.r2.cloudflarestorage.com/${targetKey}`;
+
+    console.log(`[R2Storage] Withheld into quarantine: ${key} -> ${targetKey}`);
+    return { publicUrl: url, storagePath: url };
   }
 
   public async promoteFromQuarantine(storagePath: string): Promise<{ publicUrl: string; storagePath: string }> {

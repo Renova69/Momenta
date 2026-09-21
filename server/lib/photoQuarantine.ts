@@ -28,6 +28,54 @@ export function buildPreviewUrl(photoId: string, hostUserId: string, variant: Pr
  * their public paths and update the row to match. A no-op for a photo whose
  * copies are already public — safe to call unconditionally.
  */
+/**
+ * Put a photo back behind quarantine, for a host who takes back an approval.
+ *
+ * Approving moves the files to the publicly served root. Sending the photo
+ * back to `pending`, or rejecting it after it was approved, only changed the
+ * row: the feed stopped showing it while the file stayed reachable by anyone
+ * holding or guessing its URL. `is_quarantined` is documented as meaning
+ * exactly that this cannot happen (MED-03/SEC-M5), so the files have to
+ * follow the decision.
+ */
+export async function withholdPhotoToQuarantine(
+  photoId: string,
+  db: Pool | PoolClient = pool
+): Promise<void> {
+  const { rows } = await db.query(
+    'SELECT storage_path, original_storage_path, thumbnail_url, is_quarantined FROM photos WHERE id = $1',
+    [photoId]
+  );
+  if (rows.length === 0 || rows[0].is_quarantined) return;
+  const row = rows[0];
+  const thumbPath = toStoragePath(row.thumbnail_url);
+
+  const [display, original, thumb] = await Promise.all([
+    row.storage_path ? storageAdapter.demoteToQuarantine(row.storage_path) : null,
+    row.original_storage_path ? storageAdapter.demoteToQuarantine(row.original_storage_path) : null,
+    thumbPath ? storageAdapter.demoteToQuarantine(thumbPath) : null,
+  ]);
+
+  await db.query(
+    `UPDATE photos SET
+       storage_path = COALESCE($2, storage_path),
+       full_url = COALESCE($3, full_url),
+       original_storage_path = COALESCE($4, original_storage_path),
+       original_url = COALESCE($5, original_url),
+       thumbnail_url = COALESCE($6, thumbnail_url),
+       is_quarantined = true
+     WHERE id = $1`,
+    [
+      photoId,
+      display?.storagePath ?? null,
+      display?.publicUrl ?? null,
+      original?.storagePath ?? null,
+      original?.publicUrl ?? null,
+      thumb?.publicUrl ?? null,
+    ]
+  );
+}
+
 export async function promotePhotoFromQuarantine(
   photoId: string,
   db: Pool | PoolClient = pool

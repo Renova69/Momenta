@@ -14,7 +14,7 @@ import { errorLabel } from '../../lib/errors';
 import { storageAdapter, toStoragePath } from '../../lib/storage';
 import { requireAuth } from '../../middleware/auth';
 import { validateBody } from '../../middleware/validate';
-import { promotePhotoFromQuarantine } from '../../lib/photoQuarantine';
+import { promotePhotoFromQuarantine, withholdPhotoToQuarantine } from '../../lib/photoQuarantine';
 import {
   StatusPhotoSchema,
 } from './shared';
@@ -58,6 +58,16 @@ photosRouter.post('/:id/status', requireAuth, requireUuidParams('id'), validateB
           console.error('[Photos] Could not promote photo from quarantine:', errorLabel(err));
         });
       }
+    }
+
+    // Taking an approval back has to take the file back too. Without this the
+    // feed hid the photo while the file stayed publicly reachable — and for a
+    // rejection, that is the one state where the host has said plainly that
+    // nobody should see it.
+    if (result.rows.length > 0 && ['pending', 'rejected'].includes(status)) {
+      await withholdPhotoToQuarantine(String(id)).catch((err) => {
+        console.error('[Photos] Could not withhold photo into quarantine:', errorLabel(err));
+      });
     }
 
     if (result.rows.length > 0) {

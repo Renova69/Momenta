@@ -58,6 +58,9 @@ function WeddingAppContent() {
     activeGuestTab,
     isLoadingEvent,
     eventError,
+    eventErrorKind,
+    missingSlug,
+    retryEventLoad,
     queuedUploadCount,
     isNetworkOnline,
     pendingPhotosCount,
@@ -210,7 +213,12 @@ function WeddingAppContent() {
   if (eventError) {
     return (
       <EventNotFound
-        slug={event.slug}
+        // The address that failed, not whichever album happens to be loaded:
+        // this used to name the album the guest had just been looking at, or
+        // the seeded demo one on a first visit.
+        slug={missingSlug ?? undefined}
+        reason={eventErrorKind}
+        onRetry={retryEventLoad}
         onGoHome={() => navigateView('host')}
         onCreateEvent={() => navigateView('host')}
       />

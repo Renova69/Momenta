@@ -51,7 +51,11 @@ export interface PhotoDerivatives {
  * so phone photos are not served sideways.
  */
 export async function buildDerivatives(original: Buffer): Promise<PhotoDerivatives> {
-  const pipeline = sharp(original, { failOn: 'none', limitInputPixels: MAX_INPUT_PIXELS }).rotate();
+  // `failOn: 'truncated'`, not 'none'. A capture cut short by a phone leaving
+  // the venue's wifi decodes happily and yields a half-grey image, which then
+  // sits in the album as the guest's photo of the first dance. The check this
+  // pipeline exists to perform is precisely that the bytes are a whole image.
+  const pipeline = sharp(original, { failOn: 'truncated', limitInputPixels: MAX_INPUT_PIXELS }).rotate();
   const metadata = await pipeline.metadata();
 
   // MED-07 — display and thumbnail used to each open their own fresh

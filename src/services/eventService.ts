@@ -92,6 +92,14 @@ export async function loadEventBySlug(ctx: ServiceContext, slug: string): Promis
       return normalized;
     }
   } catch (e) {
+    // 404 is an answer: there is no album at this address. Anything else —
+    // a dead network at the venue, a server error — is the question failing
+    // to arrive, and reporting that as "not found" sends a guest with a
+    // perfectly good QR code to a dead end.
+    // Only a 404 is an answer. Anything else — a 500, or a fetch that threw
+    // with no status at all because the venue's wifi dropped — is the
+    // question never arriving, and must not be reported as "no such album".
+    if ((e as { status?: number })?.status !== 404) throw e;
     console.warn('Could not load event by slug from backend:', e);
   }
   return null;

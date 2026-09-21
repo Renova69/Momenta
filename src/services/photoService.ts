@@ -237,6 +237,7 @@ export function addComment(ctx: ServiceContext, photoId: string, guestId: string
 
 export function setPhotoStatus(ctx: ServiceContext, photoId: string, status: PhotoStatus): void {
   const event = ctx.getEvent();
+  const previousStatus = getPhotos(ctx, event.id).find((p) => p.id === photoId)?.status;
   const photos = getPhotos(ctx, event.id).map((p) => {
     if (p.id === photoId) return { ...p, status };
     return p;
@@ -245,7 +246,21 @@ export function setPhotoStatus(ctx: ServiceContext, photoId: string, status: Pho
   ctx.notify();
 
   // Sync to PostgreSQL backend
-  photosApi.setStatus(photoId, status).catch(() => {});
+  // A rejected decision used to vanish: the badge moved, the server refused,
+  // and the host was told nothing — the photo reappeared as pending on the
+  // next sync. Put the row back the way the server still has it, and say so.
+  photosApi.setStatus(photoId, status).catch((err: unknown) => {
+    const message = err instanceof Error ? err.message : String(err);
+    console.warn('[Storage] Photo status was not saved to the server:', message);
+    persistPhotos(
+      event.id,
+      getPhotos(ctx, event.id).map((p) =>
+        p.id === photoId && previousStatus ? { ...p, status: previousStatus } : p
+      )
+    );
+    ctx.notify();
+    ctx.notifyError(message);
+  });
 }
 
 export async function deletePhoto(ctx: ServiceContext, photoId: string): Promise<void> {

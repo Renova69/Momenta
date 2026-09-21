@@ -30,4 +30,36 @@ describe('EventNotFound', () => {
     fireEvent.click(screen.getByText(i18n.t('common.create_new')));
     expect(onCreateEvent).toHaveBeenCalledTimes(1);
   });
+
+  it('says the connection failed, not that the wedding is missing', () => {
+    // A guest at a venue with weak wifi has a perfectly good QR code. Telling
+    // them their wedding does not exist is both wrong and alarming.
+    render(<EventNotFound slug="real-wedding-2026" reason="unreachable" onGoHome={vi.fn()} onCreateEvent={vi.fn()} />);
+
+    expect(screen.getByText(i18n.t('event.unreachable_hint'))).toBeInTheDocument();
+    expect(screen.queryByText(i18n.t('event.not_found_at'))).not.toBeInTheDocument();
+  });
+
+  it('offers to try again when the server could not be reached', () => {
+    const onRetry = vi.fn();
+    render(
+      <EventNotFound slug="real-wedding-2026" reason="unreachable" onRetry={onRetry} onGoHome={vi.fn()} onCreateEvent={vi.fn()} />
+    );
+
+    fireEvent.click(screen.getByText(i18n.t('event.try_again')));
+
+    expect(onRetry).toHaveBeenCalledTimes(1);
+  });
+
+  it('offers no retry for an album that genuinely does not exist', () => {
+    render(<EventNotFound slug="missing-wedding-2026" onRetry={vi.fn()} onGoHome={vi.fn()} onCreateEvent={vi.fn()} />);
+
+    expect(screen.queryByText(i18n.t('event.try_again'))).not.toBeInTheDocument();
+  });
+
+  it('says so plainly when the couple deleted the album', () => {
+    render(<EventNotFound slug="erased-wedding-2026" reason="deleted" onGoHome={vi.fn()} onCreateEvent={vi.fn()} />);
+
+    expect(screen.getByText(i18n.t('event.deleted_hint'))).toBeInTheDocument();
+  });
 });

@@ -158,7 +158,10 @@ export async function getUploadContext(
             e.reveal_at,
             e.max_photos_per_guest,
             COALESCE(s.tier, 'free') AS tier,
-            (SELECT COUNT(*)::int FROM photos p WHERE p.event_id = e.id) AS photo_count,
+            -- A rejected photo is one the host refused. Counting it against
+            -- the plan's allowance charges the couple for a picture nobody
+            -- can see and they did not want.
+            (SELECT COUNT(*)::int FROM photos p WHERE p.event_id = e.id AND p.status <> 'rejected') AS photo_count,
             (SELECT COALESCE(SUM(e2.storage_bytes), 0)::bigint
                FROM events e2
               WHERE e.host_user_id IS NOT NULL AND e2.host_user_id = e.host_user_id) AS pooled_bytes,
@@ -166,6 +169,7 @@ export async function getUploadContext(
                FROM photos p
                JOIN guests g ON g.id = p.guest_id
               WHERE p.event_id = e.id
+                AND p.status <> 'rejected'
                 AND $2::text IS NOT NULL
                 AND g.device_fingerprint = $2) AS device_photo_count
        FROM events e
@@ -306,7 +310,7 @@ export async function getStorageUsage(eventId: string): Promise<StorageUsage | n
   }
 
   const countRes = await pool.query(
-    'SELECT COUNT(*)::int AS count FROM photos WHERE event_id = $1',
+    "SELECT COUNT(*)::int AS count FROM photos WHERE event_id = $1 AND status <> 'rejected'",
     [eventId]
   );
 

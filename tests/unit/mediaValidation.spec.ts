@@ -120,6 +120,32 @@ describe('Media validation (SEC-M2, SEC-M3, SEC-M4)', () => {
       expect(res.status).toBe(400);
     });
 
+    it('rejects a photo whose upload was cut short', async () => {
+      // A phone leaving the venue's wifi mid-send. The bytes start as a
+      // perfectly good JPEG, so the magic-byte check passes and the decoder
+      // used to accept them too — the guest's photo of the first dance then
+      // sat in the album half grey.
+      const whole = await sharp({
+        create: { width: 600, height: 400, channels: 3, background: { r: 120, g: 90, b: 60 } },
+      })
+        .jpeg()
+        .toBuffer();
+      const cutShort = whole.subarray(0, Math.floor(whole.length * 0.45));
+
+      const res = await fetch(`${BASE_URL}/api/photos`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          eventId,
+          guestName: 'Spec Guest',
+          deviceFingerprint: `media-fp-${Date.now()}`,
+          fullUrl: `data:image/jpeg;base64,${cutShort.toString('base64')}`,
+        }),
+      });
+
+      expect(res.status).toBe(400);
+    });
+
     it('accepts a real, decodable image', async () => {
       const realJpeg = await sharp({
         create: { width: 400, height: 300, channels: 3, background: { r: 100, g: 150, b: 200 } },

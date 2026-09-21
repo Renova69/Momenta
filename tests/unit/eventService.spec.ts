@@ -291,11 +291,32 @@ describe('loadEventBySlug', () => {
     expect(await loadEventBySlug(ctx, 'x')).toBeNull();
   });
 
-  it('returns null and warns when the lookup fails', async () => {
+  it('returns null and warns when the album does not exist', async () => {
     const { ctx } = makeContext();
-    vi.spyOn(eventsApi, 'getBySlug').mockRejectedValue(new Error('404'));
+    vi.spyOn(eventsApi, 'getBySlug').mockRejectedValue(
+      Object.assign(new Error('Event not found'), { status: 404 })
+    );
 
     expect(await loadEventBySlug(ctx, 'missing')).toBeNull();
     expect(console.warn).toHaveBeenCalled();
+  });
+
+  it('raises when the server could not be asked, rather than reporting no such album', async () => {
+    // A guest at a venue with weak wifi has a perfectly good QR code.
+    // Collapsing every failure into "not found" sent them to a dead end
+    // telling them their wedding does not exist.
+    const { ctx } = makeContext();
+    vi.spyOn(eventsApi, 'getBySlug').mockRejectedValue(
+      Object.assign(new Error('Failed to fetch'), { status: 503 })
+    );
+
+    await expect(loadEventBySlug(ctx, 'real-wedding')).rejects.toThrow('Failed to fetch');
+  });
+
+  it('raises for a network error that carries no status at all', async () => {
+    const { ctx } = makeContext();
+    vi.spyOn(eventsApi, 'getBySlug').mockRejectedValue(new TypeError('NetworkError'));
+
+    await expect(loadEventBySlug(ctx, 'real-wedding')).rejects.toThrow('NetworkError');
   });
 });

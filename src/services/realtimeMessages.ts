@@ -141,6 +141,13 @@ export function applyRealtimeMessage(ctx: ServiceContext, msg: RealtimeMessage):
       ctx.notify();
       break;
     }
+    case 'EVENT_DELETED': {
+      // The host erased the album. Nothing here is valid any more, and the
+      // next thing this browser tries — an upload, a like — would fail with
+      // no explanation, so say so now and let the app show the gone screen.
+      ctx.notifyEventGone(activeEventId);
+      break;
+    }
     case 'QUEST_ADDED': {
       const quest = msg.payload;
       let currentQuests = ctx.getQuests(activeEventId);

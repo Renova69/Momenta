@@ -26,6 +26,7 @@ interface Harness {
   audio: AudioGuestbookEntry[];
   notify: ReturnType<typeof vi.fn>;
   emitReaction: ReturnType<typeof vi.fn>;
+  notifyEventGone: ReturnType<typeof vi.fn>;
 }
 
 function harness(seed: {
@@ -38,6 +39,7 @@ function harness(seed: {
   const audio = (seed.audio ?? []) as AudioGuestbookEntry[];
   const notify = vi.fn();
   const emitReaction = vi.fn();
+  const notifyEventGone = vi.fn();
 
   const ctx = {
     getEvent: () => ({ id: EVENT_ID }) as WeddingEvent,
@@ -48,6 +50,7 @@ function harness(seed: {
     updateEvent: vi.fn(),
     notify,
     notifyError: vi.fn(),
+    notifyEventGone,
     syncGuestFromServer: vi.fn(),
     completeQuest: vi.fn(),
     joinEventRoom: vi.fn(),
@@ -55,7 +58,7 @@ function harness(seed: {
     emitReaction,
   } as unknown as ServiceContext;
 
-  return { ctx, photos, quests, audio, notify, emitReaction };
+  return { ctx, photos, quests, audio, notify, emitReaction, notifyEventGone };
 }
 
 /** What ended up in storage for this event's photos. */
@@ -452,5 +455,25 @@ describe('unknown message types', () => {
       applyRealtimeMessage(h.ctx, { type: 'SOMETHING_THE_SERVER_ADDED_LATER', payload: {} })
     ).not.toThrow();
     expect(h.notify).not.toHaveBeenCalled();
+  });
+});
+
+describe('EVENT_DELETED', () => {
+  it('tells the app the album is gone, rather than letting guests browse it', () => {
+    // The host erased the album. Nothing cached here is valid any more, and
+    // the guest's next upload would fail with no explanation.
+    const { ctx, notifyEventGone } = harness();
+
+    applyRealtimeMessage(ctx, { type: 'EVENT_DELETED', eventId: EVENT_ID, payload: { eventId: EVENT_ID } });
+
+    expect(notifyEventGone).toHaveBeenCalledWith(EVENT_ID);
+  });
+
+  it('ignores a deletion for a different wedding', () => {
+    const { ctx, notifyEventGone } = harness();
+
+    applyRealtimeMessage(ctx, { type: 'EVENT_DELETED', eventId: 'another-event', payload: {} });
+
+    expect(notifyEventGone).not.toHaveBeenCalled();
   });
 });

@@ -48,6 +48,7 @@ type ErrorListener = (message: string) => void;
 class WedStorageService {
   private listeners: Set<Listener> = new Set();
   private errorListeners: Set<ErrorListener> = new Set();
+  private eventGoneListeners: Set<(eventId: string) => void> = new Set();
   private reactionListeners: Set<ReactionListener> = new Set();
 
   private readonly realtimeSocket = new RealtimeSocket(ENV.WS_URL, {
@@ -64,6 +65,7 @@ class WedStorageService {
     updateEvent: (updates, syncBackend) => this.updateEvent(updates, syncBackend),
     notify: () => this.notify(),
     notifyError: (message) => this.notifyError(message),
+    notifyEventGone: (eventId) => this.notifyEventGone(eventId),
     syncGuestFromServer: (eventId, guestId, guestToken) => this.syncGuestFromServer(eventId, guestId, guestToken),
     forgetGuestIdentity: (eventId) => guestService.clearCurrentGuest(this.ctx, eventId),
     completeQuest: (questId, guestId) => this.completeQuest(questId, guestId),
@@ -127,6 +129,23 @@ class WedStorageService {
 
   private notifyError(message: string): void {
     this.errorListeners.forEach((fn) => fn(message));
+  }
+
+  /**
+   * Subscribe to the album being erased underneath this browser.
+   *
+   * Distinct from an error: nothing failed, there is simply nothing left to
+   * show, and every cached photo on this device is now of an album that does
+   * not exist. Guests used to carry on browsing it until their next upload
+   * failed for no stated reason.
+   */
+  public subscribeEventGone(listener: (eventId: string) => void): () => void {
+    this.eventGoneListeners.add(listener);
+    return () => this.eventGoneListeners.delete(listener);
+  }
+
+  private notifyEventGone(eventId: string): void {
+    this.eventGoneListeners.forEach((fn) => fn(eventId));
   }
 
   private emitReaction(reaction: string, guestName: string | null): void {
