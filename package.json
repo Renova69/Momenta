@@ -45,7 +45,8 @@
     "ingest:watch": "tsx scripts/ingest-watcher.ts",
     "tunnel": "node start-tunnel.cjs",
     "lint": "eslint \"src/**/*.{ts,tsx}\" \"server/**/*.ts\" \"shared/**/*.ts\" \"scripts/**/*.ts\" \"tests/**/*.{ts,tsx}\"",
-    "audit:ci": "tsx scripts/audit-gate.ts"
+    "audit:ci": "tsx scripts/audit-gate.ts",
+    "mutate": "node scripts/mutate.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1128.0",

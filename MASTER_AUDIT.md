@@ -3,6 +3,7 @@
 **Audited:** 2026-09-15, read-only. **Fixes applied and recorded:** 2026-09-17.
 **Post-audit findings added:** 2026-09-18, extended 2026-09-19 (§3b).
 **Feature review:** 2026-09-21 (§3c). **Accessibility review:** 2026-09-21 (§3d).
+**Client mutation sweep:** 2026-09-21 (§8).
 
 > **Read this first.** The audit below is preserved as written — each finding
 > still describes the code as it was on 2026-09-15, because a finding rewritten
@@ -976,8 +977,60 @@ not coming. `ws/wsServer` is 20/22; the two survivors are both the
 `typeof msg !== 'object' || msg === null` guard, redundant with the enclosing
 `try/catch` that drops malformed frames in either direction.
 
+**The client sweep, 2026-09-21.** The September sweep covered `server/` and
+`shared/`. `src/` had never been swept at all, and the result says what that
+was worth: **157 of 237 killed**, eighty behaviours nothing asserted. The
+weakest modules were the ones a guest touches most.
+
+| Module | Before | After | What the gap was |
+|---|---|---|---|
+| `services/guestService` | 3/19 | 18/19 | Who this phone is at this wedding, and therefore who every photo belongs to. Nothing pinned that a stored guest from another album is refused, that a token is never carried across to a different guest id, or that re-registering keeps one identity instead of making a second row for one person. |
+| `services/photoStore` | 6/10 | 10/10 | The preview a guest sees while their photo is still uploading (H1). Neither the thirty-preview cap nor the quota shedding was tested. |
+| `services/questService` | 2/7 | 7/7 | Quest creation and the local tick. |
+| `services/photoService` | 24/37 | 37/37 | The quarantine preview rule, the merge target, the reaction toggle, and the status rollback added the same week. |
+| `services/authService` | 15/22 | 21/22 | Session restore from a half-written localStorage; the logout `keepalive`; the expired-session clear. |
+| `services/eventNormalization` | 21/34 | 34/34 | Thirteen `??` fallbacks: an empty value is the host clearing a field, not an absence to be filled from the other spelling. |
+| `services/offlineQueue` | 25/33 | 29/33 | Which temp-id rows are still in flight, and the base URL a flush posts to. |
+| `services/realtimeMessages` | 37/42 | 41/42 | The `localId` dedupe (another device's id is not proof of a local copy) and the no-echo flag on a settings broadcast. |
+| `api/apiClient` | 8/9 | 9/9 | The translated error message. |
+| `services/eventService` | 7/8 | 8/8 | A slug nobody has taken. |
+| `services/storageService` | 2/3 | 3/3 | The sync-to-server default. |
+| `utils/date` | 2/4 | 4/4 | A `Date` argument, and text the parser cannot read. |
+
+The harness is now committed as `scripts/mutate.mjs` (`npm run mutate -- <module>`)
+rather than rebuilt each time. It keeps the three guards the last sweep learned
+the hard way: a canary that corrupts the module outright and refuses to report
+if the specs still pass, a separate "invalid" verdict for a mutation that will
+not parse (which otherwise fails every spec and looks like a kill), and a spec
+set taken from the transitive importers rather than the direct ones. Building
+it re-taught two of them: a closure over a loop variable made every mutation
+unparseable and the run called all 15 invalid, and an app log line reading
+"Failed to parse URL from …" matched the broken-module detector and did the
+same. **Run one sweep at a time** — two vitest processes against one database
+produce failures that are read as kills.
+
+**Eight survivors remain, and none is worked around:**
+- `useQuestLeaderboard:52` and `:68` — the same condition is checked in the
+  effect and again in the loader it calls, so either mutation alone is masked
+  by the other. Equivalent in isolation.
+- `tierGating:92` and `:94` — `TIER_WEIGHTS[tier] ?? 0` where the free tier's
+  weight is already 0, so `||` cannot differ.
+- `authService:85` — `isAuthenticated` needs one of user/token set without the
+  other, which the constructor's own guard makes unreachable.
+- `offlineQueue:92`, `:210`, `:212` and `photoService`-style `typeof window`
+  checks — jsdom always satisfies them; they are there for the server-side
+  import path, which no client spec exercises.
+- `offlineQueue:81` — the fallback error for a transaction aborted from
+  outside the service. Reachable only by aborting one.
+- `guestService:111` and `realtimeMessages:225` — `??` against a value that is
+  never the empty string in practice.
+
 **Structural gaps:**
 - **The production storage adapter has no automated coverage at all** (M-4).
+- **`src/components/` is still unswept.** The sweep covered the client's logic
+  modules; the components themselves are mostly JSX, where an operator swap
+  usually breaks the render outright rather than isolating a behaviour. Visual
+  regression, not mutation, is the instrument there.
 - **Three tests were found passing for the wrong reason** during this session's
   work — a `vi.waitFor` on a negative assertion that resolves before the
   fire-and-forget work runs; an assertion on a value already true before the
