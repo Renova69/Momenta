@@ -122,6 +122,7 @@ export const PhotographerIngestPanel: React.FC<PhotographerIngestPanelProps> = (
             {portalUrl && (
               <button
                 onClick={() => copy(portalUrl, 'url')}
+                aria-label={i18n.t('ingest.copy')}
                 className="w-full flex items-center gap-2 text-left text-xs text-cream-200 hover:text-white bg-black/30 rounded-lg p-2.5"
               >
                 <Link2 className="w-3.5 h-3.5 text-gold-400 shrink-0" />
@@ -158,7 +159,11 @@ export const PhotographerIngestPanel: React.FC<PhotographerIngestPanelProps> = (
                     : ''}
                 </div>
               </div>
-              <button onClick={() => handleRevoke(k.id)} className="p-2 rounded-lg text-rosewood-300 hover:bg-rosewood-900/40">
+              <button
+                onClick={() => handleRevoke(k.id)}
+                aria-label={i18n.t('ingest.revoke_key')}
+                className="p-2 rounded-lg text-rosewood-300 hover:bg-rosewood-900/40"
+              >
                 <Trash2 className="w-4 h-4" />
               </button>
             </div>
@@ -177,7 +182,11 @@ export const PhotographerIngestPanel: React.FC<PhotographerIngestPanelProps> = (
             <span className="font-bold text-cream-100">{i18n.t('ingest.rest_endpoint')}</span>
             <div className="flex items-center gap-2 mt-1">
               <code className="flex-1 block font-mono text-[11px] text-gold-200 bg-black/40 rounded-lg p-2 break-all">{ingestEndpoint}</code>
-              <button onClick={() => copy(ingestEndpoint, 'ep')} className="p-2 rounded-lg text-cream-200 hover:bg-noir-900">
+              <button
+                onClick={() => copy(ingestEndpoint, 'ep')}
+                aria-label={i18n.t('ingest.copy')}
+                className="p-2 rounded-lg text-cream-200 hover:bg-noir-900"
+              >
                 {copied === 'ep' ? <Check className="w-3.5 h-3.5 text-sage-400" /> : <Copy className="w-3.5 h-3.5" />}
               </button>
             </div>

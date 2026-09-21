@@ -7,7 +7,7 @@
  * context instead of closing over the parent's scope.
  */
 
-import React from 'react';
+import React, { useId } from 'react';
 import { Settings, Shield, Trophy, Camera, Users, Lock } from 'lucide-react';
 import { i18n } from '../../../i18n';
 import { THEMES } from '../../../config/themes';
@@ -20,6 +20,8 @@ import { isFeatureUnlocked } from '../../../config/tierGating';
 import { useHostDashboard } from './context';
 
 export const OverviewTab: React.FC = () => {
+  // One id per field, so each visible label points at the control it names.
+  const fieldIds = useId();
   const {
     commitEventDateTime, deleteConfirmText, event, eventDateText, eventTimeText,
     guests, handleDeleteEvent, handleResetGuestSessions, hostNameDraft,
@@ -139,6 +141,8 @@ export const OverviewTab: React.FC = () => {
               </span>
             </div>
             <button
+              aria-label={i18n.t('ui.host_dashboard.4')}
+              aria-pressed={!!event.isModerationEnabled}
               onClick={() => onUpdateEvent({ isModerationEnabled: !event.isModerationEnabled })}
               className={`w-12 h-6 rounded-full transition-colors relative p-0.5 ${
                 event.isModerationEnabled ? 'bg-gold-400' : 'bg-noir-700'
@@ -164,10 +168,11 @@ export const OverviewTab: React.FC = () => {
                 {i18n.t('host.delete_event_hint')}
               </span>
             </div>
-            <label className="block text-[11px] text-cream-300/80">
+            <label htmlFor={`${fieldIds}-1`} className="block text-[11px] text-cream-300/80">
               {i18n.t('host.delete_event_confirm', { slug: event.slug })}
             </label>
             <input
+              id={`${fieldIds}-1`}
               type="text"
               value={deleteConfirmText}
               onChange={(e) => setDeleteConfirmText(e.target.value)}
@@ -244,6 +249,8 @@ export const OverviewTab: React.FC = () => {
               </span>
             </div>
             <button
+              aria-label={i18n.t('host.disposable_mode_label')}
+              aria-pressed={!!event.isDisposableMode}
               onClick={() => onUpdateEvent({ isDisposableMode: !event.isDisposableMode })}
               className={`w-12 h-6 rounded-full transition-colors relative p-0.5 ${
                 event.isDisposableMode ? 'bg-gold-400' : 'bg-noir-700'
@@ -259,13 +266,14 @@ export const OverviewTab: React.FC = () => {
 
           {/* Photo Limit */}
           <div>
-            <label className="flex justify-between text-xs font-semibold text-cream-200 mb-1.5">
+            <label htmlFor={`${fieldIds}-2`} className="flex justify-between text-xs font-semibold text-cream-200 mb-1.5">
               <span>{i18n.t('ui.host_dashboard.7')}</span>
               <span className="text-gold-400">
                 {i18n.t('host.photos_count', { count: event.maxPhotosPerGuest ?? 0 })}
               </span>
             </label>
             <input
+              id={`${fieldIds}-2`}
               type="range"
               min="10"
               max="150"
@@ -286,10 +294,11 @@ export const OverviewTab: React.FC = () => {
 
           {/* Couple / Host Names */}
           <div>
-            <label className="block text-xs font-semibold text-cream-300 mb-1">
+            <label htmlFor={`${fieldIds}-3`} className="block text-xs font-semibold text-cream-300 mb-1">
               {i18n.t('ui.host_dashboard.9')}
             </label>
             <input
+              id={`${fieldIds}-3`}
               type="text"
               value={hostNameDraft}
               onChange={(e) => setHostNameDraft(e.target.value)}
@@ -300,10 +309,11 @@ export const OverviewTab: React.FC = () => {
 
           {/* Event Title */}
           <div>
-            <label className="block text-xs font-semibold text-cream-300 mb-1">
+            <label htmlFor={`${fieldIds}-4`} className="block text-xs font-semibold text-cream-300 mb-1">
               {i18n.t('ui.host_dashboard.10')}
             </label>
             <input
+              id={`${fieldIds}-4`}
               type="text"
               value={titleDraft}
               onChange={(e) => setTitleDraft(e.target.value)}
@@ -314,11 +324,12 @@ export const OverviewTab: React.FC = () => {
 
           {/* Event Slug URL */}
           <div>
-            <label className="flex justify-between text-xs font-semibold text-cream-300 mb-1">
+            <label htmlFor={`${fieldIds}-slug`} className="flex justify-between text-xs font-semibold text-cream-300 mb-1">
               <span>{i18n.t('ui.host_dashboard.11')}</span>
               <span className="text-gold-400 font-mono text-[10px]">/e/{slugDraft}</span>
             </label>
             <input
+              id={`${fieldIds}-slug`}
               type="text"
               value={slugDraft}
               onChange={(e) => {
@@ -345,13 +356,15 @@ export const OverviewTab: React.FC = () => {
               phone) regardless of this app's own language setting. */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-semibold text-cream-300 mb-1">
+              <label htmlFor={`${fieldIds}-5`} className="block text-xs font-semibold text-cream-300 mb-1">
                 {i18n.t('ui.host_dashboard.12')}
               </label>
               <div className="flex gap-2">
                 <input
+                  id={`${fieldIds}-5`}
                   type="text"
                   inputMode="numeric"
+                  aria-label={i18n.t('host.event_date_field')}
                   placeholder="ДД.ММ.ГГГГ"
                   maxLength={10}
                   value={eventDateText}
@@ -362,6 +375,7 @@ export const OverviewTab: React.FC = () => {
                 <input
                   type="text"
                   inputMode="numeric"
+                  aria-label={i18n.t('host.event_time_field')}
                   placeholder="ЧЧ:ММ"
                   maxLength={5}
                   value={eventTimeText}
@@ -373,10 +387,11 @@ export const OverviewTab: React.FC = () => {
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-cream-300 mb-1">
+              <label htmlFor={`${fieldIds}-6`} className="block text-xs font-semibold text-cream-300 mb-1">
                 {i18n.t('ui.host_dashboard.13')}
               </label>
               <input
+                id={`${fieldIds}-6`}
                 type="text"
                 value={venueNameDraft}
                 onChange={(e) => setVenueNameDraft(e.target.value)}
@@ -388,10 +403,11 @@ export const OverviewTab: React.FC = () => {
 
           {/* Welcome Note to Guests */}
           <div>
-            <label className="block text-xs font-semibold text-cream-300 mb-1">
+            <label htmlFor={`${fieldIds}-7`} className="block text-xs font-semibold text-cream-300 mb-1">
               {i18n.t('ui.host_dashboard.14')}
             </label>
             <textarea
+              id={`${fieldIds}-7`}
               value={welcomeMessageDraft}
               onChange={(e) => setWelcomeMessageDraft(e.target.value)}
               rows={2}

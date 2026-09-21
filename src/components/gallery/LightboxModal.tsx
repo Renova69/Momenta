@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useId, useState } from 'react';
 import { Photo, Guest, PhotoReactionKind } from '../../types';
 import { i18n } from '../../i18n';
+import { useDialog } from '../../hooks/useDialog';
 import { formatTimeAgo } from '../../utils/date';
 import {
   X,
@@ -51,6 +52,15 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
 }) => {
   const [newComment, setNewComment] = useState('');
   const [isCopied, setIsCopied] = useState(false);
+  const titleId = useId();
+  const commentFieldId = useId();
+  // Hooks before the early return: this component renders nothing when there
+  // is no photo, and `enabled` is what tells the dialog it is not on screen.
+  const { dialogRef, dialogProps } = useDialog({
+    onClose,
+    labelledBy: titleId,
+    enabled: Boolean(photo),
+  });
 
   if (!photo) return null;
 
@@ -90,12 +100,17 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/90 backdrop-blur-lg animate-fade-in">
+    <div
+      ref={dialogRef}
+      {...dialogProps}
+      className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/90 backdrop-blur-lg animate-fade-in"
+    >
       <div className="relative w-full max-w-5xl h-full max-h-[90vh] bg-noir-900 rounded-3xl border border-cream-400/20 shadow-2xl overflow-hidden flex flex-col md:flex-row">
-        
+
         {/* Close Button */}
         <button
           onClick={onClose}
+          aria-label={i18n.t('common.close')}
           className="absolute top-4 right-4 z-20 p-2 rounded-full bg-black/60 text-white hover:bg-black/90 transition-colors border border-white/10"
         >
           <X className="w-5 h-5" />
@@ -143,7 +158,7 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
                 )}
               </div>
               <div>
-                <h4 className="font-serif font-bold text-sm text-cream-100">
+                <h4 id={titleId} className="font-serif font-bold text-sm text-cream-100">
                   {photo.guestName}
                 </h4>
                 <div className="flex items-center gap-2 text-[11px] text-cream-400/70">
@@ -281,7 +296,11 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
 
             {/* Comment Form */}
             <form onSubmit={handleSubmitComment} className="flex gap-2">
+              <label htmlFor={commentFieldId} className="sr-only">
+                {i18n.t('lightbox.write_placeholder')}
+              </label>
               <input
+                id={commentFieldId}
                 type="text"
                 value={newComment}
                 onChange={(e) => setNewComment(e.target.value)}
@@ -291,6 +310,7 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
               <button
                 type="submit"
                 disabled={!newComment.trim()}
+                aria-label={i18n.t('lightbox.send_comment')}
                 className="p-2 rounded-xl bg-gold-400 text-noir-900 font-bold hover:brightness-110 disabled:opacity-40 transition-all"
               >
                 <Send className="w-4 h-4" />

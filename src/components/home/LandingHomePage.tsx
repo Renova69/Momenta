@@ -465,6 +465,7 @@ export const LandingHomePage: React.FC<LandingHomePageProps> = ({
               >
                 <button
                   type="button"
+                  aria-expanded={isOpen}
                   onClick={() => setOpenFaqIndex(isOpen ? null : index)}
                   className="w-full p-4 sm:p-5 flex items-center justify-between text-left gap-4 hover:bg-noir-750/50 transition-colors"
                 >

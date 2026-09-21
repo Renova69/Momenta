@@ -229,6 +229,7 @@ const LiveFeedComponent: React.FC<LiveFeedProps> = ({
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
+            aria-label={i18n.t('feed.search_placeholder')}
             placeholder={i18n.t('feed.search_placeholder')}
             className="w-full pl-9 pr-3 py-1.5 rounded-xl bg-noir-900 border border-cream-400/15 text-cream-100 text-xs placeholder:text-cream-400/40 focus:outline-none focus:border-gold-400"
           />

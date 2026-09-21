@@ -10,6 +10,29 @@
   }
 }
 
+/*
+ * Motion, for guests who have asked their device for less of it.
+ *
+ * Only the projector wall read this preference, and it is the one screen
+ * nobody holds: the guest-facing app fades, slides and pulses regardless. For
+ * someone with vestibular sensitivity that is not a matter of taste — it can
+ * mean nausea, at a wedding, on the phone in their hand.
+ *
+ * Kept to near-zero rather than `none`: a duration of 0 cancels the animation
+ * outright, and code that waits for `animationend` (the reaction bar does)
+ * would never hear it and would leave elements on screen forever.
+ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
 /* Custom Scrollbar */
 ::-webkit-scrollbar {
   width: 6px;

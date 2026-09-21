@@ -91,7 +91,11 @@ export const PhotographerIngestPortal: React.FC<PhotographerIngestPortalProps> =
               <p className="text-[11px] text-cream-400/70">{event.title}</p>
             </div>
           </div>
-          <button onClick={onClose} className="p-2 rounded-full bg-noir-800 text-cream-300 hover:text-white">
+          <button
+            onClick={onClose}
+            aria-label={i18n.t('common.close')}
+            className="p-2 rounded-full bg-noir-800 text-cream-300 hover:text-white"
+          >
             <X className="w-5 h-5" />
           </button>
         </div>

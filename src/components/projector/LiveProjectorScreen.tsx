@@ -341,12 +341,14 @@ export const LiveProjectorScreen: React.FC<LiveProjectorScreenProps> = ({
             <>
               <button
                 onClick={handlePrev}
+                aria-label={i18n.t('projector.previous_photo')}
                 className="absolute left-6 p-3 rounded-full bg-black/50 text-white/80 hover:text-white hover:bg-black/80 transition-colors border border-white/10"
               >
                 <ChevronLeft className="w-6 h-6" />
               </button>
               <button
                 onClick={handleNext}
+                aria-label={i18n.t('projector.next_photo')}
                 className="absolute right-6 p-3 rounded-full bg-black/50 text-white/80 hover:text-white hover:bg-black/80 transition-colors border border-white/10"
               >
                 <ChevronRight className="w-6 h-6" />
@@ -397,6 +399,7 @@ export const LiveProjectorScreen: React.FC<LiveProjectorScreenProps> = ({
             <button
               key={p.id}
               onClick={() => setCurrentIndex(idx)}
+              aria-label={i18n.t('projector.jump_to_photo', { n: idx + 1 })}
               className={`w-12 h-12 rounded-xl overflow-hidden border-2 transition-all shrink-0 ${
                 idx === currentIndex ? 'border-gold-400 scale-105 shadow-glow' : 'border-transparent opacity-60 hover:opacity-100'
               }`}

@@ -231,6 +231,8 @@ const PhotoCardComponent: React.FC<PhotoCardProps> = ({
         <div className="pt-2 border-t border-cream-400/10 flex items-center justify-between text-xs text-cream-300">
           <button
             onClick={handleLikeClick}
+            aria-label={i18n.t('feed.like_photo', { n: photo.likesCount })}
+            aria-pressed={!!isLiked}
             className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full transition-all ${
               isLiked
                 ? 'bg-rosewood-500/20 text-rosewood-400 font-bold'
@@ -252,6 +254,7 @@ const PhotoCardComponent: React.FC<PhotoCardProps> = ({
               e.stopPropagation();
               onOpenComments(photo);
             }}
+            aria-label={i18n.t('feed.open_comments', { n: photo.commentsCount })}
             className="flex items-center gap-1.5 px-2.5 py-1 rounded-full hover:bg-noir-700 text-cream-400 hover:text-cream-200 transition-colors"
           >
             <MessageCircle className="w-4 h-4" />

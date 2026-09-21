@@ -32,6 +32,7 @@ class I18nManager {
 
   constructor() {
     this.detectLanguage();
+    this.applyDocumentLanguage();
   }
 
   /**
@@ -68,6 +69,20 @@ class I18nManager {
     return this.currentLanguage;
   }
 
+  /**
+   * Keep `<html lang>` in step with the language on screen.
+   *
+   * index.html hardcodes `lang="bg"`, and switching to English changed every
+   * word on the page but not that attribute — so a screen reader kept reading
+   * English text with Bulgarian pronunciation rules, which is close to
+   * unintelligible. It also decides hyphenation and which dictionary a
+   * browser's translation offer uses.
+   */
+  private applyDocumentLanguage() {
+    if (typeof document === 'undefined') return;
+    document.documentElement.lang = this.currentLanguage;
+  }
+
   public setLanguage(lang: SupportedLanguage) {
     if (TRANSLATIONS[lang]) {
       this.currentLanguage = lang;
@@ -80,6 +95,7 @@ class I18nManager {
           // is a better outcome than refusing to change language at all.
         }
       }
+      this.applyDocumentLanguage();
       this.listeners.forEach((fn) => fn());
     }
   }

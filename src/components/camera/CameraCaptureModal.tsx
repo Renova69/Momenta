@@ -1,8 +1,9 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useId, useState, useRef, useEffect, useCallback } from 'react';
 import { Guest, ScavengerQuest, PhotoFilter } from '../../types';
 import { compressAndFilterImage } from '../../services/compressionService';
 import { checkMediaSupport, mediaBlockMessageKey } from '../../utils/mediaSupport';
 import { i18n } from '../../i18n';
+import { useDialog } from '../../hooks/useDialog';
 import confetti from 'canvas-confetti';
 import {
   X,
@@ -218,6 +219,16 @@ export const CameraCaptureModal: React.FC<CameraCaptureModalProps> = ({
   // 20+ photos from a phone camera is enough to get the tab killed by the
   // OS on mobile RAM budgets. Track how many were dropped so the UI can say so.
   const [bulkTruncatedFrom, setBulkTruncatedFrom] = useState<number | null>(null);
+  const titleId = useId();
+  const fieldIds = useId();
+  const uploadTitleId = useId();
+  const { dialogRef, dialogProps } = useDialog({
+    onClose,
+    labelledBy: isUploadingMultiple ? uploadTitleId : titleId,
+    enabled: isOpen,
+    // Escape must not abandon photographs already on their way to the server.
+    closeOnEscape: !isUploadingMultiple,
+  });
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
@@ -375,10 +386,14 @@ export const CameraCaptureModal: React.FC<CameraCaptureModalProps> = ({
 
   if (isUploadingMultiple) {
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/90 backdrop-blur-md animate-fade-in">
+      <div
+        ref={dialogRef}
+        {...dialogProps}
+        className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/90 backdrop-blur-md animate-fade-in"
+      >
         <div className="relative w-full max-w-sm bg-noir-900 rounded-3xl border border-gold-400/30 p-8 flex flex-col items-center text-center">
           <UploadCloud className="w-12 h-12 text-gold-400 animate-bounce mb-4" />
-          <h3 className="font-serif text-lg font-bold text-cream-100 mb-2">{i18n.t('ui.camera_capture_modal.1')}</h3>
+          <h3 id={uploadTitleId} className="font-serif text-lg font-bold text-cream-100 mb-2">{i18n.t('ui.camera_capture_modal.1')}</h3>
           <p className="text-sm text-cream-300">
             {i18n.t('camera.upload_progress', { done: uploadProgress, total: totalFiles })}
           </p>
@@ -394,7 +409,11 @@ export const CameraCaptureModal: React.FC<CameraCaptureModalProps> = ({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/90 backdrop-blur-md animate-fade-in">
+    <div
+      ref={dialogRef}
+      {...dialogProps}
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/90 backdrop-blur-md animate-fade-in"
+    >
       <div className="relative w-full max-w-lg bg-noir-900 rounded-3xl border border-gold-400/30 shadow-2xl overflow-hidden flex flex-col max-h-[94vh]">
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-cream-400/10 bg-noir-800/80">
@@ -403,7 +422,7 @@ export const CameraCaptureModal: React.FC<CameraCaptureModalProps> = ({
               <Camera className="w-4 h-4 text-gold-400" />
             </div>
             <div>
-              <h3 className="font-serif text-lg font-bold text-cream-100 leading-tight">
+              <h3 id={titleId} className="font-serif text-lg font-bold text-cream-100 leading-tight">
                 {capturedRawUrl 
                   ? bulkFiles.length > 1 
                     ? i18n.t('camera.uploading_count', { count: bulkFiles.length })
@@ -427,6 +446,7 @@ export const CameraCaptureModal: React.FC<CameraCaptureModalProps> = ({
 
           <button
             onClick={onClose}
+            aria-label={i18n.t('common.close')}
             className="p-1.5 rounded-full bg-noir-700 text-cream-300 hover:text-white transition-colors"
           >
             <X className="w-5 h-5" />
@@ -583,11 +603,12 @@ export const CameraCaptureModal: React.FC<CameraCaptureModalProps> = ({
               {/* Scavenger Quest Tagging */}
               {quests.length > 0 && (
                 <div>
-                  <label className="flex items-center gap-1.5 text-xs font-semibold text-cream-300 mb-1.5">
+                  <label htmlFor={`${fieldIds}-1`} className="flex items-center gap-1.5 text-xs font-semibold text-cream-300 mb-1.5">
                     <Trophy className="w-3.5 h-3.5 text-gold-400" />
                     <span>{i18n.t('camera.tag_quest')}</span>
                   </label>
                   <select
+                    id={`${fieldIds}-1`}
                     value={selectedQuestId}
                     onChange={(e) => setSelectedQuestId(e.target.value)}
                     className="w-full px-3 py-2 rounded-xl bg-noir-800 border border-cream-400/20 text-cream-100 text-xs focus:outline-none focus:border-gold-400"
@@ -604,10 +625,11 @@ export const CameraCaptureModal: React.FC<CameraCaptureModalProps> = ({
 
               {/* Caption Box */}
               <div>
-                <label className="block text-xs font-semibold text-cream-300 mb-1.5">
+                <label htmlFor={`${fieldIds}-2`} className="block text-xs font-semibold text-cream-300 mb-1.5">
                   {i18n.t('camera.leave_note')}
                 </label>
                 <textarea
+                  id={`${fieldIds}-2`}
                   value={caption}
                   onChange={(e) => setCaption(e.target.value)}
                   placeholder={i18n.t('camera.note_placeholder')}

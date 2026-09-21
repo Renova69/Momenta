@@ -42,8 +42,10 @@ module.exports = {
     // Prevent focused tests (.only) from being accidentally committed
     'vitest/no-focused-tests': 'error',
 
-    // Ensure tests actually have assertions
-    'vitest/expect-expect': 'error',
+    // Ensure tests actually have assertions. `expectNoViolations` is one:
+    // it runs axe over the rendered markup and asserts the violation list is
+    // empty, reporting the rule ids and offending HTML when it is not.
+    'vitest/expect-expect': ['error', { assertFunctionNames: ['expect', 'expectNoViolations'] }],
 
     // Avoid identical titles which makes debugging flaky tests impossible
     'vitest/no-identical-title': 'error',

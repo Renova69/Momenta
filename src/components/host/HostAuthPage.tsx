@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useId, useState } from 'react';
 import { HostUser, WeddingEvent } from '../../types';
 import { authService, DEMO_HOST_USERS } from '../../services/authService';
 import { i18n } from '../../i18n';
@@ -17,6 +17,8 @@ interface HostAuthPageProps {
 }
 
 export const HostAuthPage: React.FC<HostAuthPageProps> = ({ onSuccess }) => {
+  // One id per field, so each visible label points at the control it names.
+  const fieldIds = useId();
   const [activeTab, setActiveTab] = useState<'signin' | 'signup' | 'demo'>('signin');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -129,12 +131,13 @@ export const HostAuthPage: React.FC<HostAuthPageProps> = ({ onSuccess }) => {
         {activeTab === 'signin' && (
           <form onSubmit={handleSignIn} className="space-y-4">
             <div>
-              <label className="block text-xs font-semibold text-cream-300 mb-1.5">
+              <label htmlFor={`${fieldIds}-1`} className="block text-xs font-semibold text-cream-300 mb-1.5">
                 {i18n.t('host.email')}
               </label>
               <div className="relative">
                 <Mail className="w-4 h-4 text-cream-400/60 absolute left-3.5 top-1/2 -translate-y-1/2" />
                 <input
+                  id={`${fieldIds}-1`}
                   type="email"
                   required
                   value={email}
@@ -146,12 +149,13 @@ export const HostAuthPage: React.FC<HostAuthPageProps> = ({ onSuccess }) => {
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-cream-300 mb-1.5">
+              <label htmlFor={`${fieldIds}-2`} className="block text-xs font-semibold text-cream-300 mb-1.5">
                 {i18n.t('host.password')}
               </label>
               <div className="relative">
                 <Lock className="w-4 h-4 text-cream-400/60 absolute left-3.5 top-1/2 -translate-y-1/2" />
                 <input
+                  id={`${fieldIds}-2`}
                   type="password"
                   required
                   value={password}
@@ -176,12 +180,13 @@ export const HostAuthPage: React.FC<HostAuthPageProps> = ({ onSuccess }) => {
         {activeTab === 'signup' && (
           <form onSubmit={handleSignUp} className="space-y-4">
             <div>
-              <label className="block text-xs font-semibold text-cream-300 mb-1.5">
+              <label htmlFor={`${fieldIds}-3`} className="block text-xs font-semibold text-cream-300 mb-1.5">
                 {i18n.t('host.couple_names')}
               </label>
               <div className="relative">
                 <User className="w-4 h-4 text-cream-400/60 absolute left-3.5 top-1/2 -translate-y-1/2" />
                 <input
+                  id={`${fieldIds}-3`}
                   type="text"
                   required
                   value={fullName}
@@ -193,12 +198,13 @@ export const HostAuthPage: React.FC<HostAuthPageProps> = ({ onSuccess }) => {
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-cream-300 mb-1.5">
+              <label htmlFor={`${fieldIds}-4`} className="block text-xs font-semibold text-cream-300 mb-1.5">
                 {i18n.t('host.email')}
               </label>
               <div className="relative">
                 <Mail className="w-4 h-4 text-cream-400/60 absolute left-3.5 top-1/2 -translate-y-1/2" />
                 <input
+                  id={`${fieldIds}-4`}
                   type="email"
                   required
                   value={email}
@@ -210,12 +216,13 @@ export const HostAuthPage: React.FC<HostAuthPageProps> = ({ onSuccess }) => {
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-cream-300 mb-1.5">
+              <label htmlFor={`${fieldIds}-5`} className="block text-xs font-semibold text-cream-300 mb-1.5">
                 {i18n.t('host.password')}
               </label>
               <div className="relative">
                 <Lock className="w-4 h-4 text-cream-400/60 absolute left-3.5 top-1/2 -translate-y-1/2" />
                 <input
+                  id={`${fieldIds}-5`}
                   type="password"
                   required
                   value={password}
@@ -258,10 +265,11 @@ export const HostAuthPage: React.FC<HostAuthPageProps> = ({ onSuccess }) => {
 
             {role === 'planner' && (
               <div>
-                <label className="block text-xs font-semibold text-cream-300 mb-1.5">
+                <label htmlFor={`${fieldIds}-6`} className="block text-xs font-semibold text-cream-300 mb-1.5">
                   {i18n.t('ui.host_auth_page.5')}
                 </label>
                 <input
+                  id={`${fieldIds}-6`}
                   type="text"
                   value={companyName}
                   onChange={(e) => setCompanyName(e.target.value)}

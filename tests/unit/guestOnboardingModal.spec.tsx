@@ -123,7 +123,10 @@ describe('GuestOnboardingModal', () => {
     const onClose = vi.fn();
     render(<GuestOnboardingModal isOpen onClose={onClose} currentGuest={ANONYMOUS_GUEST} onSaveGuest={vi.fn()} />);
 
-    fireEvent.click(screen.getByLabelText('Close'));
+    // Asked for by key, not by the English word: the close button used to
+    // carry a hardcoded aria-label="Close" while the rest of the app was in
+    // Bulgarian, and this is the assertion that would have caught it.
+    fireEvent.click(screen.getByLabelText(i18n.t('common.close')));
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 });

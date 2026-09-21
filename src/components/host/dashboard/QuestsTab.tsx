@@ -7,7 +7,7 @@
  * decides whether this renders at all stays in `HostDashboard`.
  */
 
-import React from 'react';
+import React, { useId } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
 import { i18n } from '../../../i18n';
 import { QUEST_ICONS } from './questIcons';
@@ -18,6 +18,8 @@ import { GrandPrizeEditor } from './GrandPrizeEditor';
 import { TvLeaderboardToggle } from './TvLeaderboardToggle';
 
 export const QuestsTab: React.FC = () => {
+  // One id per field, so each visible label points at the control it names.
+  const fieldIds = useId();
   const {
     event,
     handleCreateQuest,
@@ -54,8 +56,9 @@ export const QuestsTab: React.FC = () => {
 
         <form onSubmit={handleCreateQuest} className="grid grid-cols-1 sm:grid-cols-12 gap-3">
           <div className="sm:col-span-5">
-            <label className="block text-[11px] text-cream-300 mb-1">{i18n.t('ui.host_dashboard.16')}</label>
+            <label htmlFor={`${fieldIds}-1`} className="block text-[11px] text-cream-300 mb-1">{i18n.t('ui.host_dashboard.16')}</label>
             <input
+              id={`${fieldIds}-1`}
               type="text"
               required
               value={newQuestTitle}
@@ -66,8 +69,9 @@ export const QuestsTab: React.FC = () => {
           </div>
 
           <div className="sm:col-span-7">
-            <label className="block text-[11px] text-cream-300 mb-1">{i18n.t('ui.host_dashboard.17')}</label>
+            <label htmlFor={`${fieldIds}-2`} className="block text-[11px] text-cream-300 mb-1">{i18n.t('ui.host_dashboard.17')}</label>
             <input
+              id={`${fieldIds}-2`}
               type="text"
               value={newQuestDesc}
               onChange={(e) => setNewQuestDesc(e.target.value)}
@@ -77,8 +81,9 @@ export const QuestsTab: React.FC = () => {
           </div>
 
           <div className="sm:col-span-4">
-            <label className="block text-[11px] text-cream-300 mb-1">{i18n.t('quest.icon_label')}</label>
+            <label htmlFor={`${fieldIds}-3`} className="block text-[11px] text-cream-300 mb-1">{i18n.t('quest.icon_label')}</label>
             <select
+              id={`${fieldIds}-3`}
               value={newQuestIcon}
               onChange={(e) => setNewQuestIcon(e.target.value)}
               className="w-full px-3 py-2 rounded-xl bg-noir-900 border border-cream-400/20 text-xs text-cream-100 focus:outline-none focus:border-gold-400"
@@ -92,8 +97,9 @@ export const QuestsTab: React.FC = () => {
           </div>
 
           <div className="sm:col-span-4">
-            <label className="block text-[11px] text-cream-300 mb-1">{i18n.t('quest.points_label')}</label>
+            <label htmlFor={`${fieldIds}-4`} className="block text-[11px] text-cream-300 mb-1">{i18n.t('quest.points_label')}</label>
             <input
+              id={`${fieldIds}-4`}
               type="number"
               min={5}
               max={100}

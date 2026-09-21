@@ -285,6 +285,7 @@ export const AudioGuestbook: React.FC<AudioGuestbookProps> = ({
             <textarea
               value={note}
               onChange={(e) => setNote(e.target.value)}
+              aria-label={i18n.t('audio.note_placeholder')}
               placeholder={i18n.t('audio.note_placeholder')}
               rows={2}
               maxLength={150}
@@ -359,6 +360,7 @@ export const AudioGuestbook: React.FC<AudioGuestbookProps> = ({
 
                   <button
                     type="button"
+                    aria-label={isPlaying ? i18n.t('audio.pause') : i18n.t('audio.play_message')}
                     onClick={() => togglePlayback(entry.id, entry.audioUrl)}
                     className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 shadow-sm transition-transform active:scale-95 ${
                       isPlaying

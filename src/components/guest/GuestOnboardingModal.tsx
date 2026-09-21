@@ -1,7 +1,8 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useId, useState, useEffect, useRef } from 'react';
 import { Guest } from '../../types';
 import { compressAndFilterImage } from '../../services/compressionService';
 import { i18n } from '../../i18n';
+import { useDialog } from '../../hooks/useDialog';
 import {
   X,
   Camera,
@@ -28,6 +29,10 @@ export const GuestOnboardingModal: React.FC<GuestOnboardingModalProps> = ({
   const [isCompressing, setIsCompressing] = useState(false);
   const cameraInputRef = useRef<HTMLInputElement | null>(null);
   const galleryInputRef = useRef<HTMLInputElement | null>(null);
+  const titleId = useId();
+  const nameId = useId();
+  const tableId = useId();
+  const { dialogRef, dialogProps } = useDialog({ onClose, labelledBy: titleId, enabled: isOpen });
 
   // Synchronize state whenever modal opens or currentGuest changes
   useEffect(() => {
@@ -81,13 +86,17 @@ export const GuestOnboardingModal: React.FC<GuestOnboardingModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-fade-in">
+    <div
+      ref={dialogRef}
+      {...dialogProps}
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-fade-in"
+    >
       <div className="relative w-full max-w-md bg-noir-900 rounded-3xl border border-gold-400/30 shadow-2xl p-6 overflow-hidden">
         
         <button
           onClick={onClose}
           type="button"
-          aria-label="Close"
+          aria-label={i18n.t('common.close')}
           className="absolute top-4 right-4 p-1.5 rounded-full bg-noir-800 text-cream-300 hover:text-white transition-colors"
         >
           <X className="w-5 h-5" />
@@ -97,7 +106,7 @@ export const GuestOnboardingModal: React.FC<GuestOnboardingModalProps> = ({
           <div className="w-12 h-12 rounded-full bg-gold-400/20 border border-gold-400/40 flex items-center justify-center mx-auto mb-2 shadow-glow">
             <Heart className="w-6 h-6 text-gold-400 fill-gold-400" />
           </div>
-          <h3 className="font-serif text-2xl font-bold text-cream-100">
+          <h3 id={titleId} className="font-serif text-2xl font-bold text-cream-100">
             {i18n.t('profile.title')}
           </h3>
           <p className="text-xs text-cream-300/70">
@@ -155,6 +164,7 @@ export const GuestOnboardingModal: React.FC<GuestOnboardingModalProps> = ({
               type="file"
               accept="image/*"
               capture="user"
+              aria-label={i18n.t('ui.guest_onboarding_modal.2')}
               className="hidden"
               onChange={handleAvatarFile}
             />
@@ -162,16 +172,18 @@ export const GuestOnboardingModal: React.FC<GuestOnboardingModalProps> = ({
               ref={galleryInputRef}
               type="file"
               accept="image/*"
+              aria-label={i18n.t('ui.guest_onboarding_modal.3')}
               className="hidden"
               onChange={handleAvatarFile}
             />
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-cream-300 mb-1">
+            <label htmlFor={nameId} className="block text-xs font-semibold text-cream-300 mb-1">
               {i18n.t('profile.name_label')}
             </label>
             <input
+              id={nameId}
               type="text"
               required
               value={name}
@@ -182,10 +194,11 @@ export const GuestOnboardingModal: React.FC<GuestOnboardingModalProps> = ({
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-cream-300 mb-1">
+            <label htmlFor={tableId} className="block text-xs font-semibold text-cream-300 mb-1">
               {i18n.t('profile.table_label')}
             </label>
             <input
+              id={tableId}
               type="text"
               value={tableNumber}
               onChange={(e) => setTableNumber(e.target.value)}

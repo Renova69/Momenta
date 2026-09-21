@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useId, useState } from 'react';
 import { PlanTier } from '../../types';
 import { PLANS } from '../../config/plans';
 import { i18n } from '../../i18n';
+import { useDialog } from '../../hooks/useDialog';
 import {
   billingApi,
   isStripeNotConfiguredError,
@@ -35,6 +36,8 @@ export const PricingPlansModal: React.FC<PricingPlansModalProps> = ({
   const [, setSelectedTier] = useState<PlanTier>(currentPlanTier || 'celebration_pass');
   const [pendingTier, setPendingTier] = useState<PlanTier | null>(null);
   const [upgradeError, setUpgradeError] = useState<string | null>(null);
+  const titleId = useId();
+  const { dialogRef, dialogProps } = useDialog({ onClose, labelledBy: titleId, enabled: isOpen });
 
   if (!isOpen) return null;
 
@@ -117,13 +120,18 @@ export const PricingPlansModal: React.FC<PricingPlansModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/90 backdrop-blur-md animate-fade-in">
+    <div
+      ref={dialogRef}
+      {...dialogProps}
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/90 backdrop-blur-md animate-fade-in"
+    >
       <div className="relative w-full max-w-5xl bg-noir-900 rounded-3xl border border-gold-400/30 shadow-2xl overflow-hidden flex flex-col max-h-[92vh]">
         
         {/* Header */}
         <div className="p-6 sm:p-8 text-center border-b border-cream-400/10 relative bg-gradient-to-b from-noir-800 to-noir-900">
           <button
             onClick={onClose}
+            aria-label={i18n.t('common.close')}
             className="absolute top-5 right-5 p-2 rounded-full bg-noir-800 text-cream-300 hover:text-white"
           >
             <X className="w-5 h-5" />
@@ -134,7 +142,7 @@ export const PricingPlansModal: React.FC<PricingPlansModalProps> = ({
             <span>{i18n.t('ui.pricing_plans_modal.1')}</span>
           </div>
 
-          <h2 className="font-serif text-3xl sm:text-4xl font-bold text-cream-100 mb-2">
+          <h2 id={titleId} className="font-serif text-3xl sm:text-4xl font-bold text-cream-100 mb-2">
             {i18n.t('pricing.title')}
           </h2>
           <p className="text-xs sm:text-sm text-cream-300/80 max-w-xl mx-auto">

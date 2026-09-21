@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useId, useState, useEffect } from 'react';
 import { WeddingEvent } from '../../types';
 import { generateEventSlug } from '../../utils/transliterate';
 import { formatEuDate } from '../../utils/date';
@@ -28,6 +28,8 @@ export const HostEventsList: React.FC<HostEventsListProps> = ({
   onSelectEvent,
   onCreateEvent,
 }) => {
+  // One id per field, so each visible label points at the control it names.
+  const fieldIds = useId();
   const [isCreating, setIsCreating] = useState(false);
   const [title, setTitle] = useState('');
   const [hostName, setHostName] = useState('');
@@ -130,10 +132,11 @@ export const HostEventsList: React.FC<HostEventsListProps> = ({
         {isCreating ? (
           <form onSubmit={handleCreateSubmit} className="space-y-4 overflow-y-auto pr-1">
             <div>
-              <label className="block text-xs font-semibold text-cream-300 mb-1">
+              <label htmlFor={`${fieldIds}-1`} className="block text-xs font-semibold text-cream-300 mb-1">
                 {i18n.t('host.couple_names')} *
               </label>
               <input
+                id={`${fieldIds}-1`}
                 type="text"
                 required
                 value={hostName}
@@ -144,10 +147,11 @@ export const HostEventsList: React.FC<HostEventsListProps> = ({
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-cream-300 mb-1">
+              <label htmlFor={`${fieldIds}-2`} className="block text-xs font-semibold text-cream-300 mb-1">
                 {i18n.t('ui.host_events_list.1')}
               </label>
               <input
+                id={`${fieldIds}-2`}
                 type="text"
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
@@ -158,10 +162,11 @@ export const HostEventsList: React.FC<HostEventsListProps> = ({
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
-                <label className="block text-xs font-semibold text-cream-300 mb-1">
+                <label htmlFor={`${fieldIds}-3`} className="block text-xs font-semibold text-cream-300 mb-1">
                   {i18n.t('ui.host_events_list.2')}
                 </label>
                 <input
+                  id={`${fieldIds}-3`}
                   type="datetime-local"
                   value={eventDate}
                   onChange={(e) => setEventDate(e.target.value)}
@@ -170,10 +175,11 @@ export const HostEventsList: React.FC<HostEventsListProps> = ({
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-cream-300 mb-1">
+                <label htmlFor={`${fieldIds}-4`} className="block text-xs font-semibold text-cream-300 mb-1">
                   {i18n.t('ui.host_events_list.3')}
                 </label>
                 <input
+                  id={`${fieldIds}-4`}
                   type="text"
                   value={venueName}
                   onChange={(e) => setVenueName(e.target.value)}
