@@ -2,7 +2,7 @@
 
 **Audited:** 2026-09-15, read-only. **Fixes applied and recorded:** 2026-09-17.
 **Post-audit findings added:** 2026-09-18, extended 2026-09-19 (§3b).
-**Feature review:** 2026-09-21 (§3c).
+**Feature review:** 2026-09-21 (§3c). **Accessibility review:** 2026-09-21 (§3d).
 
 > **Read this first.** The audit below is preserved as written — each finding
 > still describes the code as it was on 2026-09-15, because a finding rewritten
@@ -58,7 +58,8 @@ False positives 3 · Needs manual verification 5 · Production blockers 3.
 **Totals as of 2026-09-21:** of the audit's own 20 findings — 19 fixed, L-1
 resolved as not a defect. Of the 14 post-audit findings in §3b — 14 fixed.
 Of the 15 feature-review findings in §3c — 15 fixed (2 Critical, 6 High,
-6 Medium, 1 Low).
+6 Medium, 1 Low). Of the 6 accessibility findings in §3d — 6 fixed (2 High,
+3 Medium, 1 Low), with the parts no automated pass can decide still open.
 Production blockers 0 in code, 3 operational actions outstanding (§9). The 4 unfinished features are unchanged
 and none is a defect; of the 5 verification items, V-5 is substantially
 addressed by mutation testing rather than by reading, and V-1 to V-4 still need
@@ -675,6 +676,45 @@ Every fix is toggle-verified. Six tests had to be changed because they encoded
 the old behaviour, each with the reason written beside it; three toggles were
 equivalent mutants and are named as such in their specs rather than worked
 around.
+
+---
+
+## 3d. The Accessibility Review (2026-09-21)
+
+The first one. No audit pass, no review and no test had ever asked what this
+app is like for someone who cannot see the screen or cannot use a mouse, and
+it showed: the findings are systemic, not scattered. Six findings, all fixed
+in `1762ded`, numbered A-1 to A-6.
+
+Worth stating plainly, because it shapes what to do next: **an automated pass
+cannot close this subject.** `tests/unit/accessibility.spec.tsx` runs axe over
+three dialogs in jsdom, which has no layout and no pixels, so colour contrast,
+focus order across a real page, touch-target size and what a screen reader
+actually says out loud are all still unverified. They need a browser and a
+person. What is fixed below is the part that was decidable from the source,
+and it was the larger part.
+
+| ID | Finding | Severity | Files | Fixed |
+|---|---|---|---|---|
+| **A-1** | **No overlay in the app was a dialog.** All five — lightbox, camera, guest sign-in, host profile, pricing — were `<div className="fixed inset-0">`: no `role`, so assistive technology read the page behind them as if the overlay were not there; no Escape; no focus management, so Tab walked out of the dialog into a page hidden under the backdrop, where every control is still focusable. The lightbox could be opened from the keyboard and not closed. | High | new `src/hooks/useDialog.ts`, 5 components | `1762ded` |
+| **A-2** | **Thirty-eight form fields had a visible label attached to nothing** — 39 of 40 `<label>` elements had no `htmlFor` and 43 of 45 fields no `id`. Includes guest sign-in, which is the first thing every guest touches, and host sign-in. A placeholder is not a label: it vanishes on the first keystroke, and several screen readers never announce it. | High | 8 components | `1762ded` |
+| **A-3** | Around twenty icon-only controls announced as "button" and nothing more: every close button, the like and comment counts (a bare number), the projector's arrows and thumbnails, the moderation and disposable-mode toggles, the ingest copy and revoke buttons. The two toggles also never said whether they were on. | Medium | 9 components | `1762ded` |
+| **A-4** | `<html lang="bg">` is hardcoded in `index.html` and the language switcher never touched it, so with the app in English a screen reader read English words with Bulgarian pronunciation rules. | Medium | `src/i18n/index.ts` | `1762ded` |
+| **A-5** | `prefers-reduced-motion` was honoured on the projector wall only — the one screen nobody holds. Every guest-facing fade, slide and pulse ignored it. For someone with vestibular sensitivity that is not a preference. | Medium | `src/index.css` | `1762ded` |
+| **A-6** | One close button carried a hardcoded `aria-label="Close"` while the rest of the app ran in Bulgarian, and the test for it asked for the English word — so the test agreed with the bug. | Low | `GuestOnboardingModal`, its spec | `1762ded` |
+
+**Not findings, recorded so they are not re-reported.** All 23 `<img>` elements
+have alt text; the four a source scan flagged were the characters `<img` inside
+code comments. All 37 uses of `focus:outline-none` pair with a visible focus
+style. The app has a `<main>` landmark. Two toggles — public showcase and TV
+leaderboard — already carried `aria-label` and `aria-pressed`, which is where
+the pattern the others now follow came from.
+
+**Still open, and needs a person:** contrast of gold on dark noir at small
+sizes, touch-target sizes (several controls are around 36px against a 44px
+guideline), keyboard order through a whole page rather than one dialog, and a
+pass with an actual screen reader. A dev-server axe run would settle the first
+two.
 
 ---
 
