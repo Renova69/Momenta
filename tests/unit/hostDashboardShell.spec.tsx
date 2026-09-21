@@ -165,6 +165,45 @@ describe('tier gates', () => {
   });
 });
 
+describe('the theme palettes', () => {
+  // The server refuses any palette but the default below celebration_pass.
+  // The client had the gate defined and never applied it, so a free host
+  // picked a locked theme and met a bare 403 for something nothing had
+  // marked as paid.
+  function paletteButton(container: HTMLElement, name: string) {
+    return Array.from(container.querySelectorAll('button')).find((b) =>
+      (b.getAttribute('aria-label') || '').startsWith(name)
+    )!;
+  }
+
+  it('offers the upgrade instead of a refusal for a locked palette on the free plan', () => {
+    const { container, props } = renderDashboard({ planTier: 'free' });
+
+    fireEvent.click(paletteButton(container, i18n.t('theme.midnight_noir.name')));
+
+    expect(props.onOpenPricing).toHaveBeenCalled();
+    expect(props.onUpdateEvent).not.toHaveBeenCalled();
+  });
+
+  it('leaves the default palette selectable on any plan', () => {
+    const { container, props } = renderDashboard({ planTier: 'free' });
+
+    fireEvent.click(paletteButton(container, i18n.t('theme.champagne_gold.name')));
+
+    expect(props.onUpdateEvent).toHaveBeenCalledWith({ themePalette: 'champagne_gold' });
+    expect(props.onOpenPricing).not.toHaveBeenCalled();
+  });
+
+  it('applies a palette directly once the plan includes them', () => {
+    const { container, props } = renderDashboard({ planTier: 'celebration_pass' });
+
+    fireEvent.click(paletteButton(container, i18n.t('theme.midnight_noir.name')));
+
+    expect(props.onUpdateEvent).toHaveBeenCalledWith({ themePalette: 'classic_noir' });
+    expect(props.onOpenPricing).not.toHaveBeenCalled();
+  });
+});
+
 describe('revoking every guest session', () => {
   it('asks first, and does nothing when the host declines', async () => {
     const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);

@@ -255,6 +255,10 @@ async function runE2ETests() {
         eventId: testEvent.id,
         guestId: guestId,
         guestName: 'Sophie & James',
+        // A phone always sends this, and the upload now requires it (or a
+        // proven token): a caller identifying neither used to mint a fresh
+        // guest per request, whose per-guest photo count restarted at zero.
+        deviceFingerprint: deviceFp,
         fullUrl: `data:image/jpeg;base64,${validJpegBytes.toString('base64')}`,
         caption: 'Wishing you endless love and happiness! 🥂',
         filterApplied: 'golden_glow',

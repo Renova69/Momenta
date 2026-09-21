@@ -181,13 +181,30 @@ describe('counting a guest’s photos', () => {
     expect(second.status).toBe(201);
   }, 40_000);
 
-  it('still counts for a caller that sends no fingerprint at all', async () => {
-    // Without a fingerprint the count falls back to the guest row. The cap has
-    // to hold on that path too, or omitting one field lifts it.
+  it('refuses an upload that names neither a device nor a proven guest', async () => {
+    // Such a caller cannot be counted against anything: it used to mint a
+    // fresh guest row, whose count then started again at zero, so leaving one
+    // field out lifted the cap entirely. H8 already answers this everywhere
+    // else — identify yourself first.
     const { eventId } = await registerHost();
     await setCap(eventId, 1);
 
-    const first = await uploadPhoto(eventId, undefined, 'Anonymous');
+    const res = await uploadPhoto(eventId, undefined, 'Anonymous');
+
+    expect(res.status).toBe(401);
+    expect((await res.json()).code).toBe('GUEST_IDENTITY_REQUIRED');
+    const stored = await pool.query('SELECT COUNT(*)::int AS n FROM photos WHERE event_id = $1', [eventId]);
+    expect(stored.rows[0].n).toBe(0);
+  }, 40_000);
+
+  it('does not let a bare guestId claim another guest’s budget', async () => {
+    // A guestId is public (every photo in the feed carries one) and is not
+    // proof of identity (SEC-A2), so presenting one with a different device
+    // must not inherit that guest's row — or its count.
+    const { eventId } = await registerHost();
+    await setCap(eventId, 5);
+
+    const first = await uploadPhoto(eventId, 'cap-owner-device', 'Ana');
     expect(first.status).toBe(201);
     const guestId = (await first.json()).guestId;
 
@@ -197,15 +214,16 @@ describe('counting a guest’s photos', () => {
         'Content-Type': 'application/json',
         'x-device-fingerprint': `cap-spec-${Math.random().toString(36).slice(2, 9)}`,
       },
-      body: JSON.stringify({ eventId, guestId, guestName: 'Anonymous', fullUrl: jpegDataUrl }),
+      body: JSON.stringify({
+        eventId,
+        guestId,
+        guestName: 'Anonymous',
+        fullUrl: jpegDataUrl,
+        deviceFingerprint: `cap-other-${Math.random().toString(36).slice(2, 9)}`,
+      }),
     });
 
-    // The bare guestId is not proof of identity (SEC-A2), so this is a new
-    // guest rather than a refusal — but it must not be able to claim the
-    // first guest's row either.
-    expect([201, 429]).toContain(second.status);
-    if (second.status === 201) {
-      expect((await second.json()).guestId).not.toBe(guestId);
-    }
+    expect(second.status).toBe(201);
+    expect((await second.json()).guestId).not.toBe(guestId);
   }, 40_000);
 });

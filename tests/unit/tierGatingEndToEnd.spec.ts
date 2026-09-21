@@ -363,6 +363,58 @@ describe('refusals are asymmetric', () => {
   }, 40_000);
 });
 
+describe('a paid palette at creation', () => {
+  // The update path has refused a custom palette below celebration_pass for a
+  // long time. Creating an album straight onto one was free, and kept — the
+  // update gate only ever saw the host changing away from it. This sits apart
+  // from the matrix above because creating a SECOND album is itself limited
+  // to Pro Planner, so the refusals have to be told apart by their code.
+  function createWithTheme(host: Host, themePalette: string) {
+    return fetch(`${BASE_URL}/api/events`, {
+      method: 'POST',
+      headers: authed(host),
+      body: JSON.stringify({ hostName: 'Palette Host', themePalette }),
+    });
+  }
+
+  it('is refused on the free plan, as a tier refusal and not a limit one', async () => {
+    const host = await registerHost();
+
+    const res = await createWithTheme(host, 'classic_noir');
+
+    expect(res.status).toBe(403);
+    const body = await res.json();
+    expect(body.code).toBe('TIER_REQUIRED');
+    expect(body.requiredTier).toBe('celebration_pass');
+  });
+
+  it('is allowed on a plan that includes both the palette and a second album', async () => {
+    const host = await registerHost();
+    // Both halves of the plan, as a real upgrade writes them: the tier the
+    // palette is gated on, and the event limit a second album needs.
+    await query(
+      "UPDATE subscriptions SET tier = 'pro_planner', event_limit = 10 WHERE user_id = $1 AND status = 'active'",
+      [host.userId]
+    );
+
+    const res = await createWithTheme(host, 'classic_noir');
+
+    expect(res.status).toBe(201);
+    expect((await res.json()).theme_palette).toBe('classic_noir');
+  });
+
+  it('still lets a free host create on the default palette', async () => {
+    // Free carries one album, which registration already made, so the refusal
+    // here must be the limit — never the palette.
+    const host = await registerHost();
+
+    const res = await createWithTheme(host, 'champagne_gold');
+
+    expect(res.status).toBe(403);
+    expect((await res.json()).code).toBe('EVENT_LIMIT_REACHED');
+  });
+});
+
 describe('how many weddings a plan carries', () => {
   it('holds a single-event host to one', async () => {
     await setTier(shared, 'deluxe_keepsake');

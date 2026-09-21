@@ -137,6 +137,22 @@ eventsRouter.post('/', requireAuth, validateBody(CreateEventSchema), async (req,
     }
     const host = userRes.rows[0];
 
+    // A paid palette is paid here as well. PUT has refused one below
+    // celebration_pass for a long time; creation never did, so a free host
+    // could simply start their album on a paid theme and keep it, and the
+    // update gate only ever saw them changing away from it.
+    if (typeof themePalette === 'string' && themePalette !== DEFAULT_THEME) {
+      const tier = await getEffectiveTierForUser(userId);
+      if (!meetsTier(tier, 'celebration_pass')) {
+        return res.status(403).json({
+          error: 'Персонализираните палитри изискват план "celebration_pass" или по-висок.',
+          requiredTier: 'celebration_pass',
+          currentTier: tier,
+          code: 'TIER_REQUIRED',
+        });
+      }
+    }
+
     // Enforce the subscription's active-event limit (Pro Planner = 10, others = 1).
     // Also the source for the real effective tier — the events row's own
     // plan_tier column is always 'free' at creation (getEffectiveTierForEvent

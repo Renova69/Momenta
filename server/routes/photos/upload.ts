@@ -459,6 +459,18 @@ photosRouter.post(
         return res.status(403).json({ error: tierCheck.reason, code: tierCheck.code || 'TIER_LIMIT_REACHED' });
       }
 
+      // H8, the same rule the rest of the app follows: a caller offering
+      // neither a token nor a device is asked to identify itself rather than
+      // handed a brand-new guest. Without this the per-guest photo cap was
+      // one request away from meaningless — every upload that named no
+      // device minted a fresh guest, whose count started again at zero.
+      if (!req.body.guestToken && !deviceFingerprint) {
+        return res.status(401).json({
+          error: 'Join the wedding before uploading a photo.',
+          code: 'GUEST_IDENTITY_REQUIRED',
+        });
+      }
+
       const guest = await resolveGuestForUpload(eventId, req.body);
 
       const capCheck = await checkPerGuestCap(eventId, guest.guestId, context, deviceFingerprint);

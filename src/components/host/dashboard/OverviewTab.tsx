@@ -8,7 +8,7 @@
  */
 
 import React from 'react';
-import { Settings, Shield, Trophy, Camera, Users } from 'lucide-react';
+import { Settings, Shield, Trophy, Camera, Users, Lock } from 'lucide-react';
 import { i18n } from '../../../i18n';
 import { THEMES } from '../../../config/themes';
 import { transliterateBg } from '../../../utils/transliterate';
@@ -16,6 +16,7 @@ import { router } from '../../../router';
 import { StorageMeter } from '../StorageMeter';
 import { maskDateInput, maskTimeInput } from './dateFields';
 import { ThemePalette } from '../../../types';
+import { isFeatureUnlocked } from '../../../config/tierGating';
 import { useHostDashboard } from './context';
 
 export const OverviewTab: React.FC = () => {
@@ -28,6 +29,10 @@ export const OverviewTab: React.FC = () => {
     setVenueNameDraft, setWelcomeMessageDraft, slugDraft, titleDraft,
     venueNameDraft, welcomeMessageDraft,
   } = useHostDashboard();
+
+  /** Every palette but this one is a Celebration Pass feature, server-side. */
+  const DEFAULT_THEME_KEY = 'champagne_gold';
+  const themesUnlocked = isFeatureUnlocked(event.planTier, 'custom_themes');
 
   return (
     <div className="space-y-6">
@@ -83,7 +88,7 @@ export const OverviewTab: React.FC = () => {
             <span>{i18n.t('host.settings')}</span>
           </h4>
 
-          {/* Theme Palette Selector */}
+          {/* Theme Palette Selector — anything but the default is a paid feature. */}
           <div>
             <label className="block text-xs font-semibold text-cream-300 mb-2">
               {i18n.t('ui.host_dashboard.3')}
@@ -92,22 +97,31 @@ export const OverviewTab: React.FC = () => {
               {Object.keys(THEMES).map((themeKey) => {
                 const t = THEMES[themeKey as ThemePalette];
                 const isSelected = event.themePalette === themeKey;
+                // The server refuses any palette but the default below
+                // celebration_pass. The gate was defined and never applied, so
+                // a free host picked a locked theme and met a bare 403 for
+                // something nothing had marked as paid.
+                const isLocked = themeKey !== DEFAULT_THEME_KEY && !themesUnlocked;
                 return (
                   <button
                     key={themeKey}
                     type="button"
-                    onClick={() => onUpdateEvent({ themePalette: themeKey as ThemePalette })}
+                    aria-label={isLocked ? `${i18n.t(t.name)} — ${i18n.t('gate.plan_label')}` : i18n.t(t.name)}
+                    onClick={() =>
+                      isLocked ? onOpenPricing?.() : onUpdateEvent({ themePalette: themeKey as ThemePalette })
+                    }
                     className={`p-2 rounded-xl border flex items-center gap-2 text-left transition-all ${
                       isSelected
                         ? 'border-gold-400 bg-gold-400/10 shadow-glow'
                         : 'border-cream-400/10 bg-noir-900 hover:border-cream-400/30'
-                    }`}
+                    } ${isLocked ? 'opacity-60' : ''}`}
                   >
                     <div
                       className="w-4 h-4 rounded-full border border-white/20 shrink-0"
                       style={{ backgroundColor: t.accent }}
                     />
                     <span className="text-xs text-cream-200 truncate">{i18n.t(t.name)}</span>
+                    {isLocked && <Lock className="w-3 h-3 text-gold-400/80 shrink-0 ml-auto" />}
                   </button>
                 );
               })}
