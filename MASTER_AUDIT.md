@@ -2,6 +2,7 @@
 
 **Audited:** 2026-09-15, read-only. **Fixes applied and recorded:** 2026-09-17.
 **Post-audit findings added:** 2026-09-18, extended 2026-09-19 (§3b).
+**Feature review:** 2026-09-21 (§3c).
 
 > **Read this first.** The audit below is preserved as written — each finding
 > still describes the code as it was on 2026-09-15, because a finding rewritten
@@ -9,7 +10,7 @@
 > that every confirmed finding now carries a **FIXED** line naming the commit,
 > and §9 records what is actually left.
 >
-> **State on 2026-09-19:** all three production blockers cleared in code. Of the
+> **State on 2026-09-21:** all three production blockers cleared in code. Of the
 > 20 findings the audit itself produced (12 in §§2–3, 8 in §4): **19 fixed** —
 > H-4's last net, the R2 lifecycle rule, confirmed on the bucket on 2026-09-19 —
 > and **1 resolved as not a defect**: L-1's premise was wrong, `vercel.json` is
@@ -25,7 +26,15 @@
 > cause of the intermittent suite failures that had previously been blamed on
 > database contention.
 >
-> What remains is operational (§9).
+> **§3c records 15 more, from a review that asked a different question:** not
+> whether the code is correct, but whether each feature does what it is sold as
+> doing, tier by tier. All fixed. The pattern there is worth as much as the
+> findings — most of them are places where every step was reasonable and the
+> whole was wrong, which is what you see when you follow a feature end to end
+> instead of reading a file.
+>
+> What remains is operational (§9). Two of those items, key rotation and SMTP,
+> are **deferred by the owner** — see §9.
 
 Consolidates every completed audit and verification report into one authoritative
 list. Sources reconciled:
@@ -46,8 +55,10 @@ by inspection, not by preference; each is recorded with its evidence in §6 or �
 **Totals as audited:** Critical 0 · High 4 · Medium 8 · Low 8 · Unfinished 4 ·
 False positives 3 · Needs manual verification 5 · Production blockers 3.
 
-**Totals as of 2026-09-19:** of the audit's own 20 findings — 19 fixed, L-1
+**Totals as of 2026-09-21:** of the audit's own 20 findings — 19 fixed, L-1
 resolved as not a defect. Of the 14 post-audit findings in §3b — 14 fixed.
+Of the 15 feature-review findings in §3c — 15 fixed (2 Critical, 6 High,
+6 Medium, 1 Low).
 Production blockers 0 in code, 3 operational actions outstanding (§9). The 4 unfinished features are unchanged
 and none is a defect; of the 5 verification items, V-5 is substantially
 addressed by mutation testing rather than by reading, and V-1 to V-4 still need
@@ -619,6 +630,51 @@ the upload's own event; otherwise it is dropped and the photo still uploads.
 The spec uploads to one wedding with another wedding's quest, then asserts that
 wedding's board is empty and the photo row's `quest_id` is null. It was
 toggle-verified by widening the event check.
+
+---
+
+## 3c. The Feature Review (2026-09-21)
+
+Six agents were asked a different question from the one the audit asks. Not
+"is this code correct" but "does this app do what it says it does" — feature by
+feature, tier by tier, following each one from the pricing page to the row it
+writes. Fifteen findings, all fixed, numbered N-15 onwards.
+
+What the shape of them says: the audit's read-only passes and the mutation
+sweep had already been over most of these files. Nearly everything below was
+found by asking what a *guest or host* would experience, not what a function
+returns. Four of the five most serious ones are places where the code did
+something reasonable at each step and the wrong thing overall — a purchase that
+downgrades, a guest's expired token that logs the host out, a delete that
+succeeds after the file it was meant to remove did not.
+
+| ID | Finding | Severity | Files | Fixed |
+|---|---|---|---|---|
+| **N-15** | Buying a plan could **downgrade** an album. `applyTierUpgrade`'s upsert wrote `EXCLUDED.tier` unconditionally, so a host who already held VIP and bought a Celebration Pass lost the VIP features they had paid for. | Critical | `server/lib/subscriptionUpgrade.ts`, `server/routes/billing.ts` | `712528c` |
+| **N-16** | A guest's 401 ended the **host's** session everywhere. The client treated every 401 as "your login expired", so an expired guest token on a shared device logged the host out of every album. | High | `src/api/apiClient.ts`, `src/services/authService.ts` | `712528c` |
+| **N-17** | Photo deletion removed the database row first and the stored object second. A storage failure then left an orphan nothing pointed at, counted against nobody's quota, found only by the orphan sweep. | High | `server/routes/photos/moderation.ts` | `712528c` |
+| **N-18** | The R2 adapter's `delete` swallowed its error and returned as though it had worked. Every caller above it believed the object was gone. | High | `server/lib/storage.ts` | `712528c` |
+| **N-19** | **Disposable camera mode was cosmetic.** Locked photos were sent to every guest's browser in full and hidden with CSS. Anyone with dev tools could see the whole album before the reveal — the one thing the feature sells. | Critical | `server/routes/photos/feed.ts`, `server/lib/photoQuarantine.ts`, `src/components/gallery/PhotoCard.tsx` | `15dec3f` |
+| **N-20** | A quest retake **wiped the points already earned**. The leaderboard required the completion's own photo to survive, so replacing a photo scored zero until the new one was approved. | High | `server/lib/questLeaderboard.ts` | `15dec3f` |
+| **N-21** | Rejected photos counted towards the tier photo caps. A host who moderated strictly hit the free tier's 50-photo ceiling with fewer than 50 photos in the album. | Medium | `server/middleware/tierGate.ts` | `afa3b65` |
+| **N-22** | A non-default `themePalette` could be set at event **creation** on the free tier. The gate existed on update only. | Medium | `server/routes/events/crud.ts` | `afa3b65` |
+| **N-23** | A truncated upload reached `sharp` without `failOn: 'truncated'`, so a half-transferred photo could be stored as a valid but incomplete image. | Medium | `server/lib/images.ts` | `afa3b65` |
+| **N-24** | A deleted album left every guest still on it staring at a screen that never changed. No `EVENT_DELETED` handling, and the not-found screen offered no way out. | High | `src/services/realtimeMessages.ts`, `src/context/AppContext.tsx`, `src/components/common/EventNotFound.tsx` | `2416460` |
+| **N-25** | Withdrawing an approval left the photo public. Setting a photo back to `pending` or `rejected` did not return it to quarantine, so the URL kept working. | High | `server/routes/photos/moderation.ts`, `server/lib/photoQuarantine.ts` | `2416460` |
+| **N-26** | Four client actions failed silently — the optimistic update stayed on screen after the server refused it, and the next sync reverted it with no explanation. | Medium | `src/services/photoService.ts`, `src/services/eventService.ts` | `2416460` |
+| **N-27** | **A quest could not be deleted.** `DELETE /api/quests/:id` existed and was documented; nothing called it, so a mistyped quest stayed in front of every guest for the whole reception. | Medium | `src/services/questService.ts`, `src/components/host/dashboard/QuestsTab.tsx` | `af2721e` |
+| **N-28** | `storage-recount` treated a failed read as a file of zero bytes, so one transient storage error wrote a smaller number over a correct one. Accounting drifting downwards, with nothing to notice it. | Medium | `scripts/storage-recount.ts` | `af2721e` |
+| **N-29** | Three untrue claims: `is_active` on `scavenger_quests` documented as retiring a quest when nothing writes or reads it; the README still selling White-label after the pricing page dropped it; the free tier advertised at 500 MB against an enforced 512. | Low | `docs/DATABASE_SCHEMA.md`, `README.md`, `src/config/plans.ts` | `af2721e` |
+
+Two handlers for messages nothing sends were removed with N-27 (`REACTION_SENT`
+on the client, superseded by the coalesced batch; `LEAVE_EVENT_ROOM` on the
+server, where the close handler and heartbeat reaper do the work). Not defects
+— dead code that reads like a contract.
+
+Every fix is toggle-verified. Six tests had to be changed because they encoded
+the old behaviour, each with the reason written beside it; three toggles were
+equivalent mutants and are named as such in their specs rather than worked
+around.
 
 ---
 
