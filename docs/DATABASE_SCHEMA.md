@@ -224,8 +224,13 @@ Gamification challenges to get guests taking creative photos.
   when its photo still exists, belongs to the same guest, was uploaded for that
   quest, and is not rejected — so rows the removed claim route once wrote with
   any photo id, or none, do not score.
-- `is_active` (BOOLEAN, default `true`) on `scavenger_quests`: A retired quest
-  stops being offered without deleting the completions already earned against it.
+- `is_active` (BOOLEAN, default `true`) on `scavenger_quests`: **inert today.**
+  It was meant to retire a quest without deleting the completions earned against
+  it, but nothing writes `false` and no query filters on it, so a quest marked
+  inactive would still be offered to guests and would still score. Retiring a
+  quest means deleting it (`DELETE /api/quests/:id`), which takes its
+  completions with it. Either wire the flag up or drop the column; do not write
+  to it expecting it to hide anything.
 
 ### `audio_guestbook`
 - Stores voice messages (`audio_url`, `duration_seconds`, `note`) left by guests.

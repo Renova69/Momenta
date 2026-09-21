@@ -101,6 +101,8 @@ export const en: Record<string, string> = {
   'quests.uploading': 'Uploading…',
   'quests.not_counted': 'Photo not counted',
   'quests.snap_again': 'Snap it again',
+  'host.delete_quest': 'Delete quest',
+  'host.delete_quest_confirm': 'Delete “{{title}}”? The points guests earned on it go too.',
   'quests.photo_rejected': 'Photo rejected',
   'quests.try_again': 'Try again',
   'quests.grand_prize': 'The Grand Prize',

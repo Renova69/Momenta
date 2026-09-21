@@ -6,7 +6,7 @@ import { eventsApi } from '../../src/api/eventsApi';
 import { questsApi } from '../../src/api/questsApi';
 import { QUEST_PRIZE_MAX_LENGTH } from '../../shared/eventLimits';
 import { i18n } from '../../src/i18n';
-import { WeddingEvent, QRCanvasConfig, PlanTier } from '../../src/types';
+import { WeddingEvent, QRCanvasConfig, PlanTier, ScavengerQuest } from '../../src/types';
 
 /**
  * The dashboard shell: tab routing, the tier gates, and the destructive
@@ -68,6 +68,7 @@ interface Overrides {
   onOpenPricing?: () => void;
   onUpdateEvent?: () => void;
   onResetData?: () => void;
+  quests?: ScavengerQuest[];
 }
 
 function renderDashboard(over: Overrides = {}) {
@@ -84,6 +85,7 @@ function renderDashboard(over: Overrides = {}) {
     onSetPhotoStatus: vi.fn(),
     onDeletePhoto: vi.fn(),
     onAddQuest: vi.fn(),
+    onDeleteQuest: vi.fn(),
     onResetData: vi.fn(),
     onOpenPricing: vi.fn(),
     ...rest,
@@ -162,6 +164,47 @@ describe('tier gates', () => {
     fireEvent.click(cta);
 
     expect(onOpenPricing).toHaveBeenCalled();
+  });
+});
+
+describe('deleting a quest', () => {
+  // DELETE /api/quests/:id existed and was documented from the start, and
+  // nothing ever called it: a mistyped quest stayed in front of every guest
+  // for the whole reception.
+  const quest = {
+    id: 'a1b2c3d4-0000-4000-8000-000000000001',
+    eventId: 'event-1',
+    title: 'Mistyped quest',
+    description: '',
+    iconName: 'camera',
+    points: 10,
+    isActive: true,
+    completedByGuestIds: [],
+  };
+
+  function openQuests(overrides: Record<string, unknown> = {}) {
+    const rendered = renderDashboard({ planTier: 'pro_planner', quests: [quest], ...overrides } as Overrides);
+    openTab(rendered.container, 'host.quests_mgr');
+    return rendered;
+  }
+
+  it('asks first, because the points guests earned go with it', () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    const { props } = openQuests();
+
+    fireEvent.click(screen.getByRole('button', { name: `${i18n.t('host.delete_quest')}: ${quest.title}` }));
+
+    expect(confirm).toHaveBeenCalled();
+    expect(props.onDeleteQuest).not.toHaveBeenCalled();
+  });
+
+  it('deletes the one the host chose once they confirm', () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const { props } = openQuests();
+
+    fireEvent.click(screen.getByRole('button', { name: `${i18n.t('host.delete_quest')}: ${quest.title}` }));
+
+    expect(props.onDeleteQuest).toHaveBeenCalledWith(quest.id);
   });
 });
 
@@ -488,6 +531,7 @@ describe('the TV-wall leaderboard switch', () => {
       onSetPhotoStatus: vi.fn(),
       onDeletePhoto: vi.fn(),
       onAddQuest: vi.fn(),
+      onDeleteQuest: vi.fn(),
       onResetData: vi.fn(),
       onOpenPricing: vi.fn(),
     };

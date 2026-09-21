@@ -268,13 +268,11 @@ export class WsEventManager {
             this.eventRooms.get(eventId)!.add(ws);
 
             ws.send(JSON.stringify({ type: 'ROOM_JOINED', eventId, isHost }));
-          } else if (msg.type === 'LEAVE_EVENT_ROOM') {
-            const currentMeta = this.clientMeta.get(ws);
-            if (currentMeta?.eventId) {
-              this.eventRooms.get(currentMeta.eventId)?.delete(ws);
-            }
-            this.clientMeta.set(ws, { isAlive: true, userId: verifiedUser?.userId });
           }
+          // There is no LEAVE_EVENT_ROOM: no client has ever sent one, and a
+          // guest who closes the tab or walks out of range is removed by the
+          // close handler and the heartbeat reaper instead. Joining another
+          // room replaces the old membership above.
         } catch {
           // Ignore malformed messages
         }

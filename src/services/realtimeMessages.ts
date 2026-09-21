@@ -213,17 +213,13 @@ export function applyRealtimeMessage(ctx: ServiceContext, msg: RealtimeMessage):
       ctx.updateEvent(normalizePartialEvent(msg.payload as RemoteEventPayload), false);
       break;
     }
-    case 'REACTION_SENT': {
-      // Purely ephemeral — animated on screen, never written to storage.
-      const { reaction, guestName } = msg.payload || {};
-      if (reaction) ctx.emitReaction(reaction, guestName ?? null);
-      break;
-    }
     case 'REACTIONS_BATCH': {
-      // Several reactions the server coalesced into one message during a
-      // burst (P6) — fan them out exactly like individual REACTION_SENT
-      // messages so the projector wall's animation logic doesn't need to
-      // know the difference.
+      // Every reaction arrives this way: the server coalesces a burst into
+      // one message (P6). It used to also send them one at a time, as
+      // REACTION_SENT, and that handler stayed here for a while after the
+      // last sender of it was gone.
+      //
+      // Purely ephemeral — animated on screen, never written to storage.
       const reactions = (msg.payload?.reactions as { reaction?: string; guestName?: string | null }[]) || [];
       for (const item of reactions) {
         if (item?.reaction) ctx.emitReaction(item.reaction, item.guestName ?? null);

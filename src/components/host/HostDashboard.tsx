@@ -53,6 +53,7 @@ interface HostDashboardProps {
   onSetPhotoStatus: (photoId: string, status: PhotoStatus) => void;
   onDeletePhoto: (photoId: string) => void;
   onAddQuest: (title: string, description: string, iconName?: string, points?: number) => void;
+  onDeleteQuest: (questId: string) => void;
   onResetData: () => void;
   onOpenPricing?: () => void;
 }
@@ -69,6 +70,7 @@ export const HostDashboard: React.FC<HostDashboardProps> = ({
   onSetPhotoStatus,
   onDeletePhoto,
   onAddQuest,
+  onDeleteQuest,
   onResetData,
   onOpenPricing,
 }) => {
@@ -223,7 +225,7 @@ export const HostDashboard: React.FC<HostDashboardProps> = ({
   const dashboard: HostDashboardValue = {
     event, guests, photos, quests, audioEntries, qrConfig,
     onUpdateEvent, onUpdateQRConfig, onSetPhotoStatus, onDeletePhoto,
-    onAddQuest, onResetData, onOpenPricing,
+    onAddQuest, onDeleteQuest, onResetData, onOpenPricing,
     pendingPhotos, currentTier,
     activeTab, setActiveTab,
     hostNameDraft, setHostNameDraft,

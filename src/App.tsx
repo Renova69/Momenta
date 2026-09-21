@@ -80,6 +80,7 @@ function WeddingAppContent() {
     setPhotoStatus,
     deletePhoto,
     addQuest,
+    deleteQuest,
     addAudioEntry,
     resetDefaults,
   } = useApp();
@@ -438,6 +439,7 @@ function WeddingAppContent() {
                 onSetPhotoStatus={setPhotoStatus}
                 onDeletePhoto={deletePhoto}
                 onAddQuest={addQuest}
+                onDeleteQuest={deleteQuest}
                 onResetData={resetDefaults}
                 onOpenPricing={() => setIsPricingOpen(true)}
               />

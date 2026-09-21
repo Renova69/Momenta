@@ -399,8 +399,8 @@ describe('ephemeral reactions', () => {
     const h = harness();
 
     applyRealtimeMessage(h.ctx, {
-      type: 'REACTION_SENT',
-      payload: { reaction: 'heart', guestName: 'Ana' },
+      type: 'REACTIONS_BATCH',
+      payload: { reactions: [{ reaction: 'heart', guestName: 'Ana' }] },
     });
 
     expect(h.emitReaction).toHaveBeenCalledWith('heart', 'Ana');
@@ -409,15 +409,24 @@ describe('ephemeral reactions', () => {
 
   it('passes a null name through rather than undefined', () => {
     const h = harness();
-    applyRealtimeMessage(h.ctx, { type: 'REACTION_SENT', payload: { reaction: 'clap' } });
+    applyRealtimeMessage(h.ctx, { type: 'REACTIONS_BATCH', payload: { reactions: [{ reaction: 'clap' }] } });
     expect(h.emitReaction).toHaveBeenCalledWith('clap', null);
   });
 
-  it('ignores a malformed payload with no reaction', () => {
+  it('ignores a malformed payload with no reactions', () => {
     const h = harness();
-    applyRealtimeMessage(h.ctx, { type: 'REACTION_SENT', payload: {} });
-    applyRealtimeMessage(h.ctx, { type: 'REACTION_SENT', payload: null });
+    applyRealtimeMessage(h.ctx, { type: 'REACTIONS_BATCH', payload: {} });
+    applyRealtimeMessage(h.ctx, { type: 'REACTIONS_BATCH', payload: null });
     expect(h.emitReaction).not.toHaveBeenCalled();
+  });
+
+  it('does nothing with the retired one-at-a-time message', () => {
+    // REACTION_SENT had a handler here long after the last sender of it was
+    // removed. Nothing should now react to it, and nothing should throw.
+    const h = harness();
+    applyRealtimeMessage(h.ctx, { type: 'REACTION_SENT', payload: { reaction: 'heart' } });
+    expect(h.emitReaction).not.toHaveBeenCalled();
+    expect(h.notify).not.toHaveBeenCalled();
   });
 
   it('fans a coalesced batch out into individual emissions (P6)', () => {

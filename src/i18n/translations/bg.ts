@@ -114,6 +114,8 @@ export const bg: Record<string, string> = {
   'quests.uploading': 'Качва се…',
   'quests.not_counted': 'Снимката не се брои',
   'quests.snap_again': 'Снимайте отново',
+  'host.delete_quest': 'Изтрий мисията',
+  'host.delete_quest_confirm': 'Да изтрием ли „{{title}}“? Точките, спечелени от гостите за нея, също изчезват.',
   'quests.photo_rejected': 'Снимката е отхвърлена',
   'quests.try_again': 'Опитайте отново',
   'quests.grand_prize': 'Голямата награда',

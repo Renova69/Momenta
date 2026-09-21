@@ -41,7 +41,10 @@ export const PLANS: Record<PlanTier, PlanDetails> = {
       'plan.free.f5'
     ],
     maxPhotos: 'plan.free.limit_photos',
-    storage: '500 MB',
+    // The server enforces 0.5 GB (`server/lib/planLimits.ts`), which is 512 MB.
+    // This said 500 MB, so the pricing page undersold the free tier by 12 MB —
+    // small, but every other row here prints the enforced number.
+    storage: '512 MB',
     activeMonths: 'plan.free.limit_days',
   },
   celebration_pass: {

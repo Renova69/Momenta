@@ -274,6 +274,10 @@ class WedStorageService {
     return questService.addQuest(this.ctx, title, description, iconName, points);
   }
 
+  public deleteQuest(questId: string): void {
+    questService.deleteQuest(this.ctx, questId);
+  }
+
   /**
    * `audioBlob` goes to the server as multipart, not base64-in-JSON (P7) —
    * the local entry plays back from an object URL immediately, then gets

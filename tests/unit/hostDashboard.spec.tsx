@@ -61,6 +61,7 @@ function renderDashboard(onUpdateEvent = vi.fn()) {
         onSetPhotoStatus={vi.fn()}
         onDeletePhoto={vi.fn()}
         onAddQuest={vi.fn()}
+        onDeleteQuest={vi.fn()}
         onResetData={vi.fn()}
       />
     ),
@@ -139,6 +140,7 @@ describe('HostDashboard host-name edit and the derived title', () => {
         onSetPhotoStatus={vi.fn()}
         onDeletePhoto={vi.fn()}
         onAddQuest={vi.fn()}
+        onDeleteQuest={vi.fn()}
         onResetData={vi.fn()}
       />
     );
@@ -165,6 +167,7 @@ describe('HostDashboard host-name edit and the derived title', () => {
         onSetPhotoStatus={vi.fn()}
         onDeletePhoto={vi.fn()}
         onAddQuest={vi.fn()}
+        onDeleteQuest={vi.fn()}
         onResetData={vi.fn()}
       />
     );
@@ -191,6 +194,7 @@ describe('HostDashboard host-name edit and the derived title', () => {
         onSetPhotoStatus={vi.fn()}
         onDeletePhoto={vi.fn()}
         onAddQuest={vi.fn()}
+        onDeleteQuest={vi.fn()}
         onResetData={vi.fn()}
       />
     );

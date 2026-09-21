@@ -78,3 +78,31 @@ export function addQuest(
 
   return newQuest;
 }
+
+/**
+ * Remove a quest the host no longer wants.
+ *
+ * `DELETE /api/quests/:id` has existed and been documented all along; nothing
+ * ever called it, so a mistyped quest stayed in front of every guest for the
+ * whole reception. Removed locally first, like every other host action, and
+ * put back if the server refuses — the completions it carried are gone with
+ * it, which is why the dashboard asks first.
+ */
+export function deleteQuest(ctx: ServiceContext, questId: string): void {
+  const event = ctx.getEvent();
+  const before = getQuests(ctx, event.id);
+  localStorage.setItem(STORAGE_KEYS.QUESTS(event.id), JSON.stringify(before.filter((q) => q.id !== questId)));
+  ctx.notify();
+
+  // A quest the server has never seen (the create call is still in flight, or
+  // failed) has nothing to delete there.
+  if (questId.startsWith('quest-')) return;
+
+  questsApi.delete(questId).catch((err: unknown) => {
+    const message = err instanceof Error ? err.message : String(err);
+    console.warn('[Storage] Quest was not deleted on the server:', message);
+    localStorage.setItem(STORAGE_KEYS.QUESTS(event.id), JSON.stringify(before));
+    ctx.notify();
+    ctx.notifyError(message);
+  });
+}

@@ -8,7 +8,7 @@
  */
 
 import React from 'react';
-import { Plus } from 'lucide-react';
+import { Plus, Trash2 } from 'lucide-react';
 import { i18n } from '../../../i18n';
 import { QUEST_ICONS } from './questIcons';
 import { useHostDashboard } from './context';
@@ -27,6 +27,7 @@ export const QuestsTab: React.FC = () => {
     newQuestTitle,
     quests,
     photos,
+    onDeleteQuest,
     setNewQuestDesc,
     setNewQuestIcon,
     setNewQuestPoints,
@@ -129,9 +130,9 @@ export const QuestsTab: React.FC = () => {
           {quests.map((q) => (
             <div
               key={q.id}
-              className="p-4 rounded-2xl bg-noir-800 border border-cream-400/10 flex items-center justify-between"
+              className="p-4 rounded-2xl bg-noir-800 border border-cream-400/10 flex items-center justify-between gap-3"
             >
-              <div>
+              <div className="min-w-0">
                 <h5 className="font-serif text-sm font-bold text-cream-100">{q.title}</h5>
                 <p className="text-xs text-cream-300/80">{q.description}</p>
                 <span className="text-[11px] text-gold-400 font-semibold mt-1 inline-block">
@@ -139,6 +140,20 @@ export const QuestsTab: React.FC = () => {
                   {i18n.t('quests.done').toLowerCase()}
                 </span>
               </div>
+              <button
+                type="button"
+                aria-label={`${i18n.t('host.delete_quest')}: ${q.title}`}
+                onClick={() => {
+                  // Deleting a quest takes its completions with it, so the
+                  // points guests earned on it go too. Worth one question.
+                  if (window.confirm(i18n.t('host.delete_quest_confirm', { title: q.title }))) {
+                    onDeleteQuest(q.id);
+                  }
+                }}
+                className="shrink-0 p-2 rounded-xl border border-cream-400/10 text-cream-400 hover:text-rosewood-300 hover:border-rosewood-400/40 transition-colors"
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
             </div>
           ))}
         </div>

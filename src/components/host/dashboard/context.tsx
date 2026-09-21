@@ -44,6 +44,7 @@ export interface HostDashboardValue {
   onSetPhotoStatus: (photoId: string, status: PhotoStatus) => void;
   onDeletePhoto: (photoId: string) => void;
   onAddQuest: (title: string, description: string, iconName?: string, points?: number) => void;
+  onDeleteQuest: (questId: string) => void;
   onResetData: () => void;
   onOpenPricing?: () => void;
 

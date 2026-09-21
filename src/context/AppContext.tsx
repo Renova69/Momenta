@@ -70,6 +70,7 @@ interface AppContextType {
   setPhotoStatus: (photoId: string, status: PhotoStatus) => void;
   deletePhoto: (photoId: string) => void;
   addQuest: (title: string, description: string, iconName?: string, points?: number) => ScavengerQuest;
+  deleteQuest: (questId: string) => void;
   completeQuest: (questId: string) => void;
   addAudioEntry: (audioBlob: Blob, durationSeconds: number, note?: string, mimeType?: string) => AudioGuestbookEntry;
   resetDefaults: () => void;
@@ -296,6 +297,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     return storageService.addQuest(title, description, iconName, points);
   };
 
+  const deleteQuest = (questId: string) => storageService.deleteQuest(questId);
+
   const completeQuest = useCallback((questId: string) => {
     if (!currentGuest || currentGuest.id === 'anonymous') return;
     storageService.completeQuest(questId, currentGuest.id);
@@ -356,6 +359,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           setPhotoStatus,
           deletePhoto,
           addQuest,
+          deleteQuest,
           completeQuest,
           addAudioEntry,
           resetDefaults,
