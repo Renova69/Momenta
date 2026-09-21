@@ -85,6 +85,32 @@ describe('normalizePartialEvent — emits only what arrived', () => {
       });
     });
 
+    it('keeps a field the host deliberately cleared', () => {
+      // An empty venue, welcome message or cover image is a real answer: the
+      // host deleted it. Falling through to the snake_case spelling — which
+      // the same payload still carries with the old text — puts what they
+      // just deleted straight back on every guest's screen.
+      const out = normalizePartialEvent({
+        hostEmail: '', host_email: 'a@snake',
+        hostUserId: '', host_user_id: 'u-snake',
+        venueName: '', venue_name: 'The Old Venue',
+        coverImageUrl: '', cover_image_url: 'https://cdn.example/old.jpg',
+        welcomeMessage: '', welcome_message: 'Welcome to our old text',
+        themePalette: '', theme_palette: 't-snake',
+        planTier: '', plan_tier: 'p-snake',
+        maxPhotosPerGuest: 0, max_photos_per_guest: 22,
+        createdAt: '', created_at: 'cr-snake',
+        updatedAt: '', updated_at: 'up-snake',
+        hostName: '', couple_names: 'Old Names',
+      } as never);
+
+      expect(out).toMatchObject({
+        hostEmail: '', hostUserId: '', venueName: '', coverImageUrl: '',
+        welcomeMessage: '', themePalette: '', planTier: '',
+        maxPhotosPerGuest: 0, createdAt: '', updatedAt: '', hostName: '',
+      });
+    });
+
     it('falls back to snake_case when the camelCase spelling is absent', () => {
       const out = normalizePartialEvent({
         host_email: 'a@snake', host_user_id: 'u-snake', venue_name: 'v-snake',
@@ -198,6 +224,14 @@ describe('normalizePartialEvent — emits only what arrived', () => {
 
     it('leaves the switch alone when a broadcast does not mention it', () => {
       expect('showTvLeaderboard' in normalizePartialEvent({ title: 'x' })).toBe(false);
+    });
+
+    it('prefers an explicit false over the other spelling saying true', () => {
+      // Both spellings in one payload is what a mixed-age server response
+      // looks like. `false` is a decision, not an absence: reading past it
+      // leaves the leaderboard up on the wall after the host switched it off.
+      const out = normalizePartialEvent({ showTvLeaderboard: false, show_tv_leaderboard: true } as never);
+      expect(out.showTvLeaderboard).toBe(false);
     });
   });
 });
@@ -332,5 +366,17 @@ describe('normalizeEvent — fills a default for everything absent', () => {
   it('keeps hostUserId undefined rather than inventing one', () => {
     expect(normalizeEvent(minimal).hostUserId).toBeUndefined();
     expect(normalizeEvent({ ...minimal, host_user_id: 'u1' }).hostUserId).toBe('u1');
+  });
+});
+
+describe('a full normalize keeps what the host cleared', () => {
+  it('does not put a default title back over an empty one', () => {
+    // Consistent with the partial normalizer: cleared means cleared. A host
+    // who emptied the title gets an album with no title, not one silently
+    // renamed "Wedding".
+    const out = normalizeEvent({ ...minimal, title: '', hostUserId: '', host_user_id: 'u-snake' } as never);
+
+    expect(out.title).toBe('');
+    expect(out.hostUserId).toBe('');
   });
 });

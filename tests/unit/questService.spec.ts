@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { addQuest, deleteQuest, getQuests } from '../../src/services/questService';
+import { addQuest, completeQuest, deleteQuest, getQuests } from '../../src/services/questService';
 import { questsApi } from '../../src/api/questsApi';
 import { STORAGE_KEYS } from '../../src/services/storageKeys';
 import { ServiceContext } from '../../src/services/storageServiceContext';
@@ -112,5 +112,98 @@ describe('deleteQuest', () => {
     deleteQuest(ctx, SERVER_QUEST_ID);
 
     expect(stored().map((q) => q.title)).toEqual(['Staying']);
+  });
+});
+
+describe('reading quests', () => {
+  it('reads the event asked for, not the active one', () => {
+    const OTHER = 'aaaaaaaa-1111-4222-8333-444455556666';
+    localStorage.setItem(STORAGE_KEYS.QUESTS(OTHER), JSON.stringify([quest({ id: 'other-1', title: 'Theirs' })]));
+    const { ctx } = harness([quest({ title: 'Ours' })]);
+
+    expect(getQuests(ctx, OTHER).map((q) => q.title)).toEqual(['Theirs']);
+    expect(getQuests(ctx).map((q) => q.title)).toEqual(['Ours']);
+  });
+});
+
+describe('ticking a quest off on this phone', () => {
+  it('starts the list for a quest nobody has done yet', () => {
+    // A quest that arrived from the server without the array at all: the tick
+    // must still land, or the card stays open and the guest retakes a photo
+    // they have already taken.
+    const { ctx } = harness([quest({ completedByGuestIds: undefined })]);
+
+    completeQuest(ctx, SERVER_QUEST_ID, 'g1');
+
+    expect(stored()[0].completedByGuestIds).toEqual(['g1']);
+  });
+
+  it('does not tick the same guest twice', () => {
+    const { ctx } = harness([quest({ completedByGuestIds: ['g1'] })]);
+
+    completeQuest(ctx, SERVER_QUEST_ID, 'g1');
+
+    expect(stored()[0].completedByGuestIds).toEqual(['g1']);
+  });
+});
+
+describe('adding a quest', () => {
+  it('offers it to guests straight away', () => {
+    // A quest created inactive is one the host wrote and no guest ever sees.
+    const { ctx } = harness();
+    vi.spyOn(questsApi, 'create').mockImplementation(() => new Promise(() => undefined));
+
+    const created = addQuest(ctx, 'First dance', '');
+
+    expect(created.isActive).toBe(true);
+    expect(stored()[0].isActive).toBe(true);
+  });
+
+  it('swaps the local row for the server row once it has an id', async () => {
+    const { ctx } = harness();
+    vi.spyOn(questsApi, 'create').mockResolvedValue({
+      id: SERVER_QUEST_ID,
+      eventId: EVENT_ID,
+      title: 'First dance',
+      description: '',
+      iconName: 'camera',
+      points: 10,
+      isActive: true,
+      completedByGuestIds: [],
+    } as ScavengerQuest);
+
+    addQuest(ctx, 'First dance', '');
+
+    await vi.waitFor(() => expect(stored()[0].id).toBe(SERVER_QUEST_ID));
+    expect(stored()).toHaveLength(1);
+  });
+
+  it('keeps the local row when the server answers without an id', async () => {
+    const { ctx } = harness();
+    const api = vi.spyOn(questsApi, 'create').mockResolvedValue({} as ScavengerQuest);
+
+    const created = addQuest(ctx, 'First dance', '');
+
+    await vi.waitFor(() => expect(api).toHaveBeenCalled());
+    expect(stored()[0].id).toBe(created.id);
+  });
+
+  it('leaves the other quests untouched when the server answers', async () => {
+    const { ctx } = harness([quest({ id: 'existing', title: 'Cake' })]);
+    vi.spyOn(questsApi, 'create').mockResolvedValue({
+      id: SERVER_QUEST_ID,
+      eventId: EVENT_ID,
+      title: 'First dance',
+      description: '',
+      iconName: 'camera',
+      points: 10,
+      isActive: true,
+      completedByGuestIds: [],
+    } as ScavengerQuest);
+
+    addQuest(ctx, 'First dance', '');
+
+    await vi.waitFor(() => expect(stored().map((q) => q.id)).toContain(SERVER_QUEST_ID));
+    expect(stored().find((q) => q.id === 'existing')?.title).toBe('Cake');
   });
 });

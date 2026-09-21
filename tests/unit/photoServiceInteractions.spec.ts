@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
+  addPhoto,
   getPhotos,
   toggleLikePhoto,
   togglePhotoReaction,
@@ -364,5 +365,206 @@ describe('getPhotos', () => {
   it('returns an empty list for an event with nothing stored', () => {
     const { ctx } = harness([]);
     expect(getPhotos(ctx, 'no-such-event')).toEqual([]);
+  });
+});
+
+describe('an identity the server has stopped honouring', () => {
+  it('forgets it when the server says the identity is required', async () => {
+    // GUEST_IDENTITY_REQUIRED arrived with the 401 fix and nothing asserted
+    // it: only its sibling code was ever tested, so half the condition could
+    // be inverted with the suite still green.
+    const { ctx, forgetGuestIdentity } = harness([photo()]);
+    vi.spyOn(photosApi, 'toggleReaction').mockRejectedValue(identityRejected('GUEST_IDENTITY_REQUIRED'));
+
+    togglePhotoReaction(ctx, 'p1', 'heart', 'g1');
+
+    await vi.waitFor(() => expect(forgetGuestIdentity).toHaveBeenCalledWith(EVENT_ID));
+  });
+
+  it('keeps the identity when the failure is not an object at all', async () => {
+    // A guest's identity is their link to every photo they have taken. A
+    // rejection that carries no code — a string, a network stack throwing
+    // something odd — is not evidence the server refused the credential.
+    const { ctx, forgetGuestIdentity } = harness([photo()]);
+    vi.spyOn(photosApi, 'toggleLike').mockRejectedValue('offline');
+
+    toggleLikePhoto(ctx, 'p1', 'g1');
+
+    await vi.waitFor(() => expect(console.warn).toHaveBeenCalled());
+    expect(forgetGuestIdentity).not.toHaveBeenCalled();
+  });
+
+  it('survives a rejection that carries nothing at all', async () => {
+    // A rejected promise with no value reaches the same handler. Reading a
+    // property off it throws inside the catch, which becomes an unhandled
+    // rejection nobody sees and no code recovers from.
+    const { ctx, forgetGuestIdentity } = harness([photo()]);
+    // null specifically: typeof null is 'object', so a guard that checks the
+    // type without checking for null first reads .code off it and throws.
+    vi.spyOn(photosApi, 'toggleLike').mockRejectedValue(null);
+
+    toggleLikePhoto(ctx, 'p1', 'g1');
+
+    await vi.waitFor(() => expect(console.warn).toHaveBeenCalled());
+    expect(forgetGuestIdentity).not.toHaveBeenCalled();
+    expect(stored()[0].likedByGuestIds).toEqual(['g1']);
+  });
+
+  it('keeps the identity for an ordinary refusal', async () => {
+    const { ctx, forgetGuestIdentity } = harness([photo()]);
+    vi.spyOn(photosApi, 'toggleLike').mockRejectedValue(identityRejected('RATE_LIMITED'));
+
+    toggleLikePhoto(ctx, 'p1', 'g1');
+
+    await vi.waitFor(() => expect(console.warn).toHaveBeenCalled());
+    expect(forgetGuestIdentity).not.toHaveBeenCalled();
+  });
+});
+
+describe('reacting after somebody else already has', () => {
+  it('adds my reaction rather than treating theirs as mine', () => {
+    // Whether I have reacted is decided by guest *and* emoji. Matching on the
+    // emoji alone reads another guest's heart as my own, and my tap then
+    // removes nothing and adds nothing — the reaction simply never appears.
+    const { ctx } = harness([photo({ reactions: [{ guestId: 'someone-else', reaction: 'heart' }] })]);
+    vi.spyOn(photosApi, 'toggleReaction').mockResolvedValue({} as never);
+
+    togglePhotoReaction(ctx, 'p1', 'heart', 'g1');
+
+    expect(stored()[0].reactions).toEqual([
+      { guestId: 'someone-else', reaction: 'heart' },
+      { reaction: 'heart', guestId: 'g1' },
+    ]);
+  });
+});
+
+describe('addPhoto', () => {
+  const capture = {
+    guestId: 'g1',
+    guestName: 'Ana',
+    fullUrl: 'data:image/jpeg;base64,AAAA',
+  };
+
+  // Uploads run one at a time (FE-06, `photoUploadThrottle`), and the slot is
+  // module state. A mock that never resolves holds it for every test after
+  // it, so each of these resolves.
+  const respond = (body: Record<string, unknown>) =>
+    vi.spyOn(photosApi, 'create').mockResolvedValue(body as never);
+
+  it('shows the full image until a thumbnail exists', async () => {
+    const { ctx } = harness();
+    respond({});
+
+    await addPhoto(ctx, capture);
+
+    expect(stored()[0].thumbnailUrl).toBe(capture.fullUrl);
+  });
+
+  it('records an unedited capture as the original', async () => {
+    const { ctx } = harness();
+    respond({});
+
+    await addPhoto(ctx, capture);
+
+    expect(stored()[0].filterApplied).toBe('original');
+  });
+
+  it('keeps the guest their own preview while the photo is quarantined', async () => {
+    // MED-03/SEC-M5: a quarantined photo's URLs are not publicly reachable.
+    // Writing them over the guest's local capture would blank their own card
+    // until a host approves it.
+    const { ctx } = harness();
+    respond({
+      id: 'srv-1',
+      guestId: 'g1',
+      fullUrl: 'https://cdn.example/quarantine/events/e/p.jpg',
+      thumbnailUrl: 'https://cdn.example/quarantine/events/e/thumb.jpg',
+      status: 'pending',
+    });
+
+    await addPhoto(ctx, capture);
+
+    await vi.waitFor(() => expect(stored()[0].id).toBe('srv-1'));
+    expect(stored()[0].fullUrl).toBe(capture.fullUrl);
+    expect(stored()[0].thumbnailUrl).toBe(capture.fullUrl);
+  });
+
+  it('takes the server URLs once the photo is public', async () => {
+    const { ctx } = harness();
+    respond({
+      id: 'srv-1',
+      guestId: 'g1',
+      fullUrl: 'https://cdn.example/events/e/p.jpg',
+      thumbnailUrl: 'https://cdn.example/events/e/thumb.jpg',
+      status: 'approved',
+    });
+
+    await addPhoto(ctx, capture);
+
+    await vi.waitFor(() => expect(stored()[0].fullUrl).toBe('https://cdn.example/events/e/p.jpg'));
+  });
+
+  it('merges the server row into the photo it was for and no other', async () => {
+    const { ctx } = harness([photo({ id: 'older', caption: 'unchanged' })]);
+    respond({
+      id: 'srv-1',
+      guestId: 'g1',
+      caption: 'from the server',
+      fullUrl: 'https://cdn.example/events/e/p.jpg',
+    });
+
+    await addPhoto(ctx, capture);
+
+    await vi.waitFor(() => expect(stored().map((p) => p.id)).toContain('srv-1'));
+    expect(stored().find((p) => p.id === 'older')?.caption).toBe('unchanged');
+  });
+
+  it('leaves the local row alone when the response carries no id', async () => {
+    // Nothing to reconcile against, so the guest keeps the row they can see
+    // rather than having it merged with an identity-less response.
+    const { ctx, syncGuestFromServer } = harness();
+    const api = respond({});
+
+    const created = await addPhoto(ctx, capture);
+
+    await vi.waitFor(() => expect(api).toHaveBeenCalled());
+    expect(stored()[0].id).toBe(created.id);
+    expect(syncGuestFromServer).not.toHaveBeenCalled();
+  });
+});
+
+describe('reading another event', () => {
+  it('reads the event it is asked for, not the active one', () => {
+    // getPhotos(ctx, id) is how the host dashboard reads an album it is not
+    // currently standing in.
+    const OTHER = 'aaaaaaaa-1111-4222-8333-444455556666';
+    localStorage.setItem(STORAGE_KEYS.PHOTOS(OTHER), JSON.stringify([photo({ id: 'other-1' })]));
+    const { ctx } = harness([photo({ id: 'active-1' })]);
+
+    expect(getPhotos(ctx, OTHER).map((p) => p.id)).toEqual(['other-1']);
+    expect(getPhotos(ctx).map((p) => p.id)).toEqual(['active-1']);
+  });
+});
+
+describe('a comment on a photo that has none', () => {
+  it('starts the list rather than throwing', () => {
+    const { ctx } = harness([photo({ comments: undefined, commentsCount: undefined })]);
+
+    addComment(ctx, 'p1', 'g1', 'Ana', 'Beautiful');
+
+    expect(stored()[0].comments).toHaveLength(1);
+    expect(stored()[0].commentsCount).toBe(1);
+  });
+});
+
+describe('setPhotoStatus rollback', () => {
+  it('puts back only the photo whose change was refused', async () => {
+    const { ctx } = harness([photo({ id: 'p1', status: 'pending' }), photo({ id: 'p2', status: 'rejected' })]);
+    vi.spyOn(photosApi, 'setStatus').mockRejectedValue(new Error('Forbidden'));
+
+    setPhotoStatus(ctx, 'p1', 'approved');
+
+    await vi.waitFor(() => expect(stored().find((p) => p.id === 'p1')?.status).toBe('pending'));
+    expect(stored().find((p) => p.id === 'p2')?.status).toBe('rejected');
   });
 });

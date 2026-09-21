@@ -278,6 +278,21 @@ describe('COMMENT_ADDED', () => {
     expect(storedPhotos()[0].commentsCount).toBe(1);
   });
 
+  it('adds a comment carrying a localId this phone has never seen', () => {
+    // Another guest's comment arrives with the localId *their* phone used.
+    // Treating any localId as proof of a local copy drops the comment
+    // entirely, and it only appears after a full resync.
+    const h = harness({ photos: [photo()] });
+
+    applyRealtimeMessage(h.ctx, {
+      type: 'COMMENT_ADDED',
+      payload: { id: 'c1', localId: 'their-local-id', photoId: 'p1', commentText: 'Beautiful' },
+    });
+
+    expect(storedPhotos()[0].comments).toHaveLength(1);
+    expect(storedPhotos()[0].comments?.[0].id).toBe('c1');
+  });
+
   it('ignores a re-delivered comment', () => {
     const h = harness({
       photos: [photo({ comments: [fixtureComment({ id: 'c1' })], commentsCount: 1 })],
@@ -339,6 +354,19 @@ describe('quests', () => {
     expect(storedQuests()[0].id).toBe('q1');
   });
 
+  it('adds a quest whose localId belongs to another device', () => {
+    // The host's other tab created it. That localId means nothing here, and
+    // treating it as proof of a local copy loses the quest entirely.
+    const h = harness({ quests: [] });
+
+    applyRealtimeMessage(h.ctx, {
+      type: 'QUEST_ADDED',
+      payload: { ...quest({ id: 'q1', title: 'Find the cake' }), localId: 'their-local-id' },
+    });
+
+    expect(storedQuests().map((q) => q.id)).toEqual(['q1']);
+  });
+
   it('ignores a re-delivered quest', () => {
     const h = harness({ quests: [quest({ id: 'q1' })] });
     applyRealtimeMessage(h.ctx, { type: 'QUEST_ADDED', payload: quest({ id: 'q1' }) });
@@ -385,6 +413,17 @@ describe('AUDIO_ADDED', () => {
 
     expect(storedAudio()).toHaveLength(1);
     expect(storedAudio()[0].id).toBe('a1');
+  });
+
+  it('adds a recording whose localId belongs to another device', () => {
+    const h = harness({ audio: [] });
+
+    applyRealtimeMessage(h.ctx, {
+      type: 'AUDIO_ADDED',
+      payload: { ...entry({ id: 'a1' }), localId: 'their-local-id' },
+    });
+
+    expect(storedAudio().map((a) => a.id)).toEqual(['a1']);
   });
 
   it('ignores a re-delivered message', () => {
@@ -484,5 +523,21 @@ describe('EVENT_DELETED', () => {
     applyRealtimeMessage(ctx, { type: 'EVENT_DELETED', eventId: 'another-event', payload: {} });
 
     expect(notifyEventGone).not.toHaveBeenCalled();
+  });
+});
+
+describe('a settings change the server broadcast', () => {
+  it('applies it locally without sending it straight back', () => {
+    // The host's change reaches every other screen through this. Writing it
+    // with the sync flag on would have each of those screens PUT the same
+    // settings back to the server — every guest, every change.
+    const h = harness();
+
+    applyRealtimeMessage(h.ctx, {
+      type: 'EVENT_UPDATED',
+      payload: { id: EVENT_ID, venue_name: 'The Orangery' },
+    });
+
+    expect(h.ctx.updateEvent).toHaveBeenCalledWith(expect.objectContaining({ venueName: 'The Orangery' }), false);
   });
 });

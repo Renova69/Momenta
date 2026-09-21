@@ -6,6 +6,7 @@ import { guestsApi } from '../../src/api/guestsApi';
 import { questsApi } from '../../src/api/questsApi';
 import { audioApi } from '../../src/api/audioApi';
 import { Photo, WeddingEvent, Guest, ScavengerQuest, AudioGuestbookEntry } from '../../src/types';
+import { i18n } from '../../src/i18n';
 
 function createMockResponse<T>(data: T, status = 200, ok = true): Response {
   return {
@@ -31,6 +32,25 @@ describe('API Client Layer Spec', () => {
   beforeEach(() => {
     localStorage.clear();
     vi.restoreAllMocks();
+  });
+
+  it('shows the guest the translated message rather than the raw English one', async () => {
+    // The server sends a code; the dictionary turns it into a sentence in the
+    // language on screen. Without this the guest reads the raw English
+    // fallback the API happened to include.
+    global.fetch = vi.fn().mockResolvedValue(
+      createMockResponse({ error: 'Storage limit reached', code: 'STORAGE_LIMIT_REACHED' }, 413, false)
+    );
+
+    await expect(apiFetch('/api/test')).rejects.toThrow(i18n.t('error.storage_limit_reached'));
+  });
+
+  it('keeps the message the server sent for a code nothing translates', async () => {
+    global.fetch = vi.fn().mockResolvedValue(
+      createMockResponse({ error: 'Something specific went wrong', code: 'NOT_A_MAPPED_CODE' }, 400, false)
+    );
+
+    await expect(apiFetch('/api/test')).rejects.toThrow('Something specific went wrong');
   });
 
   it('handles ApiError and error parsing in apiFetch', async () => {

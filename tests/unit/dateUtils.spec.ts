@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { formatTimeAgo } from '../../src/utils/date';
+import { formatEuDate, formatTimeAgo } from '../../src/utils/date';
 import { i18n } from '../../src/i18n';
 
 /**
@@ -32,5 +32,32 @@ describe('formatTimeAgo', () => {
   it('returns an empty string for a missing or invalid date', () => {
     expect(formatTimeAgo(null)).toBe('');
     expect(formatTimeAgo('not-a-date')).toBe('');
+  });
+});
+
+describe('formatEuDate', () => {
+  it('formats a Date object, not only a string', () => {
+    // Both are passed in: the event date arrives as an ISO string from the
+    // server and as a Date from the picker.
+    expect(formatEuDate(new Date('2026-09-18T16:30:00.000Z'))).toBe('18.09.2026');
+  });
+
+  it('passes an ISO date through in European order', () => {
+    expect(formatEuDate('2026-09-18')).toBe('18.09.2026');
+  });
+
+  it('leaves a date already in European order alone', () => {
+    expect(formatEuDate('18.09.2026')).toBe('18.09.2026');
+  });
+
+  it('hands back text it cannot read rather than blanking the field', () => {
+    // A host typing into the date field sees their own half-typed input, not
+    // an empty box that looks like it ate what they wrote.
+    expect(formatEuDate('next Saturday')).toBe('next Saturday');
+  });
+
+  it('is empty for nothing at all', () => {
+    expect(formatEuDate(null)).toBe('');
+    expect(formatEuDate(undefined)).toBe('');
   });
 });

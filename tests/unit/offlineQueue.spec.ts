@@ -253,6 +253,49 @@ describe('Offline Queue & Resilience Spec', () => {
     });
   });
 
+  describe('which temp-id rows are still genuinely on their way up', () => {
+    it('reports the localIds of queued photos and nothing else', async () => {
+      // A sync uses this to decide which optimistic rows to keep. Counting an
+      // audio item, or an entry with no localId, keeps a row on screen that
+      // no upload will ever reconcile.
+      vi.spyOn(queueService, 'isOnline').mockReturnValue(false);
+      await queueService.enqueue('photo', {
+        eventId: '10eebc99-9c0b-4ef8-bb6d-6bb9bd380a01',
+        localId: 'photo-local-1',
+        fullUrl: 'data:image/jpeg;base64,AA==',
+      });
+      await queueService.enqueue('audio', {
+        eventId: '10eebc99-9c0b-4ef8-bb6d-6bb9bd380a01',
+        localId: 'audio-local-1',
+        audioUrl: 'data:audio/webm;base64,AA==',
+      });
+      await queueService.enqueue('photo', {
+        eventId: '10eebc99-9c0b-4ef8-bb6d-6bb9bd380a01',
+        fullUrl: 'data:image/jpeg;base64,BB==',
+      });
+
+      const ids = await queueService.getQueuedPhotoLocalIds();
+
+      expect([...ids]).toEqual(['photo-local-1']);
+    });
+
+    it('ignores a localId that is empty or not a string', async () => {
+      vi.spyOn(queueService, 'isOnline').mockReturnValue(false);
+      await queueService.enqueue('photo', {
+        eventId: '10eebc99-9c0b-4ef8-bb6d-6bb9bd380a01',
+        localId: '',
+        fullUrl: 'data:image/jpeg;base64,AA==',
+      });
+      await queueService.enqueue('photo', {
+        eventId: '10eebc99-9c0b-4ef8-bb6d-6bb9bd380a01',
+        localId: 42 as unknown as string,
+        fullUrl: 'data:image/jpeg;base64,BB==',
+      });
+
+      expect((await queueService.getQueuedPhotoLocalIds()).size).toBe(0);
+    });
+  });
+
   describe('flushQueue reports success back for reconciliation (FE-03)', () => {
     it('fires an onFlushSuccess listener with the parsed server response, after removing the item', async () => {
       global.fetch = vi.fn().mockResolvedValue(

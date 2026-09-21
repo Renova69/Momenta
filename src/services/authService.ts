@@ -43,7 +43,12 @@ export const DEMO_HOST_USERS: HostUser[] = [
   },
 ];
 
-class AuthService {
+/**
+ * Exported for tests only — the app uses the `authService` singleton below.
+ * Restoring a session happens in the constructor, so pinning "a half-written
+ * localStorage is not a signed-in host" needs a second instance to construct.
+ */
+export class AuthService {
   private currentUser: HostUser | null = null;
   private token: string | null = null;
   private listeners: Set<() => void> = new Set();

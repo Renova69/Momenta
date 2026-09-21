@@ -42,6 +42,39 @@ describe('Storage Service Spec', () => {
     expect(storageService.getEvent().venueName).toBe('Grand Ballroom');
   });
 
+  it('sends a settings change to the server unless told not to', async () => {
+    // The default matters: almost every caller relies on it, and a host who
+    // renames the album on their phone expects it renamed everywhere. Only
+    // the paths applying what the server just said pass false.
+    const update = vi.spyOn(eventsApi, 'update').mockResolvedValue({} as WeddingEvent);
+    storageService.updateEvent({ id: 'event-sync-default', slug: 'sync-default' }, false);
+    update.mockClear();
+
+    storageService.updateEvent({ venueName: 'Grand Ballroom' });
+
+    await vi.waitFor(() => expect(update).toHaveBeenCalled());
+  });
+
+  it('accepts an album the server describes by id alone', async () => {
+    // Either identifier is enough to know there is an album there. Requiring
+    // both would reject a legitimate answer over a field the caller already
+    // holds — it looked this event up by slug.
+    vi.spyOn(eventsApi, 'getBySlug').mockResolvedValue({ id: 'event-id-only' } as WeddingEvent);
+
+    const loaded = await storageService.loadEventBySlug('id-only');
+
+    expect(loaded?.id).toBe('event-id-only');
+  });
+
+  it('answers with no album rather than throwing when the slug is unknown', async () => {
+    // getBySlug resolves null for an address nobody has taken. Reading
+    // through that null instead of checking it turned "no such album" into a
+    // TypeError, which the caller above reports as a broken connection.
+    vi.spyOn(eventsApi, 'getBySlug').mockResolvedValue(null as unknown as WeddingEvent);
+
+    await expect(storageService.loadEventBySlug('nobody-here')).resolves.toBeNull();
+  });
+
   it('partitions cached event data per event id, not one shared slot (SEC-A8)', () => {
     // Simulates the same browser having viewed two different weddings.
     storageService.updateEvent({
