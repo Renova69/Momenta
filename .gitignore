@@ -43,3 +43,6 @@ tmp_test_*
 
 # Local npm cache written into the project by a sandboxed install
 .npm-cache/
+
+# Playwright MCP scratch output (page snapshots, console logs)
+.playwright-mcp/
