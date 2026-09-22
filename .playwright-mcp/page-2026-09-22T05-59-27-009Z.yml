@@ -1,0 +1,67 @@
+- generic [ref=f10e3]:
+  - banner [ref=f10e4]:
+    - generic [ref=f10e5]:
+      - generic [ref=f10e6]: WedMoments
+      - navigation [ref=f10e14]:
+        - button "Guest App" [ref=f10e15] [cursor=pointer]
+        - button "Host Studio" [ref=f10e20] [cursor=pointer]
+        - button "Live TV" [ref=f10e27] [cursor=pointer]
+      - generic [ref=f10e32]:
+        - button "My Events" [ref=f10e33] [cursor=pointer]
+        - button "Plans & Pricing" [ref=f10e37] [cursor=pointer]
+        - button "EN" [ref=f10e40] [cursor=pointer]
+        - button "Theme" [ref=f10e42] [cursor=pointer]
+        - button "Моника" [ref=f10e49] [cursor=pointer]
+        - button "Sign Out" [ref=f10e54] [cursor=pointer]
+  - main [ref=f10e58]:
+    - generic [ref=f10e59]:
+      - generic [ref=f10e60]:
+        - generic [ref=f10e65]:
+          - heading "Сватбата на Моника и Александър" [level=1] [ref=f10e66]
+          - paragraph [ref=f10e67]:
+            - generic [ref=f10e68]: Live Guest Photo Wall
+            - generic [ref=f10e69]: •
+            - generic [ref=f10e70]: 7 moments captured
+        - generic [ref=f10e71]:
+          - generic [ref=f10e72]:
+            - button "4s" [ref=f10e73] [cursor=pointer]
+            - button "6s" [ref=f10e74] [cursor=pointer]
+            - button "10s" [ref=f10e75] [cursor=pointer]
+          - button "Pause" [ref=f10e76] [cursor=pointer]
+          - button "Fullscreen" [ref=f10e80] [cursor=pointer]
+          - button "Close" [ref=f10e86] [cursor=pointer]
+      - generic [ref=f10e91]:
+        - generic [ref=f10e92]:
+          - img "Wedding celebration" [ref=f10e94]
+          - generic [ref=f10e95]:
+            - img "Ivo" [ref=f10e96]
+            - generic [ref=f10e98]:
+              - generic [ref=f10e99]: Ivo
+              - generic [ref=f10e100]: • 4
+        - button "Previous photo" [ref=f10e101] [cursor=pointer]
+        - button "Next photo" [ref=f10e104] [cursor=pointer]
+      - generic [ref=f10e107]:
+        - generic [ref=f10e108]:
+          - 'img "QR code: scan it to open this wedding album" [ref=f10e110]'
+          - generic [ref=f10e114]:
+            - heading "Scan & Share" [level=2] [ref=f10e115]
+            - paragraph [ref=f10e120]: Point Phone Camera to Join
+            - generic [ref=f10e121]: No app download needed
+        - generic [ref=f10e122]:
+          - button "Show photo 1" [ref=f10e123] [cursor=pointer]:
+            - img "Thumbnail" [ref=f10e124]
+          - button "Show photo 2" [ref=f10e125] [cursor=pointer]:
+            - img "Thumbnail" [ref=f10e126]
+          - button "Show photo 3" [ref=f10e127] [cursor=pointer]:
+            - img "Thumbnail" [ref=f10e128]
+          - button "Show photo 4" [ref=f10e129] [cursor=pointer]:
+            - img "Thumbnail" [ref=f10e130]
+          - button "Show photo 5" [ref=f10e131] [cursor=pointer]:
+            - img "Thumbnail" [ref=f10e132]
+          - button "Show photo 6" [ref=f10e133] [cursor=pointer]:
+            - img "Thumbnail" [ref=f10e134]
+          - button "Show photo 7" [ref=f10e135] [cursor=pointer]:
+            - img "Thumbnail" [ref=f10e136]
+  - contentinfo [ref=f10e137]:
+    - generic [ref=f10e138]: WedMoments - a live wedding album and keepsake
+    - paragraph [ref=f10e142]: (c) 2026 WedMoments. Every moment in full resolution, shared freely by your guests, live on the big screen.

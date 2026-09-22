@@ -21,9 +21,9 @@ export const ExportTab: React.FC = () => {
   return (
     <div className="bg-noir-800/90 rounded-3xl p-6 sm:p-8 border border-cream-400/10 space-y-6">
       <div>
-        <h4 className="font-serif text-xl font-bold text-cream-100 mb-1">
+        <h2 className="font-serif text-xl font-bold text-cream-100 mb-1">
           {i18n.t('host.export_zip')}
-        </h4>
+        </h2>
         <p className="text-xs text-cream-300/80">
           {i18n.t('ui.host_dashboard.19')}
         </p>

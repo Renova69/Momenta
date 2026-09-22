@@ -250,6 +250,10 @@ export const HostDashboard: React.FC<HostDashboardProps> = ({
   return (
     <HostDashboardProvider value={dashboard}>
       <div className="space-y-6 sm:space-y-8 animate-fade-in max-w-6xl mx-auto">
+        {/* The visible design has no page title — the tab strip is the first
+            thing on screen. A page with no h1 gives a screen reader nothing to
+            land on and no way to tell one album's dashboard from another's. */}
+        <h1 className="sr-only">{i18n.t('host.studio_heading', { title: event.title })}</h1>
         <TabNav />
 
         {/* 1. OVERVIEW & EVENT SETTINGS TAB */}

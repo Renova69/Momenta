@@ -366,6 +366,7 @@ export const LiveProjectorScreen: React.FC<LiveProjectorScreenProps> = ({
           <div className="p-2.5 bg-white rounded-2xl shadow-glow">
             <QRCodeSVG
               value={currentUrl}
+              title={i18n.t('qr.alt')}
               size={84}
               level="H"
               includeMargin={false}
@@ -380,10 +381,10 @@ export const LiveProjectorScreen: React.FC<LiveProjectorScreenProps> = ({
             />
           </div>
           <div>
-            <h4 className="font-serif text-lg font-bold text-cream-100 flex items-center gap-2">
+            <h2 className="font-serif text-lg font-bold text-cream-100 flex items-center gap-2">
               <Sparkles className="w-4 h-4 text-gold-400" />
               <span>{i18n.t('projector.scan_share')}</span>
-            </h4>
+            </h2>
             <p className="text-xs text-cream-300/80 mt-0.5">
               {i18n.t('projector.point_cam')}
             </p>

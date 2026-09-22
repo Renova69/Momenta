@@ -85,10 +85,10 @@ export const OverviewTab: React.FC = () => {
     
         {/* Theme & Controls */}
         <div className="bg-noir-800/90 rounded-3xl p-6 border border-cream-400/10 space-y-5">
-          <h4 className="font-serif text-lg font-bold text-cream-100 flex items-center gap-2">
+          <h2 className="font-serif text-lg font-bold text-cream-100 flex items-center gap-2">
             <Settings className="w-5 h-5 text-gold-400" />
             <span>{i18n.t('host.settings')}</span>
-          </h4>
+          </h2>
 
           {/* Theme Palette Selector — anything but the default is a paid feature. */}
           <div>
@@ -287,10 +287,10 @@ export const OverviewTab: React.FC = () => {
 
         {/* Event Branding Details */}
         <div className="bg-noir-800/90 rounded-3xl p-6 border border-cream-400/10 space-y-4">
-          <h4 className="font-serif text-lg font-bold text-cream-100 flex items-center gap-2">
+          <h2 className="font-serif text-lg font-bold text-cream-100 flex items-center gap-2">
             <Settings className="w-5 h-5 text-gold-400" />
             <span>{i18n.t('ui.host_dashboard.8')}</span>
-          </h4>
+          </h2>
 
           {/* Couple / Host Names */}
           <div>

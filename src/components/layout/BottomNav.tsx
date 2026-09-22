@@ -33,7 +33,10 @@ export const BottomNav: React.FC<BottomNavProps> = ({
   pendingCount = 0,
 }) => {
   return (
-    <div className="sm:hidden fixed bottom-0 left-0 right-0 z-40 bg-noir-900/95 backdrop-blur-xl border-t border-gold-400/20 px-2 py-1.5 pb-[max(0.5rem,env(safe-area-inset-bottom))] shadow-2xl">
+    <nav
+      aria-label={i18n.t('nav.mobile_label')}
+      className="sm:hidden fixed bottom-0 left-0 right-0 z-40 bg-noir-900/95 backdrop-blur-xl border-t border-gold-400/20 px-2 py-1.5 pb-[max(0.5rem,env(safe-area-inset-bottom))] shadow-2xl"
+    >
       <div className="flex items-center justify-around relative">
         
         {/* 1. Feed / Moments */}
@@ -143,6 +146,6 @@ export const BottomNav: React.FC<BottomNavProps> = ({
         </button>
 
       </div>
-    </div>
+    </nav>
   );
 };

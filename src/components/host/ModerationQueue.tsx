@@ -71,9 +71,9 @@ export const ModerationQueue: React.FC<ModerationQueueProps> = ({
             <Shield className="w-5 h-5" />
           </div>
           <div>
-            <h4 className="font-semibold text-sm text-cream-100">
+            <h2 className="font-semibold text-sm text-cream-100">
               {i18n.t('host.moderation_title')}
-            </h4>
+            </h2>
             <p className="text-xs text-cream-400/70">
               {i18n.t('host.moderation_desc')}
             </p>
@@ -92,10 +92,10 @@ export const ModerationQueue: React.FC<ModerationQueueProps> = ({
 
       {/* PENDING APPROVAL QUEUE */}
       <div className="space-y-3">
-        <h4 className="font-serif text-lg font-bold text-cream-100 flex items-center gap-2">
+        <h3 className="font-serif text-lg font-bold text-cream-100 flex items-center gap-2">
           <Clock className="w-4 h-4 text-gold-400" />
           <span>{i18n.t('host.needs_review')} ({pendingPhotos.length})</span>
-        </h4>
+        </h3>
 
         {pendingPhotos.length > 0 ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -159,10 +159,10 @@ export const ModerationQueue: React.FC<ModerationQueueProps> = ({
       {/* ALL ACTIVE PHOTOS MANAGEMENT */}
       <div className="space-y-3 pt-6 border-t border-cream-400/10">
         <div className="flex items-center justify-between gap-2 flex-wrap">
-          <h4 className="font-serif text-lg font-bold text-cream-100 flex items-center gap-2">
+          <h3 className="font-serif text-lg font-bold text-cream-100 flex items-center gap-2">
             <Eye className="w-4 h-4 text-gold-400" />
             <span>{i18n.t('host.active_photos')} ({approvedPhotos.length + featuredPhotos.length})</span>
-          </h4>
+          </h3>
 
           <button
             type="button"

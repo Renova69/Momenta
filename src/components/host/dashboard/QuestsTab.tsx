@@ -49,10 +49,10 @@ export const QuestsTab: React.FC = () => {
 
       {/* Add New Quest Form */}
       <div className="bg-noir-800/90 rounded-3xl p-6 border border-cream-400/10">
-        <h4 className="font-serif text-lg font-bold text-cream-100 mb-4 flex items-center gap-2">
+        <h2 className="font-serif text-lg font-bold text-cream-100 mb-4 flex items-center gap-2">
           <Plus className="w-5 h-5 text-gold-400" />
           <span>{i18n.t('ui.host_dashboard.15')}</span>
-        </h4>
+        </h2>
 
         <form onSubmit={handleCreateQuest} className="grid grid-cols-1 sm:grid-cols-12 gap-3">
           <div className="sm:col-span-5">
@@ -128,9 +128,9 @@ export const QuestsTab: React.FC = () => {
 
       {/* Existing Quests List */}
       <div className="space-y-3">
-        <h4 className="font-serif text-lg font-bold text-cream-100">
+        <h2 className="font-serif text-lg font-bold text-cream-100">
           {i18n.t('host.active_quests', { count: quests.length })}
-        </h4>
+        </h2>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           {quests.map((q) => (
@@ -139,7 +139,7 @@ export const QuestsTab: React.FC = () => {
               className="p-4 rounded-2xl bg-noir-800 border border-cream-400/10 flex items-center justify-between gap-3"
             >
               <div className="min-w-0">
-                <h5 className="font-serif text-sm font-bold text-cream-100">{q.title}</h5>
+                <h3 className="font-serif text-sm font-bold text-cream-100">{q.title}</h3>
                 <p className="text-xs text-cream-300/80">{q.description}</p>
                 <span className="text-[11px] text-gold-400 font-semibold mt-1 inline-block">
                   +{q.points} {i18n.t('quests.pts')} • {q.completedByGuestIds.length}{' '}

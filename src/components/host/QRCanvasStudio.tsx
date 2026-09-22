@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useId, useState, useEffect } from 'react';
 import { WeddingEvent, QRCanvasConfig, CanvasSize, FrameStyle, QRCenterIcon } from '../../types';
 import { QRCodeSVG } from 'qrcode.react';
 import { i18n } from '../../i18n';
@@ -66,6 +66,8 @@ export const QRCanvasStudio: React.FC<QRCanvasStudioProps> = ({
   config,
   onUpdateConfig,
 }) => {
+  // One id per field, so each visible label points at the control it names.
+  const fieldIds = useId();
   const [activeSize, setActiveSize] = useState<CanvasSize>(config.canvasSize || 'A2');
   const [activeFrame, setActiveFrame] = useState<FrameStyle>(config.frameStyle || 'minimal_gold');
   const [headline, setHeadline] = useState(config.headline || i18n.t('canvas.headline_default'));
@@ -133,10 +135,10 @@ export const QRCanvasStudio: React.FC<QRCanvasStudioProps> = ({
       {/* Studio Header */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 bg-noir-800/80 p-5 rounded-3xl border border-cream-400/10">
         <div>
-          <h3 className="font-serif text-xl font-bold text-cream-100 flex items-center gap-2">
+          <h2 className="font-serif text-xl font-bold text-cream-100 flex items-center gap-2">
             <QrCode className="w-5 h-5 text-gold-400" />
             <span>{i18n.t('canvas.print_title')}</span>
-          </h3>
+          </h2>
           <p className="text-xs text-cream-400/80">
             {i18n.t('canvas.print_subtitle')}
           </p>
@@ -324,10 +326,11 @@ export const QRCanvasStudio: React.FC<QRCanvasStudioProps> = ({
           {/* Headline & Subtext Customization */}
           <div className="bg-noir-800 rounded-2xl p-4 border border-cream-400/10 space-y-3">
             <div>
-              <label className="block text-xs font-semibold text-cream-300 mb-1">
+              <label htmlFor={`${fieldIds}-1`} className="block text-xs font-semibold text-cream-300 mb-1">
                 {i18n.t('ui.q_r_canvas_studio.3')}
               </label>
               <input
+                id={`${fieldIds}-1`}
                 type="text"
                 value={headline}
                 onChange={(e) => {
@@ -339,10 +342,11 @@ export const QRCanvasStudio: React.FC<QRCanvasStudioProps> = ({
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-cream-300 mb-1">
+              <label htmlFor={`${fieldIds}-2`} className="block text-xs font-semibold text-cream-300 mb-1">
                 {i18n.t('ui.q_r_canvas_studio.4')}
               </label>
               <textarea
+                id={`${fieldIds}-2`}
                 value={subtext}
                 onChange={(e) => {
                   setSubtext(e.target.value);
@@ -354,11 +358,12 @@ export const QRCanvasStudio: React.FC<QRCanvasStudioProps> = ({
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-cream-300 mb-1 flex items-center gap-1.5">
+              <label htmlFor={`${fieldIds}-3`} className="block text-xs font-semibold text-cream-300 mb-1 flex items-center gap-1.5">
                 <Palette className="w-3.5 h-3.5 text-gold-400" />
                 <span>{i18n.t('ui.q_r_canvas_studio.5')}</span>
               </label>
               <input
+                id={`${fieldIds}-3`}
                 type="color"
                 value={accentColor}
                 onChange={(e) => {
@@ -492,6 +497,7 @@ export const QRCanvasStudio: React.FC<QRCanvasStudioProps> = ({
               >
                 <QRCodeSVG
                   value={currentUrl}
+                  title={i18n.t('qr.alt')}
                   size={190}
                   level="H"
                   includeMargin={false}
@@ -511,12 +517,12 @@ export const QRCanvasStudio: React.FC<QRCanvasStudioProps> = ({
               </div>
 
               <div className="space-y-1 max-w-[260px]">
-                <h4
+                <h3
                   className="font-serif text-base font-bold text-[#1A1817] uppercase tracking-wider"
                   style={{ color: accentColor }}
                 >
                   {headline}
-                </h4>
+                </h3>
                 <p className="text-[11px] text-[#55504C] leading-snug">
                   {subtext}
                 </p>
@@ -524,7 +530,7 @@ export const QRCanvasStudio: React.FC<QRCanvasStudioProps> = ({
             </div>
 
             {/* Footer */}
-            <div className="relative z-10 text-[10px] text-[#8C847E] tracking-widest uppercase font-medium pb-1">
+            <div className="relative z-10 text-[10px] text-[#6F6862] tracking-widest uppercase font-medium pb-1">
               {i18n.t('projector.no_app')}
             </div>
           </div>

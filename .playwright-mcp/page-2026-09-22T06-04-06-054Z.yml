@@ -1,0 +1,124 @@
+- generic [ref=f14e3]:
+  - banner [ref=f14e4]:
+    - generic [ref=f14e5]:
+      - generic [ref=f14e6]: WedMoments
+      - navigation [ref=f14e14]:
+        - button "Guest App" [ref=f14e15] [cursor=pointer]
+        - button "Host Studio" [ref=f14e20] [cursor=pointer]
+      - generic [ref=f14e27]:
+        - button "My Events" [ref=f14e28] [cursor=pointer]
+        - button "Plans & Pricing" [ref=f14e32] [cursor=pointer]
+        - button "EN" [ref=f14e35] [cursor=pointer]
+        - button "Theme" [ref=f14e37] [cursor=pointer]
+        - button "Моника" [ref=f14e44] [cursor=pointer]
+        - button "Sign Out" [ref=f14e49] [cursor=pointer]
+  - main [ref=f14e53]:
+    - generic [ref=f14e55]:
+      - heading "Host studio — Сватбата на Моника и Александър" [level=1] [ref=f14e56]
+      - generic [ref=f14e57]:
+        - generic [ref=f14e58]:
+          - button "Overview" [ref=f14e59] [cursor=pointer]
+          - button "Photo Moderation" [ref=f14e66] [cursor=pointer]
+          - button "QR Print Studio" [ref=f14e70] [cursor=pointer]
+          - button "Scavenger Quests" [ref=f14e78] [cursor=pointer]
+          - button "Download High-Res ZIP" [ref=f14e86] [cursor=pointer]
+          - button "Photographer Ingest" [ref=f14e91] [cursor=pointer]
+        - generic [ref=f14e96]:
+          - button "Photographer Ingest" [ref=f14e97] [cursor=pointer]
+          - link "View as guest" [ref=f14e102] [cursor=pointer]:
+            - /url: /e/monika-and-alexander-2026
+      - generic [ref=f14e107]:
+        - generic [ref=f14e108]:
+          - generic [ref=f14e109]:
+            - generic [ref=f14e110]: Moments Captured
+            - generic [ref=f14e115]: "7"
+          - generic [ref=f14e116]:
+            - generic [ref=f14e117]: Guests Joined
+            - generic [ref=f14e124]: "0"
+          - generic [ref=f14e125]:
+            - generic [ref=f14e126]: Awaiting approval
+            - generic [ref=f14e130]: "0"
+          - generic [ref=f14e131]:
+            - generic [ref=f14e132]: Quests Completed
+            - generic [ref=f14e140]: 0 / 5
+        - generic [ref=f14e141]:
+          - generic [ref=f14e142]:
+            - heading "Wedding Settings" [level=2] [ref=f14e143]
+            - generic [ref=f14e148]:
+              - generic [ref=f14e149]: Wedding theme and colour palette
+              - generic [ref=f14e150]:
+                - button "Champagne & Gold" [ref=f14e151] [cursor=pointer]
+                - button "Blush & Bordeaux" [ref=f14e154] [cursor=pointer]
+                - button "Botanical Sage & Olive" [ref=f14e157] [cursor=pointer]
+                - button "Velvet Midnight Noir" [ref=f14e160] [cursor=pointer]
+            - generic [ref=f14e163]:
+              - generic [ref=f14e164]:
+                - generic [ref=f14e165]: Approve photos before they appear
+                - text: Photos need your approval before going live.
+              - button "Approve photos before they appear" [ref=f14e166] [cursor=pointer]
+            - generic [ref=f14e168]:
+              - generic [ref=f14e169]:
+                - generic [ref=f14e170]: Danger zone
+                - generic [ref=f14e171]: Removes the photos, comments and guests. This cannot be undone.
+              - generic [ref=f14e172]: "Type the album address (monika-and-alexander-2026) to confirm:"
+              - textbox "Delete this album permanently" [ref=f14e173]:
+                - /placeholder: monika-and-alexander-2026
+              - button "Delete this album permanently" [disabled] [ref=f14e174]
+            - generic [ref=f14e175]:
+              - generic [ref=f14e176]:
+                - generic [ref=f14e177]: Reset guest sessions
+                - text: Every guest has to join again. Their photos and comments stay.
+              - button "Reset guest sessions" [ref=f14e178] [cursor=pointer]
+            - generic [ref=f14e179]:
+              - generic [ref=f14e180]:
+                - generic [ref=f14e181]: Show on the public showcase
+                - text: Your album appears on the home page — names, venue and a few photos. Off by default.
+              - button "Show on the public showcase" [pressed] [ref=f14e182] [cursor=pointer]
+            - generic [ref=f14e184]:
+              - generic [ref=f14e185]:
+                - generic [ref=f14e186]: Disposable-camera mode
+                - text: Photos stay locked and reveal themselves the morning after the wedding.
+              - button "Disposable-camera mode" [ref=f14e187] [cursor=pointer]
+            - generic [ref=f14e189]:
+              - generic [ref=f14e190]:
+                - generic [ref=f14e191]: Photos per guest
+                - generic [ref=f14e192]: 50 photos
+              - slider "Photos per guest 50 photos" [ref=f14e193]: "50"
+          - generic [ref=f14e194]:
+            - heading "Wedding details" [level=2] [ref=f14e195]
+            - generic [ref=f14e200]:
+              - generic [ref=f14e201]: Names of the couple *
+              - textbox "Names of the couple *" [ref=f14e202]:
+                - /placeholder: e.g. Jessica & Alex
+                - text: Моника и Александър
+            - generic [ref=f14e203]:
+              - generic [ref=f14e204]: Event title
+              - textbox "Event title" [ref=f14e205]:
+                - /placeholder: e.g. Jessica & Alex's Wedding
+                - text: Сватбата на Моника и Александър
+            - generic [ref=f14e206]:
+              - generic [ref=f14e207]:
+                - generic [ref=f14e208]: Custom URL (QR link)
+                - generic [ref=f14e209]: /e/monika-and-alexander-2026
+              - textbox "Custom URL (QR link) /e/monika-and-alexander-2026" [ref=f14e210]: monika-and-alexander-2026
+            - generic [ref=f14e211]:
+              - generic [ref=f14e212]:
+                - generic [ref=f14e213]: Date and time
+                - generic [ref=f14e214]:
+                  - textbox "Date of the celebration, as DD.MM.YYYY" [ref=f14e215]:
+                    - /placeholder: ДД.ММ.ГГГГ
+                    - text: 18.09.2026
+                  - textbox "Time it starts, as HH:MM" [ref=f14e216]:
+                    - /placeholder: ЧЧ:ММ
+                    - text: 19:30
+              - generic [ref=f14e217]:
+                - generic [ref=f14e218]: Venue / location
+                - textbox "Venue / location" [ref=f14e219]:
+                  - /placeholder: e.g. Boyana Residence, Sofia
+                  - text: Резиденция Бояна, София
+            - generic [ref=f14e220]:
+              - generic [ref=f14e221]: Welcome message (shown when the QR code is scanned)
+              - textbox "Welcome message (shown when the QR code is scanned)" [ref=f14e222]: Добре дошли на нашия сватбен ден! Сканирайте QR кода, снимайте весели и неподправени моменти и ни помогнете да запечатаме всеки миг заедно.
+  - contentinfo [ref=f14e223]:
+    - generic [ref=f14e224]: WedMoments - a live wedding album and keepsake
+    - paragraph [ref=f14e228]: (c) 2026 WedMoments. Every moment in full resolution, shared freely by your guests, live on the big screen.

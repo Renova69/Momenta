@@ -2,6 +2,8 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup, within } from '@testing-library/react';
 import React from 'react';
 import axe from 'axe-core';
+import fs from 'fs';
+import path from 'path';
 
 import { LightboxModal } from '../../src/components/gallery/LightboxModal';
 import { GuestOnboardingModal } from '../../src/components/guest/GuestOnboardingModal';
@@ -195,5 +197,19 @@ describe('the page language', () => {
     } finally {
       i18n.setLanguage(before);
     }
+  });
+});
+
+describe('the page shell', () => {
+  it('lets a guest pinch to zoom', () => {
+    // index.html carried `maximum-scale=1.0, user-scalable=no`, which is a
+    // WCAG 1.4.4 failure and, on an album read one-handed in a dark room, the
+    // setting that stopped the guest who most needed to zoom into a face.
+    const html = fs.readFileSync(path.resolve(__dirname, '../../index.html'), 'utf8');
+    const viewport = html.match(/<meta name="viewport"[^>]*>/)?.[0] ?? '';
+
+    expect(viewport).toContain('width=device-width');
+    expect(viewport).not.toContain('user-scalable=no');
+    expect(viewport).not.toMatch(/maximum-scale/);
   });
 });

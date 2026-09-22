@@ -69,9 +69,9 @@ export const QuestLeaderboard: React.FC<QuestLeaderboardProps> = ({ entries, cur
     >
       <div className="flex items-center gap-2.5 mb-1">
         <Crown className="w-5 h-5 text-gold-400" />
-        <h4 id="quest-leaderboard-title" className="font-serif text-lg font-bold text-cream-100">
+        <h2 id="quest-leaderboard-title" className="font-serif text-lg font-bold text-cream-100">
           {i18n.t('leaderboard.title')}
-        </h4>
+        </h2>
       </div>
       {hint && <p className="text-xs text-cream-400/80 mb-3">{hint}</p>}
 

@@ -79,9 +79,9 @@ export const HostAuthPage: React.FC<HostAuthPageProps> = ({ onSuccess }) => {
           <div className="w-14 h-14 rounded-full bg-gold-400/20 border border-gold-400/40 flex items-center justify-center mx-auto mb-3 shadow-glow">
             <Lock className="w-7 h-7 text-gold-400" />
           </div>
-          <h2 className="font-serif text-3xl sm:text-4xl font-bold text-cream-100 mb-2">
+          <h1 className="font-serif text-3xl sm:text-4xl font-bold text-cream-100 mb-2">
             {i18n.t('host.title')}
-          </h2>
+          </h1>
           <p className="text-xs sm:text-sm text-cream-300/80 max-w-md mx-auto">
             {i18n.t('host.subtitle')}
           </p>

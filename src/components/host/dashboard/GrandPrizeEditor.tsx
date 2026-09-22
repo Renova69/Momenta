@@ -77,7 +77,7 @@ export const GrandPrizeEditor: React.FC = () => {
             <Trophy className="w-5 h-5" />
           </div>
           <div>
-            <h4 className="font-serif text-lg font-bold text-cream-100">{i18n.t('quests.grand_prize')}</h4>
+            <h2 className="font-serif text-lg font-bold text-cream-100">{i18n.t('quests.grand_prize')}</h2>
             <p className="text-xs text-cream-400/80">{i18n.t('quests.prize_hint')}</p>
           </div>
         </div>

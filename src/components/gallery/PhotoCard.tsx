@@ -204,9 +204,13 @@ const PhotoCardComponent: React.FC<PhotoCardProps> = ({
               )}
             </div>
             <div>
-              <h4 className="text-xs font-semibold text-cream-100 leading-tight">
+              {/* h2, not h4: the album title is the page's h1 and these cards
+                  sit directly under it. A jump to h4 reads as three missing
+                  levels of structure, and the level is what a screen reader
+                  uses to move photo to photo. */}
+              <h2 className="text-xs font-semibold text-cream-100 leading-tight">
                 {photo.guestName}
-              </h4>
+              </h2>
               {photo.source === 'photographer' && (
                 <span className="inline-flex items-center gap-1 mt-0.5 px-1.5 py-0.5 rounded bg-gold-400/15 border border-gold-400/40 text-gold-300 text-[9px] font-bold uppercase tracking-wider">
                   <Camera className="w-2.5 h-2.5" /> Official Photographer

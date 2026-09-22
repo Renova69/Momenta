@@ -1,0 +1,33 @@
+- generic [ref=f4e3]:
+  - banner [ref=f4e4]:
+    - generic [ref=f4e5]:
+      - generic [ref=f4e6]: WedMoments
+      - navigation [ref=f4e14]:
+        - button "Guest App" [ref=f4e15] [cursor=pointer]
+        - button "Host Studio" [ref=f4e20] [cursor=pointer]
+      - generic [ref=f4e27]:
+        - button "Plans & Pricing" [ref=f4e28] [cursor=pointer]
+        - button "EN" [ref=f4e31] [cursor=pointer]
+        - button "Theme" [ref=f4e33] [cursor=pointer]
+  - main [ref=f4e40]:
+    - generic [ref=f4e43]:
+      - generic [ref=f4e44]:
+        - heading "Host & Planner Studio" [level=2] [ref=f4e49]
+        - paragraph [ref=f4e50]: Sign in to manage your wedding settings, approve guest photos, and export high-res print posters.
+      - generic [ref=f4e51]:
+        - button "Sign In" [ref=f4e52] [cursor=pointer]
+        - button "Create Account" [ref=f4e53] [cursor=pointer]
+        - button "1-Click Demo" [ref=f4e54] [cursor=pointer]
+      - generic [ref=f4e55]:
+        - generic [ref=f4e56]:
+          - generic [ref=f4e57]: Email Address
+          - textbox "Email Address" [ref=f4e62]:
+            - /placeholder: monika.alexander@wedmoments.bg
+        - generic [ref=f4e63]:
+          - generic [ref=f4e64]: Password
+          - textbox "Password" [ref=f4e69]:
+            - /placeholder: ••••••••••••
+        - button "Sign In to Host Studio" [ref=f4e70] [cursor=pointer]
+  - contentinfo [ref=f4e71]:
+    - generic [ref=f4e72]: WedMoments - a live wedding album and keepsake
+    - paragraph [ref=f4e76]: (c) 2026 WedMoments. Every moment in full resolution, shared freely by your guests, live on the big screen.

@@ -158,9 +158,9 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
                 )}
               </div>
               <div>
-                <h4 id={titleId} className="font-serif font-bold text-sm text-cream-100">
+                <h2 id={titleId} className="font-serif font-bold text-sm text-cream-100">
                   {photo.guestName}
-                </h4>
+                </h2>
                 <div className="flex items-center gap-2 text-[11px] text-cream-400/70">
                   {photo.guestTable && <span>{photo.guestTable}</span>}
                   {photo.guestTable && <span>•</span>}

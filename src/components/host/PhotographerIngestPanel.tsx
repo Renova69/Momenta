@@ -84,10 +84,10 @@ export const PhotographerIngestPanel: React.FC<PhotographerIngestPanelProps> = (
     <div className="space-y-6">
       {/* New key + portal link */}
       <div className="bg-noir-800/90 rounded-3xl p-6 border border-gold-400/20 space-y-4">
-        <h4 className="font-serif text-lg font-bold text-cream-100 flex items-center gap-2">
+        <h2 className="font-serif text-lg font-bold text-cream-100 flex items-center gap-2">
           <KeyRound className="w-5 h-5 text-gold-400" />
           <span>{i18n.t('ingest.key_heading')}</span>
-        </h4>
+        </h2>
         <p className="text-xs text-cream-300/80">
           {i18n.t('ingest.key_intro')}
         </p>
@@ -138,10 +138,10 @@ export const PhotographerIngestPanel: React.FC<PhotographerIngestPanelProps> = (
 
       {/* Existing keys */}
       <div className="bg-noir-800/90 rounded-3xl p-6 border border-cream-400/10 space-y-3">
-        <h4 className="font-serif text-base font-bold text-cream-100 flex items-center gap-2">
+        <h3 className="font-serif text-base font-bold text-cream-100 flex items-center gap-2">
           <Camera className="w-4 h-4 text-gold-400" />{' '}
           {i18n.t('ingest.active_keys', { count: activeKeys.length })}
-        </h4>
+        </h3>
         {loading ? (
           <p className="text-xs text-cream-400/70">{i18n.t('ingest.loading')}</p>
         ) : activeKeys.length === 0 ? (
@@ -173,9 +173,9 @@ export const PhotographerIngestPanel: React.FC<PhotographerIngestPanelProps> = (
 
       {/* Integration instructions */}
       <div className="bg-noir-800/90 rounded-3xl p-6 border border-cream-400/10 space-y-4">
-        <h4 className="font-serif text-base font-bold text-cream-100 flex items-center gap-2">
+        <h3 className="font-serif text-base font-bold text-cream-100 flex items-center gap-2">
           <FolderSync className="w-4 h-4 text-gold-400" /> {i18n.t('ingest.recipes')}
-        </h4>
+        </h3>
 
         <div className="space-y-3 text-xs text-cream-300/85">
           <div>
