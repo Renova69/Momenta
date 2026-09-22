@@ -46,6 +46,3 @@ tmp_test_*
 
 # Playwright MCP scratch output (page snapshots, console logs)
 .playwright-mcp/
-
-# Playwright MCP scratch output (page snapshots, console logs)
-.playwright-mcp/
