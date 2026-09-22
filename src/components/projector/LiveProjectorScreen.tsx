@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { WeddingEvent, Photo, ScavengerQuest } from '../../types';
 import { QRCodeSVG } from 'qrcode.react';
 import { i18n } from '../../i18n';
+import { centerIconDataUri } from '../../utils/qrCenterIcon';
 import { storageService, LiveReaction, ReactionKind } from '../../services/storageService';
 import { isFeatureUnlocked } from '../../config/tierGating';
 import { useQuestLeaderboard } from '../../hooks/useQuestLeaderboard';
@@ -370,8 +371,13 @@ export const LiveProjectorScreen: React.FC<LiveProjectorScreenProps> = ({
               size={84}
               level="H"
               includeMargin={false}
+              // Inline, not hotlinked. This screen runs all evening on the
+              // venue's Wi-Fi; an external CDN in the middle of the QR code
+              // is a request that can hang, fail, or simply tell flaticon
+              // where the wedding is. The print studio stopped doing this
+              // when it broke PNG export; the wall kept doing it.
               imageSettings={{
-                src: 'https://cdn-icons-png.flaticon.com/512/833/833472.png',
+                src: centerIconDataUri('heart')!,
                 x: undefined,
                 y: undefined,
                 height: 18,

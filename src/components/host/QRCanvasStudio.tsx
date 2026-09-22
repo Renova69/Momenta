@@ -2,6 +2,7 @@ import React, { useId, useState, useEffect } from 'react';
 import { WeddingEvent, QRCanvasConfig, CanvasSize, FrameStyle, QRCenterIcon } from '../../types';
 import { QRCodeSVG } from 'qrcode.react';
 import { i18n } from '../../i18n';
+import { centerIconDataUri } from '../../utils/qrCenterIcon';
 import { formatEuDateLong } from '../../utils/date';
 import {
   triggerVectorPrint,
@@ -28,29 +29,6 @@ interface QRCanvasStudioProps {
   event: WeddingEvent;
   config: QRCanvasConfig;
   onUpdateConfig: (updates: Partial<QRCanvasConfig>) => void;
-}
-
-/**
- * The QR center icon used to be a single image hotlinked from an external
- * CDN (flaticon.com). That CDN doesn't send permissive CORS headers, so the
- * live on-screen preview showed it fine — a plain <img>/<image> render never
- * enforces CORS — but the PNG/PDF export, which rasterizes the poster into a
- * <canvas> via html2canvas, silently dropped it: a canvas can't read pixels
- * from a cross-origin image without CORS, so the excavated hole in the QR
- * code came out empty. Inline `data:` SVGs are same-origin by construction —
- * no CORS concern, ever — and let a host pick from a small curated set
- * instead of one hardcoded heart.
- */
-const CENTER_ICON_SVG: Record<Exclude<QRCenterIcon, 'none'>, string> = {
-  heart: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="#1A1817" d="M12 21s-6.7-4.35-9.3-8.28C.87 10.24 1.1 6.5 4.1 4.6 6.6 3 9.4 3.9 12 6.4c2.6-2.5 5.4-3.4 7.9-1.8 3 1.9 3.23 5.64 1.4 8.12C18.7 16.65 12 21 12 21z"/></svg>',
-  rings: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><circle cx="9" cy="14" r="6" fill="none" stroke="#1A1817" stroke-width="2.2"/><circle cx="15" cy="10" r="6" fill="none" stroke="#1A1817" stroke-width="2.2"/></svg>',
-  camera: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><rect x="2" y="7" width="20" height="14" rx="2.5" fill="#1A1817"/><rect x="8" y="4" width="8" height="4" rx="1.2" fill="#1A1817"/><circle cx="12" cy="14" r="4.2" fill="#FDFBF7"/><circle cx="12" cy="14" r="2.4" fill="#1A1817"/></svg>',
-  sparkle: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="#1A1817" d="M12 2l1.8 6.2L20 10l-6.2 1.8L12 18l-1.8-6.2L4 10l6.2-1.8L12 2z"/></svg>',
-};
-
-function centerIconDataUri(icon: QRCenterIcon): string | undefined {
-  if (icon === 'none') return undefined;
-  return `data:image/svg+xml;utf8,${encodeURIComponent(CENTER_ICON_SVG[icon])}`;
 }
 
 const CENTER_ICON_OPTIONS: { id: QRCenterIcon; Icon: React.ComponentType<{ className?: string }>; labelKey: string }[] = [
