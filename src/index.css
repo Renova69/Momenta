@@ -33,6 +33,18 @@
   }
 }
 
+/*
+ * A row that scrolls sideways without a bar across it — the filter strip over
+ * the camera. The bar would sit on top of the picture.
+ */
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
 /* Custom Scrollbar */
 ::-webkit-scrollbar {
   width: 6px;

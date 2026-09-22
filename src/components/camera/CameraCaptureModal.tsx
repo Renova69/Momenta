@@ -4,19 +4,10 @@ import { compressAndFilterImage } from '../../services/compressionService';
 import { checkMediaSupport, mediaBlockMessageKey } from '../../utils/mediaSupport';
 import { i18n } from '../../i18n';
 import { useDialog } from '../../hooks/useDialog';
+import { CameraViewfinder, FILTER_PREVIEW_CSS } from './CameraViewfinder';
+import { CaptureReview } from './CaptureReview';
 import confetti from 'canvas-confetti';
-import {
-  X,
-  Camera,
-  RefreshCw,
-  UploadCloud,
-  Sparkles,
-  Check,
-  Trophy,
-  Sliders,
-  Image as ImageIcon,
-  ShieldAlert,
-} from 'lucide-react';
+import { Camera, UploadCloud, Image as ImageIcon, ShieldAlert } from 'lucide-react';
 
 interface CameraCaptureModalProps {
   isOpen: boolean;
@@ -65,6 +56,12 @@ export const CameraCaptureModal: React.FC<CameraCaptureModalProps> = ({
   const [selectedQuestId, setSelectedQuestId] = useState<string>(initialQuestId || '');
   const [isProcessing, setIsProcessing] = useState(false);
   const [useFrontCamera, setUseFrontCamera] = useState(false);
+  // The frame is frozen on screen before the encoded photo exists, so the
+  // review screen has something to show from the first tick.
+  const [isCaptured, setIsCaptured] = useState(false);
+  const [flash, setFlash] = useState(false);
+  // Thumbnails of what has gone up in this session, newest first.
+  const [sent, setSent] = useState<string[]>([]);
 
   // Permission and stream states
   const [permissionState, setPermissionState] = useState<'prompt' | 'granted' | 'denied' | 'unsupported'>('prompt');
@@ -188,25 +185,75 @@ export const CameraCaptureModal: React.FC<CameraCaptureModalProps> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedFilter]);
 
+  /**
+   * The shutter, in the order a camera does it.
+   *
+   * What made this feel a second slow was not the camera: it was everything
+   * the old handler did before anything appeared on screen. `toDataURL` is a
+   * synchronous base64 encode of a full-resolution frame on the main thread,
+   * and only after it finished did the filter pass start, behind a spinner.
+   * The guest pressed the button and watched a frozen interface.
+   *
+   * So: stop the picture first — pausing the video leaves the exact frame on
+   * screen at no cost, which is the freeze a phone camera shows — and do the
+   * encoding afterwards, while the guest is already looking at their photo
+   * and reaching for the note field.
+   */
   const snapPhotoFromVideo = () => {
     if (!videoRef.current) return;
     const video = videoRef.current;
+
     const canvas = document.createElement('canvas');
     canvas.width = video.videoWidth || 1280;
     canvas.height = video.videoHeight || 720;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
+    // 1. Freeze. Nothing else happens on this tick.
+    video.pause();
+    setIsCaptured(true);
+    setFlash(true);
+    window.setTimeout(() => setFlash(false), 140);
+
     if (useFrontCamera) {
+      // The preview is mirrored so the guest sees themselves as in a mirror;
+      // the stored photo must read the right way round, or every selfie has
+      // the venue's signage backwards.
       ctx.translate(canvas.width, 0);
       ctx.scale(-1, 1);
     }
-
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-    const dataUrl = canvas.toDataURL('image/jpeg', 0.95);
-    setCapturedRawUrl(dataUrl);
-    applyFilterToCaptured(dataUrl, selectedFilter);
-    stopCamera();
+
+    // 2. Encode off the critical path. toBlob hands the work to the browser
+    //    rather than blocking on a base64 string; toDataURL is the fallback
+    //    for anything that does not implement it.
+    const onEncoded = (dataUrl: string) => {
+      setCapturedRawUrl(dataUrl);
+      applyFilterToCaptured(dataUrl, selectedFilter);
+      stopCamera();
+    };
+
+    try {
+      if (typeof canvas.toBlob !== 'function') throw new Error('toBlob unavailable');
+      canvas.toBlob(
+        (blob) => {
+          if (!blob) {
+            onEncoded(canvas.toDataURL('image/jpeg', 0.95));
+            return;
+          }
+          const reader = new FileReader();
+          reader.onload = (ev) => onEncoded(ev.target?.result as string);
+          reader.onerror = () => onEncoded(canvas.toDataURL('image/jpeg', 0.95));
+          reader.readAsDataURL(blob);
+        },
+        'image/jpeg',
+        0.95
+      );
+    } catch {
+      // Some embedded browsers have the method and refuse the call. The
+      // photograph matters more than the milliseconds.
+      onEncoded(canvas.toDataURL('image/jpeg', 0.95));
+    }
   };
 
   const [isUploadingMultiple, setIsUploadingMultiple] = useState(false);
@@ -287,6 +334,7 @@ export const CameraCaptureModal: React.FC<CameraCaptureModalProps> = ({
   };
 
   const handleRetake = () => {
+    setIsCaptured(false);
     setCapturedRawUrl(null);
     setProcessedUrl(null);
     setBulkFiles([]);
@@ -371,15 +419,24 @@ export const CameraCaptureModal: React.FC<CameraCaptureModalProps> = ({
       });
     }
 
-    confetti({
-      particleCount: 80,
-      spread: 70,
-      origin: { y: 0.6 },
-      colors: ['#D4AF37', '#F5EFE0', '#D98991', '#84A784'],
-    });
+    // Once per session, not once per shot: at three photos in a row it stops
+    // being a celebration and starts being in the way of the next one.
+    if (sent.length === 0) {
+      confetti({
+        particleCount: 80,
+        spread: 70,
+        origin: { y: 0.6 },
+        colors: ['#D4AF37', '#F5EFE0', '#D98991', '#84A784'],
+      });
+    }
 
+    // Back to the viewfinder rather than out of the camera. The upload is
+    // already on its way (addPhoto writes locally first and syncs after), so
+    // the next photograph does not wait for the last one to land — which is
+    // how people actually take pictures at a party.
+    setSent((prev) => [processedUrl ?? capturedRawUrl ?? '', ...prev].filter(Boolean).slice(0, 12));
+    setCaption('');
     handleRetake();
-    onClose();
   };
 
   if (!isOpen) return null;
@@ -408,309 +465,178 @@ export const CameraCaptureModal: React.FC<CameraCaptureModalProps> = ({
     );
   }
 
+  const liveCameraAvailable = permissionState === 'granted' && !cameraError;
+  const attachedQuest = quests.find((q) => q.id === selectedQuestId);
+
   return (
     <div
       ref={dialogRef}
       {...dialogProps}
-      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/90 backdrop-blur-md animate-fade-in"
+      className="fixed inset-0 z-50 bg-black animate-fade-in overflow-hidden"
     >
-      <div className="relative w-full max-w-lg bg-noir-900 rounded-3xl border border-gold-400/30 shadow-2xl overflow-hidden flex flex-col max-h-[94vh]">
-        {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-cream-400/10 bg-noir-800/80">
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-full bg-gold-400/20 flex items-center justify-center border border-gold-400/40">
-              <Camera className="w-4 h-4 text-gold-400" />
+      {/*
+        The picture is the screen. Everything else is over it.
+
+        This was a max-w-lg card with the camera boxed into an aspect-ratio
+        viewport inside a padded, scrolling body — on a phone, the view of the
+        room came to about a third of the display. A guest framing a shot
+        across a dark reception needs the frame.
+      */}
+      <div className="absolute inset-0">
+        {/* The still, once there is one to show. */}
+        {(processedUrl || capturedRawUrl) && (
+          <img
+            src={processedUrl || capturedRawUrl || ''}
+            alt={i18n.t('camera.captured_alt')}
+            className="w-full h-full object-contain bg-black"
+          />
+        )}
+
+        {/*
+          The live camera. Kept mounted and merely hidden behind the still,
+          because the frozen frame the guest is looking at immediately after
+          the shutter *is* this paused video — remounting it would blank the
+          screen at exactly the wrong moment.
+        */}
+        <video
+          ref={videoRef}
+          autoPlay
+          playsInline
+          muted
+          className={`absolute inset-0 w-full h-full object-cover ${
+            useFrontCamera ? '-scale-x-100' : ''
+          } ${processedUrl || capturedRawUrl ? 'invisible' : ''}`}
+          style={{ filter: isCaptured ? undefined : FILTER_PREVIEW_CSS[selectedFilter] }}
+        />
+
+        {/* The shutter's own flash: brief, and the only thing that happens
+            on the tick the guest presses. */}
+        {flash && <div className="absolute inset-0 bg-white pointer-events-none" />}
+
+        {/* Permission / inaccessible camera fallback. */}
+        {(permissionState === 'denied' || permissionState === 'unsupported' || cameraError) && !isCaptured && (
+          <div className="absolute inset-0 p-6 flex flex-col items-center justify-center text-center bg-noir-950/95 text-cream-100 z-30 space-y-4">
+            <div className="w-14 h-14 rounded-full bg-gold-400/10 border border-gold-400/30 flex items-center justify-center text-gold-400">
+              <ShieldAlert className="w-7 h-7" />
             </div>
-            <div>
-              <h3 id={titleId} className="font-serif text-lg font-bold text-cream-100 leading-tight">
-                {capturedRawUrl 
-                  ? bulkFiles.length > 1 
-                    ? i18n.t('camera.uploading_count', { count: bulkFiles.length })
-                    : i18n.t('camera.edit_title') 
-                  : i18n.t('camera.title')}
+
+            <div className="space-y-1 max-w-xs">
+              <h3 className="font-serif text-base font-semibold text-cream-100">
+                {permissionState === 'denied' ? i18n.t('camera.permission_required') : i18n.t('camera.phone_cam')}
               </h3>
-              <p className="text-[11px] text-cream-400/70">
-                {capturedRawUrl
-                  ? bulkFiles.length > 1
-                    ? (i18n.getLanguage() === 'bg' ? i18n.t('camera.bulk_hint') : 'Select filter and quest for all photos.')
-                    : i18n.t('camera.leave_note')
-                  : i18n.t('app.subtitle')}
+              <p className="text-xs text-cream-300/80">
+                {cameraError || i18n.t('camera.permission_subtitle')}
               </p>
-              {bulkTruncatedFrom !== null && (
-                <p className="text-[11px] text-gold-400/90 mt-0.5">
-                  {i18n.t('camera.bulk_limit_notice', { selected: bulkTruncatedFrom, max: MAX_BULK_UPLOAD_FILES })}
-                </p>
-              )}
             </div>
-          </div>
 
-          <button
-            onClick={onClose}
-            aria-label={i18n.t('common.close')}
-            className="p-1.5 rounded-full bg-noir-700 text-cream-300 hover:text-white transition-colors"
-          >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-
-        {/* Viewport / Body */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-4">
-          {/* CAMERA / PREVIEW VIEWPORT */}
-          <div className="relative w-full aspect-[4/3] sm:aspect-square bg-black rounded-2xl overflow-hidden border border-gold-400/20 shadow-inner flex items-center justify-center">
-            {capturedRawUrl ? (
-              <div className="relative w-full h-full flex items-center justify-center bg-noir-950">
-                <img
-                  src={processedUrl || capturedRawUrl}
-                  alt="Captured moment"
-                  className="w-full h-full object-cover"
-                />
-                {isProcessing && (
-                  <div className="absolute inset-0 bg-black/40 backdrop-blur-xs flex items-center justify-center">
-                    <Sparkles className="w-8 h-8 text-gold-400 animate-spin" />
-                  </div>
-                )}
-              </div>
-            ) : (
-              <>
-                <video
-                  ref={videoRef}
-                  autoPlay
-                  playsInline
-                  muted
-                  className={`w-full h-full object-cover ${useFrontCamera ? '-scale-x-100' : ''}`}
-                />
-
-                {/* Permission / Inaccessible Camera Fallback Overlay */}
-                {(permissionState === 'denied' || permissionState === 'unsupported' || cameraError) && (
-                  <div className="absolute inset-0 p-6 flex flex-col items-center justify-center text-center bg-noir-950/95 text-cream-100 z-10 space-y-4">
-                    <div className="w-14 h-14 rounded-full bg-gold-400/10 border border-gold-400/30 flex items-center justify-center text-gold-400">
-                      <ShieldAlert className="w-7 h-7" />
-                    </div>
-
-                    <div className="space-y-1 max-w-xs">
-                      <h4 className="font-serif text-base font-semibold text-cream-100">
-                        {permissionState === 'denied' ? i18n.t('camera.permission_required') : i18n.t('camera.phone_cam')}
-                      </h4>
-                      <p className="text-xs text-cream-300/80">
-                        {cameraError || i18n.t('camera.permission_subtitle')}
-                      </p>
-                    </div>
-
-                    <div className="flex flex-col sm:flex-row gap-2 w-full max-w-xs pt-1">
-                      <button
-                        type="button"
-                        onClick={() => nativeCameraInputRef.current?.click()}
-                        className="flex-1 py-3 px-4 rounded-xl bg-gradient-to-r from-gold-400 to-gold-500 text-noir-900 font-bold text-xs shadow-glow flex items-center justify-center gap-2 hover:brightness-110 active:scale-98 transition-transform"
-                      >
-                        <Camera className="w-4 h-4" />
-                        <span>{i18n.t('camera.open_phone_cam')}</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => fileInputRef.current?.click()}
-                        className="py-3 px-4 rounded-xl bg-noir-800 border border-cream-400/20 text-cream-200 text-xs font-semibold hover:bg-noir-700 transition-colors flex items-center justify-center gap-2"
-                      >
-                        <ImageIcon className="w-4 h-4 text-cream-300" />
-                        <span>{i18n.t('camera.gallery')}</span>
-                      </button>
-                    </div>
-
-                    {permissionState === 'denied' && (
-                      <button
-                        type="button"
-                        onClick={startCamera}
-                        className="text-[11px] text-gold-400/80 hover:text-gold-300 underline pt-1"
-                      >
-                        {i18n.t('camera.retry_permission')}
-                      </button>
-                    )}
-                  </div>
-                )}
-
-                {/* Flip camera button overlay */}
-                {permissionState === 'granted' && !cameraError && (
-                  <button
-                    type="button"
-                    onClick={() => setUseFrontCamera(!useFrontCamera)}
-                    title="Flip camera"
-                    className="absolute top-3 right-3 p-2.5 rounded-full bg-black/60 backdrop-blur-md text-white border border-white/20 hover:scale-110 active:scale-95 transition-transform z-20 shadow-md"
-                  >
-                    <RefreshCw className="w-4 h-4" />
-                  </button>
-                )}
-              </>
-            )}
-
-            {/* Hidden File Input for Gallery */}
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*"
-              multiple
-              className="hidden"
-              onChange={handleFileSelect}
-            />
-
-            {/* Hidden Native Camera Input for 100% reliable mobile camera capture */}
-            <input
-              ref={nativeCameraInputRef}
-              type="file"
-              accept="image/*"
-              capture="environment"
-              className="hidden"
-              onChange={handleFileSelect}
-            />
-          </div>
-
-          {/* EDITING CONTROLS (Only after photo is taken) */}
-          {capturedRawUrl ? (
-            <div className="space-y-4">
-              {/* Filter Selector */}
-              <div>
-                <div className="flex items-center gap-1.5 text-xs font-semibold text-cream-300 mb-2">
-                  <Sliders className="w-3.5 h-3.5 text-gold-400" />
-                  <span>{i18n.t('camera.filter_title')}</span>
-                </div>
-                <div className="grid grid-cols-5 gap-2">
-                  {FILTERS.map((f) => {
-                    const isSelected = selectedFilter === f.id;
-                    return (
-                      <button
-                        key={f.id}
-                        type="button"
-                        onClick={() => setSelectedFilter(f.id)}
-                        className={`flex flex-col items-center gap-1 p-1.5 rounded-xl border transition-all ${
-                          isSelected
-                            ? 'border-gold-400 bg-gold-400/15 shadow-glow scale-105'
-                            : 'border-cream-400/10 bg-noir-800/60 hover:border-cream-400/30'
-                        }`}
-                      >
-                        <div
-                          className={`w-full aspect-square rounded-lg bg-gradient-to-tr ${f.previewColor} border border-white/10 flex items-center justify-center`}
-                        >
-                          {isSelected && <Check className="w-3.5 h-3.5 text-gold-300" />}
-                        </div>
-                        <span className="text-[10px] text-cream-300 truncate w-full text-center">
-                          {f.label}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Scavenger Quest Tagging */}
-              {quests.length > 0 && (
-                <div>
-                  <label htmlFor={`${fieldIds}-1`} className="flex items-center gap-1.5 text-xs font-semibold text-cream-300 mb-1.5">
-                    <Trophy className="w-3.5 h-3.5 text-gold-400" />
-                    <span>{i18n.t('camera.tag_quest')}</span>
-                  </label>
-                  <select
-                    id={`${fieldIds}-1`}
-                    value={selectedQuestId}
-                    onChange={(e) => setSelectedQuestId(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl bg-noir-800 border border-cream-400/20 text-cream-100 text-xs focus:outline-none focus:border-gold-400"
-                  >
-                    <option value="">{i18n.t('camera.no_quest')}</option>
-                    {quests.map((q) => (
-                      <option key={q.id} value={q.id}>
-                        {q.title} (+{q.points} {i18n.t('quests.pts')})
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
-
-              {/* Caption Box */}
-              <div>
-                <label htmlFor={`${fieldIds}-2`} className="block text-xs font-semibold text-cream-300 mb-1.5">
-                  {i18n.t('camera.leave_note')}
-                </label>
-                <textarea
-                  id={`${fieldIds}-2`}
-                  value={caption}
-                  onChange={(e) => setCaption(e.target.value)}
-                  placeholder={i18n.t('camera.note_placeholder')}
-                  rows={2}
-                  maxLength={240}
-                  className="w-full px-3 py-2 rounded-xl bg-noir-800 border border-cream-400/20 text-cream-100 text-xs placeholder:text-cream-400/40 focus:outline-none focus:border-gold-400 resize-none"
-                />
-              </div>
-            </div>
-          ) : (
-            // PRE-CAPTURE CONTROLS
-            <div className="flex items-center justify-around py-3">
-              <button
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
-                className="flex flex-col items-center gap-1 text-cream-300 hover:text-white transition-colors group"
-              >
-                <div className="w-12 h-12 rounded-full bg-noir-800 border border-cream-400/20 flex items-center justify-center group-hover:border-gold-400/50 transition-colors">
-                  <ImageIcon className="w-5 h-5 text-cream-200" />
-                </div>
-                <span className="text-[11px]">{i18n.t('camera.gallery')}</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  if (streamRef.current && videoRef.current && permissionState === 'granted') {
-                    snapPhotoFromVideo();
-                  } else {
-                    nativeCameraInputRef.current?.click();
-                  }
-                }}
-                className="w-18 h-18 rounded-full p-1 border-2 border-gold-400 shadow-glow flex items-center justify-center hover:scale-105 active:scale-95 transition-transform"
-                title={i18n.t('camera.title')}
-              >
-                <div className="w-14 h-14 rounded-full bg-gradient-to-r from-gold-400 to-gold-500 shadow-inner flex items-center justify-center">
-                  <Camera className="w-6 h-6 text-noir-900" />
-                </div>
-              </button>
-
+            <div className="flex flex-col sm:flex-row gap-2 w-full max-w-xs pt-1">
               <button
                 type="button"
                 onClick={() => nativeCameraInputRef.current?.click()}
-                className="flex flex-col items-center gap-1 text-cream-300 hover:text-white transition-colors group"
+                className="flex-1 py-3 px-4 rounded-xl bg-gradient-to-r from-gold-400 to-gold-500 text-noir-900 font-bold text-xs shadow-glow flex items-center justify-center gap-2 hover:brightness-110 active:scale-98 transition-transform"
               >
-                <div className="w-12 h-12 rounded-full bg-noir-800 border border-cream-400/20 flex items-center justify-center group-hover:border-gold-400/50 transition-colors">
-                  <Camera className="w-5 h-5 text-gold-400" />
-                </div>
-                <span className="text-[11px]">{i18n.t('camera.phone_cam')}</span>
+                <Camera className="w-4 h-4" />
+                <span>{i18n.t('camera.open_phone_cam')}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className="py-3 px-4 rounded-xl bg-noir-800 border border-cream-400/20 text-cream-200 text-xs font-semibold hover:bg-noir-700 transition-colors flex items-center justify-center gap-2"
+              >
+                <ImageIcon className="w-4 h-4 text-cream-300" />
+                <span>{i18n.t('camera.gallery')}</span>
               </button>
             </div>
-          )}
-        </div>
 
-        {/* Footer Actions */}
-        {capturedRawUrl && (
-          <div className="flex items-center justify-between p-4 border-t border-cream-400/10 bg-noir-800/90 gap-3">
-            <button
-              type="button"
-              onClick={handleRetake}
-              className="px-4 py-2.5 rounded-xl border border-cream-400/20 text-cream-200 hover:bg-noir-700 text-xs font-medium transition-colors"
-            >
-              {i18n.t('camera.retake')}
-            </button>
+            {permissionState === 'denied' && (
+              <button
+                type="button"
+                onClick={startCamera}
+                className="text-[11px] text-gold-400/80 hover:text-gold-300 underline pt-1"
+              >
+                {i18n.t('camera.retry_permission')}
+              </button>
+            )}
+          </div>
+        )}
 
-            <button
-              type="button"
-              onClick={handleConfirmUpload}
-              disabled={isProcessing}
-              className="flex-1 flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-gold-400 to-gold-500 text-noir-900 font-bold text-xs shadow-glow hover:brightness-110 active:scale-98 transition-all disabled:opacity-50"
-            >
-              <UploadCloud className="w-4 h-4" />
-              <span>
-                {bulkFiles.length > 1
-                  ? i18n.t('camera.upload_count', { count: bulkFiles.length })
-                  : i18n.t('camera.share_button')}
-              </span>
-            </button>
+        {/* The filtered copy being made. A thin bar, not a spinner over the
+            photograph: the guest is looking at their picture and can write a
+            note while this finishes. */}
+        {isProcessing && (
+          <div className="absolute inset-x-0 top-0 z-30 h-0.5 bg-gold-400/30 overflow-hidden">
+            <div className="h-full w-1/3 bg-gold-400 animate-pulse" />
           </div>
         )}
       </div>
+
+      {isCaptured || capturedRawUrl ? (
+        <CaptureReview
+          filter={selectedFilter}
+          filters={FILTERS}
+          onSelectFilter={setSelectedFilter}
+          quests={quests}
+          selectedQuestId={selectedQuestId}
+          onSelectQuest={setSelectedQuestId}
+          caption={caption}
+          onCaptionChange={setCaption}
+          onRetake={handleRetake}
+          onSend={handleConfirmUpload}
+          isProcessing={isProcessing || !processedUrl}
+          batchCount={bulkFiles.length}
+          fieldIds={fieldIds}
+        />
+      ) : (
+        <CameraViewfinder
+          filter={selectedFilter}
+          filters={FILTERS}
+          onSelectFilter={setSelectedFilter}
+          onShutter={() => {
+            if (streamRef.current && videoRef.current && liveCameraAvailable) {
+              snapPhotoFromVideo();
+            } else {
+              nativeCameraInputRef.current?.click();
+            }
+          }}
+          onPickFromGallery={() => fileInputRef.current?.click()}
+          onUsePhoneCamera={() => nativeCameraInputRef.current?.click()}
+          onFlipCamera={() => setUseFrontCamera(!useFrontCamera)}
+          onClose={onClose}
+          canFlip={liveCameraAvailable}
+          sent={sent}
+          questTitle={attachedQuest?.title}
+        />
+      )}
+
+      {bulkTruncatedFrom !== null && (
+        <p className="absolute inset-x-0 top-20 z-30 text-center text-[11px] text-gold-300 px-6">
+          {i18n.t('camera.bulk_limit_notice', { selected: bulkTruncatedFrom, max: MAX_BULK_UPLOAD_FILES })}
+        </p>
+      )}
+
+      {/* Hidden File Input for Gallery */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        multiple
+        aria-label={i18n.t('camera.gallery')}
+        className="hidden"
+        onChange={handleFileSelect}
+      />
+
+      {/* Hidden Native Camera Input — the path that works on every phone,
+          whatever the browser will or will not preview. */}
+      <input
+        ref={nativeCameraInputRef}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        aria-label={i18n.t('camera.phone_cam')}
+        className="hidden"
+        onChange={handleFileSelect}
+      />
     </div>
   );
 };

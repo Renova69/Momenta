@@ -336,23 +336,36 @@ describe('the shutter', () => {
     vi.spyOn(HTMLCanvasElement.prototype, 'toDataURL').mockReturnValue(
       'data:image/jpeg;base64,SNAPPED'
     );
+    // jsdom has toBlob but does not implement it; handing back null puts the
+    // component on its documented fallback, which is what runs here.
+    vi.spyOn(HTMLCanvasElement.prototype, 'toBlob').mockImplementation((cb) => cb(null));
     return { ctx, calls };
   }
 
-  function shutterButton(container: HTMLElement): HTMLButtonElement {
+  /** By accessible name: what a guest using a screen reader asks for too. */
+  function byLabel(container: HTMLElement, label: string): HTMLButtonElement {
     const button = Array.from(container.querySelectorAll('button')).find(
-      (b) => b.getAttribute('title') === i18n.t('camera.title')
+      (b) => b.getAttribute('aria-label') === label
     );
-    if (!button) throw new Error('shutter button not found');
+    if (!button) throw new Error(`no button labelled ${label}`);
     return button as HTMLButtonElement;
   }
 
+  function shutterButton(container: HTMLElement): HTMLButtonElement {
+    return byLabel(container, i18n.t('camera.shutter'));
+  }
+
+  /** The send control on the review screen, once the filtered copy is ready. */
+  async function sendButton(container: HTMLElement) {
+    return waitFor(() => {
+      const button = byLabel(container, i18n.t('camera.share_button'));
+      if (button.disabled) throw new Error('still processing');
+      return button;
+    });
+  }
+
   function flipButton(container: HTMLElement): HTMLButtonElement {
-    const button = Array.from(container.querySelectorAll('button')).find(
-      (b) => b.getAttribute('title') === 'Flip camera'
-    );
-    if (!button) throw new Error('flip button not found');
-    return button as HTMLButtonElement;
+    return byLabel(container, i18n.t('camera.flip'));
   }
 
   /** Render with the camera granted and wait for the live preview to appear. */
@@ -409,6 +422,60 @@ describe('the shutter', () => {
     const { container } = await renderLive();
 
     expect(() => fireEvent.click(shutterButton(container))).not.toThrow();
+  });
+
+  it('freezes the picture on the tick the shutter is pressed', async () => {
+    // What made the old shutter feel a second slow: it ran a synchronous
+    // toDataURL of a full-resolution frame, then a filter pass, and only
+    // then put anything on screen. Pausing the video costs nothing and
+    // leaves the exact frame there — the freeze a phone camera shows.
+    // Asserted without awaiting: by the time the encode resolves it is too
+    // late to be the freeze.
+    // (jsdom never really plays a video, so the freeze is asserted through
+    // the call rather than through `paused`.)
+    stubCanvas();
+    const pause = vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => undefined);
+    const { container } = await renderLive();
+
+    fireEvent.click(shutterButton(container));
+
+    // Synchronously, with nothing awaited in between: by the time the encode
+    // resolves it is far too late to be the freeze.
+    expect(pause).toHaveBeenCalled();
+  });
+
+  it('stays in the camera after sending, ready for the next photo', async () => {
+    // A phone camera does not close itself after one picture, and at a
+    // wedding people shoot in threes. The upload is already on its way —
+    // addPhoto writes locally and syncs after — so the next shot must not
+    // wait for the last one to land.
+    stubCanvas();
+    const { container, onPhotoUploaded, onClose } = await renderLive();
+    const grantsBefore = (navigator.mediaDevices.getUserMedia as ReturnType<typeof vi.fn>).mock.calls.length;
+
+    fireEvent.click(shutterButton(container));
+    fireEvent.click(await sendButton(container));
+
+    await waitFor(() => expect(onPhotoUploaded).toHaveBeenCalledTimes(1));
+    expect(onClose).not.toHaveBeenCalled();
+    // The viewfinder comes back live rather than staying on the still.
+    await waitFor(() =>
+      expect(
+        (navigator.mediaDevices.getUserMedia as ReturnType<typeof vi.fn>).mock.calls.length
+      ).toBeGreaterThan(grantsBefore)
+    );
+  });
+
+  it('shows the guest what they have already sent', async () => {
+    stubCanvas();
+    const { container } = await renderLive();
+
+    fireEvent.click(shutterButton(container));
+    fireEvent.click(await sendButton(container));
+
+    await waitFor(() =>
+      expect(container.textContent).toContain(i18n.t('camera.sent_count', { count: 1 }))
+    );
   });
 
   it('falls back to the phone’s own camera app when there is no live stream', async () => {
