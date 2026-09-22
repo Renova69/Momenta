@@ -59,8 +59,10 @@ False positives 3 · Needs manual verification 5 · Production blockers 3.
 **Totals as of 2026-09-21:** of the audit's own 20 findings — 19 fixed, L-1
 resolved as not a defect. Of the 14 post-audit findings in §3b — 14 fixed.
 Of the 15 feature-review findings in §3c — 15 fixed (2 Critical, 6 High,
-6 Medium, 1 Low). Of the 6 accessibility findings in §3d — 6 fixed (2 High,
-3 Medium, 1 Low), with the parts no automated pass can decide still open.
+6 Medium, 1 Low). Of the 13 accessibility findings in §3d — 13 fixed
+(3 High, 9 Medium, 1 Low): six from a source pass, seven more from running
+axe in a real browser at two viewports. What is left there needs a screen
+reader and a person.
 Production blockers 0 in code, 3 operational actions outstanding (§9). The 4 unfinished features are unchanged
 and none is a defect; of the 5 verification items, V-5 is substantially
 addressed by mutation testing rather than by reading, and V-1 to V-4 still need
@@ -711,11 +713,38 @@ style. The app has a `<main>` landmark. Two toggles — public showcase and TV
 leaderboard — already carried `aria-label` and `aria-pressed`, which is where
 the pattern the others now follow came from.
 
-**Still open, and needs a person:** contrast of gold on dark noir at small
-sizes, touch-target sizes (several controls are around 36px against a 44px
-guideline), keyboard order through a whole page rather than one dialog, and a
-pass with an actual screen reader. A dev-server axe run would settle the first
-two.
+### The browser pass (2026-09-22)
+
+The list above was produced in jsdom, which has no layout and no pixels. Run
+again in a real browser at desktop and 375px, with axe over the guest album,
+the TV wall, the host sign-in and every dashboard tab, it produced seven more
+findings, all fixed in `42f4aff`.
+
+| ID | Finding | Severity | Fixed |
+|---|---|---|---|
+| **A-7** | `index.html` carried `maximum-scale=1.0, user-scalable=no`, so **pinch-zoom was disabled on every page** (WCAG 1.4.4). On an album read one-handed in a dark room, that blocked exactly the guest who needed to zoom into a face. | High | `42f4aff` |
+| **A-8** | The host studio had **no `h1` at all**, on the sign-in page or the dashboard. | Medium | `42f4aff` |
+| **A-9** | Heading levels were chosen for size, not structure: the guest feed jumped from the album's `h1` to `h4` for every photo card, and the TV wall and dashboard panels did the same. Each photo card is now an `h2` a screen reader can move between; dashboard panels are `h2` with `h3` sections. | Medium | `42f4aff` |
+| **A-10** | The QR code was an `<svg role="img">` with no title — the one thing on the TV wall a guest is meant to act on, announcing nothing. | Medium | `42f4aff` |
+| **A-11** | Three fields in the QR print studio still had labels attached to nothing. That tab was missed in the source pass because its markup nests the field two levels below its label. | Medium | `42f4aff` |
+| **A-12** | The printed poster's smallest line was `#8C847E` on cream — **3.55:1 at 10px**, against the 4.5:1 it needs. This is the line a guest reads off a table card. Darkened to `#6F6862` (5.3:1). | Medium | `42f4aff` |
+| **A-13** | The phone's bottom bar — the main navigation on a phone — was a bare `div` outside every landmark, so skipping by landmark never reached it. | Medium | `42f4aff` |
+
+**What the browser confirmed rather than found**, which is worth as much:
+contrast passes everywhere else, including 91 elements at the stricter AAA
+threshold; **all 78 touch targets meet the 24px minimum**, so the 36px
+suspicion recorded above was wrong; and the dialog roles and field labels from
+the source pass do work in a real browser, with `<html lang>` following the
+language switch.
+
+**Still open, and still needs a person:** a pass with an actual screen reader,
+and keyboard order through a whole page under a real user's hands rather than
+a rule. Everything a tool can decide is now decided, at two viewports.
+
+**How to re-run it:** start the API and Vite (`npm run server`, `npm run dev`),
+then in the browser inject `/node_modules/axe-core/axe.min.js` and call
+`axe.run(document, { rules: { 'target-size': { enabled: true } } })`. The dev
+server serves the package directly, so nothing needs building or vendoring.
 
 ---
 
