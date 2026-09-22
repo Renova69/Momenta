@@ -52,9 +52,21 @@ export const WeddingHero: React.FC<WeddingHeroProps> = ({
     <div className="relative overflow-hidden rounded-2xl sm:rounded-3xl mb-4 sm:mb-8 border border-gold-400/20 bg-gradient-to-b from-noir-800/90 to-noir-900 shadow-2xl">
       {/* Background Hero Image with Dark Vignette */}
       <div className="absolute inset-0 z-0">
+        {/*
+          This is the page's largest contentful paint on a phone, and it was
+          being discovered only after the bundle had parsed and the event had
+          loaded — 1.6s of the 3.2s LCP was the browser not yet knowing the
+          image existed. `fetchpriority="high"` moves it to the front of the
+          queue the moment React renders it.
+
+          `alt=""`: it is behind the title, at 35% opacity, blurred. A screen
+          reader reading the album's name twice is noise, not information.
+        */}
         <img
           src={event.coverImageUrl}
-          alt={event.title}
+          alt=""
+          fetchPriority="high"
+          decoding="async"
           className="w-full h-full object-cover object-center opacity-35 filter blur-[1px] scale-105"
         />
         <div className="absolute inset-0 bg-gradient-to-t from-noir-900 via-noir-900/80 to-noir-900/40" />

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { Suspense, lazy, useState, useEffect, useCallback } from 'react';
 import {
   ThemePalette,
   Photo,
@@ -22,17 +22,51 @@ import { WeddingHero } from './components/layout/WeddingHero';
 import { LiveFeed } from './components/gallery/LiveFeed';
 import { CameraCaptureModal } from './components/camera/CameraCaptureModal';
 import { LightboxModal } from './components/gallery/LightboxModal';
-import { ScavengerHunt } from './components/quests/ScavengerHunt';
-import { AudioGuestbook } from './components/audio/AudioGuestbook';
-import { HostDashboard } from './components/host/HostDashboard';
-import { LiveProjectorScreen } from './components/projector/LiveProjectorScreen';
 import { GuestOnboardingModal } from './components/guest/GuestOnboardingModal';
-import { PricingPlansModal } from './components/host/PricingPlansModal';
-import { HostProfileModal } from './components/host/HostProfileModal';
-import { HostEventsList } from './components/host/HostEventsList';
-import { HostAuthPage } from './components/host/HostAuthPage';
-import { LandingHomePage } from './components/home/LandingHomePage';
-import { PhotographerIngestPortal } from './components/ingest/PhotographerIngestPortal';
+
+/**
+ * Everything below is loaded when it is first needed, not before.
+ *
+ * A guest arriving at an album used to download the whole application: the
+ * host dashboard with its QR print studio and moderation queue, the projector
+ * wall, the photographer's portal, the pricing table — none of which a guest
+ * can even open. On the phone, on the venue's Wi-Fi, during the party. That
+ * is the one network this app runs on and the one it was heaviest for.
+ *
+ * What stays eager is exactly what a guest sees: the feed, the camera, the
+ * lightbox, the onboarding. Waiting on a chunk after tapping "Snap Photo"
+ * would be a worse trade than the bytes.
+ */
+const ScavengerHunt = lazy(() =>
+  import('./components/quests/ScavengerHunt').then((m) => ({ default: m.ScavengerHunt }))
+);
+const AudioGuestbook = lazy(() =>
+  import('./components/audio/AudioGuestbook').then((m) => ({ default: m.AudioGuestbook }))
+);
+const HostDashboard = lazy(() =>
+  import('./components/host/HostDashboard').then((m) => ({ default: m.HostDashboard }))
+);
+const LiveProjectorScreen = lazy(() =>
+  import('./components/projector/LiveProjectorScreen').then((m) => ({ default: m.LiveProjectorScreen }))
+);
+const PricingPlansModal = lazy(() =>
+  import('./components/host/PricingPlansModal').then((m) => ({ default: m.PricingPlansModal }))
+);
+const HostProfileModal = lazy(() =>
+  import('./components/host/HostProfileModal').then((m) => ({ default: m.HostProfileModal }))
+);
+const HostEventsList = lazy(() =>
+  import('./components/host/HostEventsList').then((m) => ({ default: m.HostEventsList }))
+);
+const HostAuthPage = lazy(() =>
+  import('./components/host/HostAuthPage').then((m) => ({ default: m.HostAuthPage }))
+);
+const LandingHomePage = lazy(() =>
+  import('./components/home/LandingHomePage').then((m) => ({ default: m.LandingHomePage }))
+);
+const PhotographerIngestPortal = lazy(() =>
+  import('./components/ingest/PhotographerIngestPortal').then((m) => ({ default: m.PhotographerIngestPortal }))
+);
 import { isFeatureUnlocked } from './config/tierGating';
 import { useQuestLeaderboard } from './hooks/useQuestLeaderboard';
 import { LockedFeatureCard } from './components/common/LockedFeatureBadge';
@@ -310,6 +344,10 @@ function WeddingAppContent() {
 
       {/* MAIN VIEW CONTENT */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6 pb-28 sm:pb-8">
+        {/* One boundary for the whole view area: only one view is on screen at
+            a time, and a spinner in the content region is what a slow chunk
+            should look like. */}
+        <Suspense fallback={<LoadingSpinner />}>
         {/* VIEW 1: GUEST EXPERIENCE OR ROOT HOME LANDING */}
         {activeView === 'guest' && (
           <div className="space-y-6 sm:space-y-8 animate-fade-in">
@@ -495,6 +533,7 @@ function WeddingAppContent() {
             />
           </div>
         )}
+        </Suspense>
       </main>
 
       {/* MOBILE BOTTOM NAVIGATION BAR — only when viewing an event */}
@@ -552,27 +591,31 @@ function WeddingAppContent() {
       />
 
       {/* 4b. Host Account Profile Modal */}
-      {currentHostUser && (
-        <HostProfileModal
-          isOpen={isHostProfileOpen}
-          onClose={() => setIsHostProfileOpen(false)}
-          hostUser={currentHostUser}
-          onSaveName={updateProfile}
-        />
-      )}
+      {/* No fallback: a dialog that has not arrived yet should show nothing,
+          not a spinner floating over the page behind it. */}
+      <Suspense fallback={null}>
+        {currentHostUser && (
+          <HostProfileModal
+            isOpen={isHostProfileOpen}
+            onClose={() => setIsHostProfileOpen(false)}
+            hostUser={currentHostUser}
+            onSaveName={updateProfile}
+          />
+        )}
 
-      {/* 5. Host Events Switcher Modal */}
-      <HostEventsList
-        isOpen={isEventsListOpen}
-        onClose={() => setIsEventsListOpen(false)}
-        currentEvent={event}
-        onSelectEvent={handleSelectEvent}
-        onCreateEvent={handleCreateEvent}
-        onOpenPricing={() => {
-          setIsEventsListOpen(false);
-          setIsPricingOpen(true);
-        }}
-      />
+        {/* 5. Host Events Switcher Modal */}
+        <HostEventsList
+          isOpen={isEventsListOpen}
+          onClose={() => setIsEventsListOpen(false)}
+          currentEvent={event}
+          onSelectEvent={handleSelectEvent}
+          onCreateEvent={handleCreateEvent}
+          onOpenPricing={() => {
+            setIsEventsListOpen(false);
+            setIsPricingOpen(true);
+          }}
+        />
+      </Suspense>
 
       {/* Footer */}
       <footer className="mt-16 py-8 border-t border-cream-400/10 text-center text-xs text-cream-400/60">
