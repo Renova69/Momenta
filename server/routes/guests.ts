@@ -58,7 +58,7 @@ guestsRouter.post('/', uploadLimiter, validateBody(RegisterGuestSchema), async (
           eventId,
           name.trim(),
           tableNumber?.trim() || null,
-          avatarUrl || `https://api.dicebear.com/7.x/micah/svg?seed=${encodeURIComponent(name.trim())}`,
+          avatarUrl || null,
           deviceFingerprint,
         ]
       );
@@ -75,7 +75,7 @@ guestsRouter.post('/', uploadLimiter, validateBody(RegisterGuestSchema), async (
           eventId,
           name.trim(),
           tableNumber?.trim() || null,
-          avatarUrl || `https://api.dicebear.com/7.x/micah/svg?seed=${encodeURIComponent(name.trim())}`,
+          avatarUrl || null,
           null,
         ]
       );

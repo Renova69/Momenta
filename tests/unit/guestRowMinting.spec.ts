@@ -460,16 +460,29 @@ describe('guest rows are not minted per request (H8)', () => {
       expect(body.avatarUrl).toBe(chosen);
     }, 20_000);
 
-    it('generates one from the name when the guest chose none', async () => {
-      // The fallback is the other half of the same expression; a test that only
-      // covered the supplied case would pass with the fallback deleted.
+    it('stores nothing at all when the guest chose no picture', async () => {
+      // This test used to assert the opposite: that the server generated
+      // `https://api.dicebear.com/7.x/micah/svg?seed=Silvia` and stored it.
+      // That put a real guest's name into a URL fetched from every device
+      // rendering the feed, and kept it in the row, the socket broadcast and
+      // the album export. The face is drawn on the client from the name now
+      // (`src/utils/avatar.ts`), so the column holds a picture the guest
+      // actually chose, or nothing.
       const { body } = await join({
         name: 'Silvia',
         deviceFingerprint: `noavatar-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
       });
 
-      expect(typeof body.avatarUrl).toBe('string');
-      expect(body.avatarUrl).toContain('Silvia');
+      expect(body.avatarUrl ?? null).toBeNull();
+    }, 20_000);
+
+    it('never puts the guest’s name into a URL', async () => {
+      const { body } = await join({
+        name: 'Silvia',
+        deviceFingerprint: `noleak-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      });
+
+      expect(JSON.stringify(body)).not.toMatch(/https?:\/\/[^"]*Silvia/i);
     }, 20_000);
   });
 });

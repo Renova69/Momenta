@@ -2,7 +2,13 @@ import { Guest } from '../types';
 import { guestsApi } from '../api/guestsApi';
 import { STORAGE_KEYS, getOrCreateDeviceFingerprint } from './storageKeys';
 import { ServiceContext } from './storageServiceContext';
-import { generatedAvatarUrl } from '../utils/avatar';
+import { isGeneratedElsewhere } from '../utils/avatar';
+
+/** A stored avatar worth keeping: a real selfie, not a generated stand-in. */
+function keptPicture(avatarUrl: string | null | undefined): string | undefined {
+  if (!avatarUrl || isGeneratedElsewhere(avatarUrl)) return undefined;
+  return avatarUrl;
+}
 
 export function getGuests(ctx: ServiceContext, eventId?: string): Guest[] {
   const targetId = eventId || ctx.getEvent().id;
@@ -63,7 +69,11 @@ export async function registerGuest(
     eventId: event.id,
     name: name.trim() || 'Anonymous Guest',
     tableNumber: tableNumber?.trim() || undefined,
-    avatarUrl: avatarUrl || current?.avatarUrl || generatedAvatarUrl(name),
+    // Only a picture the guest actually chose is stored. The generated one is
+    // drawn from the name wherever it is shown (`guestAvatarUrl`), so writing
+    // it here would persist, broadcast and export a value that is not data —
+    // and the old version of it carried the guest's name to a third party.
+    avatarUrl: avatarUrl || keptPicture(current?.avatarUrl),
     createdAt: current?.createdAt || new Date().toISOString(),
   };
 

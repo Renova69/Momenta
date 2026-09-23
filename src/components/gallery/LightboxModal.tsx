@@ -2,6 +2,7 @@ import React, { useId, useState } from 'react';
 import { Photo, Guest, PhotoReactionKind } from '../../types';
 import { i18n } from '../../i18n';
 import { useDialog } from '../../hooks/useDialog';
+import { avatarColorFor } from '../../utils/avatar';
 import { formatTimeAgo } from '../../utils/date';
 import {
   X,
@@ -33,14 +34,6 @@ const REACTIONS: { kind: PhotoReactionKind; glyph: string; labelKey: string }[] 
   { kind: 'laugh', glyph: String.fromCodePoint(0x1f602), labelKey: 'reaction.laugh' },
   { kind: 'party', glyph: String.fromCodePoint(0x1f389), labelKey: 'reaction.party' },
 ];
-
-/** Deterministic pastel-ish avatar color from a name, so the same guest always gets the same color. */
-function avatarColorFor(name: string): string {
-  const palette = ['#D4AF37', '#D98991', '#84A784', '#8FA8C9', '#C98FBF', '#C9A17E'];
-  let hash = 0;
-  for (let i = 0; i < name.length; i++) hash = (hash * 31 + name.charCodeAt(i)) >>> 0;
-  return palette[hash % palette.length];
-}
 
 export const LightboxModal: React.FC<LightboxModalProps> = ({
   photo,
