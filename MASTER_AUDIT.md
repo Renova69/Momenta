@@ -4,6 +4,7 @@
 **Post-audit findings added:** 2026-09-18, extended 2026-09-19 (§3b).
 **Feature review:** 2026-09-21 (§3c). **Accessibility review:** 2026-09-21 (§3d).
 **Client mutation sweep:** 2026-09-21 (§8).
+**Performance pass:** 2026-09-22 to 23 (§3e).
 
 > **Read this first.** The audit below is preserved as written — each finding
 > still describes the code as it was on 2026-09-15, because a finding rewritten
@@ -745,6 +746,45 @@ a rule. Everything a tool can decide is now decided, at two viewports.
 then in the browser inject `/node_modules/axe-core/axe.min.js` and call
 `axe.run(document, { rules: { 'target-size': { enabled: true } } })`. The dev
 server serves the package directly, so nothing needs building or vendoring.
+
+---
+
+## 3e. The Performance Pass (2026-09-22 to 23)
+
+Performance had never been measured: no bundle budget checked, no Lighthouse
+run, no Core Web Vitals number, for an app whose entire use is a phone on a
+venue's Wi-Fi during a party. Measuring it produced four findings, and the
+worst of them was not about speed.
+
+| ID | Finding | Severity | Fixed |
+|---|---|---|---|
+| **N-30** | **Every guest's name was sent to a third party.** A guest without a selfie was given `https://api.dicebear.com/7.x/micah/svg?seed=<their name>`, requested from every device rendering the feed. Both the client and `POST /api/guests` wrote it into the guest's row, so the name also sat in Postgres, went out over the socket to every other guest, and travelled in the album export. Found by reading the network panel during the performance trace, not by looking for it. | High (privacy) | `f98028b` |
+| **N-31** | A guest downloaded the whole application to look at photographs: one 600 kB chunk (160 kB gzipped) containing the host dashboard, QR print studio, moderation queue, projector wall, photographer's portal, pricing table and landing page — none of which a guest can open. Over the 150 kB budget in `rules/ecc/web/performance.md`. | Medium | `6721d47` |
+| **N-32** | The hero cover image is the largest contentful paint and was discoverable only after the bundle parsed and the event loaded: 1.6s of a 3.2s LCP was the browser not yet knowing it existed. It also carried the album title as alt text while sitting blurred at 35% opacity behind that same title. | Medium | `6721d47` |
+| **N-33** | The projector wall hotlinked flaticon.com for the icon in the middle of its QR code — an external request held open all evening on the venue's Wi-Fi, and one that tells flaticon where the wedding is. The print studio had replaced the same hotlink with inline data URIs when it broke PNG export; the wall kept it. | Low | `330e17f` |
+
+**Numbers, measured on Slow 4G with 4x CPU throttling** (a phone at a
+reception, not a laptop on a desk), against the production build:
+
+- Main chunk **600.30 kB → 406.22 kB**, gzip **159.73 → 118.81 kB**.
+- CLS 0.00 throughout.
+- LCP **3.2s**, essentially unchanged by the above: what remains is a serial
+  chain — document, then the bundle, then `GET /api/events/slug/:slug`, then
+  the cover image. Cutting it further means overlapping the API round trip
+  with the bundle's parse, or rendering something before the event arrives.
+  **Still open.**
+
+**Also found and not yet acted on:** two lazily-split chunks
+(`HostEventsList`, `PricingPlansModal`) are still requested on the guest page
+because they are mounted unconditionally with an `isOpen` prop rather than
+rendered only when open. The parse cost is gone; the request is not.
+
+The camera was rewritten in the same stretch (`e24c2cf`) — full-screen
+viewfinder, a shutter that freezes the frame before encoding rather than
+after, and burst shooting. That was a product change the owner asked for, not
+an audit finding, but the cause was the same shape: `canvas.toDataURL` at full
+sensor resolution, synchronously, on the main thread, before anything was
+drawn.
 
 ---
 
