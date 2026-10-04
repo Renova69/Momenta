@@ -152,6 +152,78 @@ describe('showcase requires opt-in (H6)', () => {
     expect(seeded.rows[0].is_public).toBe(true);
   });
 
+  // N-36 — the preview query filtered on status alone. A disposable-mode
+  // upload is stored `approved` with `is_locked`, so the showcase published
+  // the newest locked photos of any public album before the reveal, with
+  // captions and, on R2, working quarantine URLs. The guest feed has always
+  // hidden them; the showcase was the half of SEC-07 nobody fixed.
+  it('withholds disposable-locked photos until the reveal', async () => {
+    const host = await registerHost();
+    await query(
+      `UPDATE events SET is_public = true, is_disposable_mode = true, reveal_at = NOW() + INTERVAL '1 day'
+        WHERE id = $1`,
+      [host.eventId]
+    );
+    const guest = await query<{ id: string }>(
+      "INSERT INTO guests (event_id, name) VALUES ($1, 'Showcase Lock Guest') RETURNING id",
+      [host.eventId]
+    );
+    // The locked photo is deliberately NOT in quarantine, so this tests the
+    // lock on its own. That state is real: a host who switches disposable
+    // mode off has its photos promoted, and switching it back on with a new
+    // reveal time locks them again without moving them back.
+    const photos = await query<{ id: string; is_locked: boolean }>(
+      `INSERT INTO photos (event_id, guest_id, storage_path, full_url, thumbnail_url, caption, status, is_locked, is_quarantined)
+       VALUES ($1, $2, 'events/x/locked.jpg', '/uploads/locked.jpg', '/uploads/locked-t.jpg',
+               'before the reveal', 'approved', true, false),
+              ($1, $2, 'events/x/open.jpg', '/uploads/open.jpg', '/uploads/open-t.jpg',
+               'taken before disposable mode', 'approved', false, false)
+       RETURNING id, is_locked`,
+      [host.eventId, guest.rows[0].id]
+    );
+    const lockedId = photos.rows.find((p) => p.is_locked)!.id;
+    const openId = photos.rows.find((p) => !p.is_locked)!.id;
+
+    const feed = (await showcase()) as { id: string; photos_count: number; previewPhotos: { id: string }[] }[];
+    const entry = feed.find((e) => e.id === host.eventId);
+
+    expect(entry).toBeDefined();
+    expect(entry!.previewPhotos.map((p) => p.id)).toEqual([openId]);
+    expect(entry!.previewPhotos.map((p) => p.id)).not.toContain(lockedId);
+    expect(entry!.photos_count).toBe(1);
+
+    // After the reveal the same photo is public.
+    await query("UPDATE events SET reveal_at = NOW() - INTERVAL '1 minute' WHERE id = $1", [host.eventId]);
+
+    const revealed = ((await showcase()) as { id: string; previewPhotos: { id: string }[] }[]).find(
+      (e) => e.id === host.eventId
+    );
+    expect(revealed!.previewPhotos.map((p) => p.id).sort()).toEqual([lockedId, openId].sort());
+  });
+
+  it('never shows a photo whose files are still in quarantine', async () => {
+    // Revealed but not yet promoted: the row still points at quarantine, a
+    // URL that stops working the moment promotion moves the file.
+    const host = await registerHost();
+    await query('UPDATE events SET is_public = true WHERE id = $1', [host.eventId]);
+    const guest = await query<{ id: string }>(
+      "INSERT INTO guests (event_id, name) VALUES ($1, 'Showcase Quarantine Guest') RETURNING id",
+      [host.eventId]
+    );
+    await query(
+      `INSERT INTO photos (event_id, guest_id, storage_path, full_url, thumbnail_url, status, is_locked, is_quarantined)
+       VALUES ($1, $2, 'quarantine/events/x/q.jpg', '/uploads/quarantine/q.jpg', '/uploads/quarantine/q-t.jpg',
+               'approved', false, true)`,
+      [host.eventId, guest.rows[0].id]
+    );
+
+    const entry = ((await showcase()) as { id: string; previewPhotos: unknown[] }[]).find(
+      (e) => e.id === host.eventId
+    );
+
+    expect(entry!.previewPhotos).toEqual([]);
+  });
+
   it('never leaks a private album through the preview photos join', async () => {
     const host = await registerHost();
     await query('UPDATE events SET is_public = false WHERE id = $1', [host.eventId]);

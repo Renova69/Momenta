@@ -60,6 +60,21 @@ eventsRouter.get('/slug/:slug', async (req, res) => {
   }
 });
 
+/**
+ * What the public showcase may show of a photo: approved, published, and not
+ * disposable-locked. Status alone is not enough (N-36). A disposable-mode
+ * upload is stored `approved` with `is_locked`, so filtering on status put
+ * the newest locked photos of every public album on the landing page before
+ * the reveal. And a photo still in quarantine has a URL that stops working
+ * the moment promotion moves its file. "Locked" matches the guest feed's own
+ * rule in photos/feed.ts: disposable mode on, with a reveal still to come.
+ * Expects the photo as `p` and its event as `ev`.
+ */
+const SHOWCASE_PHOTO_IS_PUBLIC = `
+  p.status IN ('approved', 'featured')
+  AND NOT p.is_quarantined
+  AND NOT (p.is_locked AND ev.is_disposable_mode AND ev.reveal_at IS NOT NULL AND ev.reveal_at > NOW())`;
+
 // GET /api/events/showcase/feed — returns public events with preview photos for social proof showcase
 eventsRouter.get('/showcase/feed', async (_req, res) => {
   try {
@@ -79,8 +94,8 @@ eventsRouter.get('/showcase/feed', async (_req, res) => {
          LIMIT 6
       )
       SELECT f.*,
-             (SELECT COUNT(*)::int FROM photos p
-               WHERE p.event_id = f.id AND p.status IN ('approved', 'featured')) AS photos_count,
+             (SELECT COUNT(*)::int FROM photos p JOIN events ev ON ev.id = p.event_id
+               WHERE p.event_id = f.id AND ${SHOWCASE_PHOTO_IS_PUBLIC}) AS photos_count,
              (SELECT COUNT(*)::int FROM guests g WHERE g.event_id = f.id) AS guests_count
         FROM featured f
     `);
@@ -95,10 +110,11 @@ eventsRouter.get('/showcase/feed', async (_req, res) => {
         `SELECT e.id AS event_id, p.id, p.thumbnail_url, p.full_url, p.caption, p.filter_applied
            FROM unnest($1::uuid[]) AS e(id)
            CROSS JOIN LATERAL (
-             SELECT id, thumbnail_url, full_url, caption, filter_applied, created_at
-               FROM photos
-              WHERE photos.event_id = e.id AND status IN ('approved', 'featured')
-              ORDER BY created_at DESC
+             SELECT p.id, p.thumbnail_url, p.full_url, p.caption, p.filter_applied, p.created_at
+               FROM photos p
+               JOIN events ev ON ev.id = p.event_id
+              WHERE p.event_id = e.id AND ${SHOWCASE_PHOTO_IS_PUBLIC}
+              ORDER BY p.created_at DESC
               LIMIT 4
            ) p`,
         [eventIds]
