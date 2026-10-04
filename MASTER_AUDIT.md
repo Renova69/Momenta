@@ -5,7 +5,7 @@
 **Feature review:** 2026-09-21 (§3c). **Accessibility review:** 2026-09-21 (§3d).
 **Client mutation sweep:** 2026-09-21 (§8).
 **Performance pass:** 2026-09-22 to 23 (§3e).
-**Security review, partial:** 2026-09-25 to 26, recorded 2026-10-04 (§3f). **20 of 25 findings open.**
+**Security review, partial:** 2026-09-25 to 26, recorded 2026-10-04 (§3f). **19 of 25 findings open.**
 
 > **Read this first.** The audit below is preserved as written — each finding
 > still describes the code as it was on 2026-09-15, because a finding rewritten
@@ -797,7 +797,7 @@ drawn.
 
 ## 3f. The Security Review, Three Domains of Eight (2026-09-25 to 26)
 
-**Open: 20 of 25.** Fixed so far: N-34, N-35, N-36, N-37, N-38.
+**Open: 19 of 25.** Fixed so far: N-34 to N-39.
 
 Eight reviewers were each given one domain and told to hunt for what earlier
 passes miss: races, transaction boundaries, one route missing a check its
@@ -833,7 +833,7 @@ range for a function it had correctly identified.
 | **N-36** | **The public showcase serves disposable-locked photos before the reveal.** Its preview query filters on status only. A disposable-mode upload is stored as `approved` with `is_locked` set, so on any public album the four newest locked photos go out with their captions and, on R2, working quarantine URLs. This is the showcase half of SEC-07, which was fixed for audio only. | Medium | `server/routes/events/crud.ts` | lifecycle-2 | `63e6d61` |
 | **N-37** | Voice messages reach every guest live during a disposable-mode lock. The SEC-07 fix gated `GET /api/audio`, but `POST` still broadcasts each new recording to the room. | Medium | `server/routes/audio.ts` | auth-4 | `49e5f08` |
 | **N-38** | A WebSocket opened before logout keeps host privileges. The session token is re-checked only when an AUTH frame arrives, `JOIN_EVENT_ROOM` reuses the stale identity, logout never touches open sockets, and the client sends AUTH only on open. A signed-out tab keeps receiving host broadcasts, including pending photos with preview tokens. This is H9, incomplete. *Fixed for one process:* logout closes the user's open sockets, and a room join re-checks the session. With several server instances, a socket held by another instance loses host privileges at its next join rather than at logout. | Medium | `server/ws/wsServer.ts`, `src/services/realtimeSocket.ts` | auth-2 | `36d9f55` |
-| **N-39** | Revoking an ingest key does not end an FTP session that is already logged in, and FTP sessions never time out. The key is checked at login only, every later `STOR` ingests without re-checking it, and `FtpSrv` is built with no timeout (the library's default is 0). | Medium | `server/ftp/ftpServer.ts` | auth-3 | Open |
+| **N-39** | Revoking an ingest key does not end an FTP session that is already logged in, and FTP sessions never time out. The key is checked at login only, every later `STOR` ingests without re-checking it, and `FtpSrv` is built with no timeout (the library's default is 0). | Medium | `server/ftp/ftpServer.ts` | auth-3 | `3f98b0c` |
 | **N-40** | The published demo host credential controls the only public showcase album, and that album accepts unmoderated anonymous uploads. Whatever anyone uploads there can appear on the landing page. | Medium | `database/migrations/022_event_public_showcase_optin.sql`, `database/migrations/002_seed_data.sql` | auth-5 | Open |
 | **N-41** | Login's fallback for a host with no albums creates one without the DB-06 lock or the event-limit check that `POST /api/events` uses. Concurrent logins each create an album on the paid tier, each with its own allowance. | Medium | `server/routes/auth.ts` | auth-1 | Open |
 | **N-42** | The H7 guard fails open on any Stripe error, not only a missing subscription. A timeout, 429 or 5xx while the host clicks "downgrade to free" skips the guard. The tier drops to free while the subscription keeps billing, and renewals then refresh nothing. | Medium | `server/lib/stripe.ts`, `server/routes/subscriptions.ts` | billing-7 | Open |
