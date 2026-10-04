@@ -88,6 +88,25 @@ async function userIdForSubscriptionId(db: PoolClient, subscriptionId: string): 
   return (result.rows[0]?.user_id as string | undefined) ?? null;
 }
 
+/**
+ * Whether `subscriptionId` is the subscription this account has on file.
+ *
+ * N-43 — the handlers find an account through metadata.userId, which every
+ * checkout-created subscription carries, so an event about *any* of the
+ * account's subscriptions reached it. An account can hold two: two checkouts
+ * opened in parallel, or a new one started after an old one's id was lost.
+ * Then the old one ending downgraded an account paid up on the new one, its
+ * past_due started a grace window, and its renewal overwrote the stored id.
+ * An account with no subscription on file has nothing such an event can end.
+ */
+async function isSubscriptionOnFile(db: PoolClient, userId: string, subscriptionId: string): Promise<boolean> {
+  const result = await db.query(
+    "SELECT stripe_subscription_id FROM subscriptions WHERE user_id = $1 AND status = 'active' LIMIT 1",
+    [userId]
+  );
+  return result.rows[0]?.stripe_subscription_id === subscriptionId;
+}
+
 async function activeSubscriptionRow(
   db: PoolClient,
   userId: string
@@ -267,6 +286,13 @@ async function handleInvoicePaid(db: PoolClient, invoice: Stripe.Invoice): Promi
     );
     return;
   }
+  if (!(await isSubscriptionOnFile(db, userId, subscriptionId))) {
+    console.warn(
+      `[Billing] invoice ${invoice.id} renews subscription ${subscriptionId}, which is not the one on file ` +
+        `for user ${userId} — renewal not applied`
+    );
+    return;
+  }
 
   // Take the tier from our own record rather than the invoice: the invoice
   // says money arrived, it does not say which plan the account is on, and a
@@ -336,6 +362,13 @@ async function handleSubscriptionChange(
     console.warn(
       `[Billing] subscription ${subscription.id} changed (status=${subscription.status}) but no account matches it ` +
         '— no userId metadata and no stored stripe_subscription_id. Tier NOT changed; check this account by hand.'
+    );
+    return;
+  }
+  if (!(await isSubscriptionOnFile(db, userId, subscription.id))) {
+    console.warn(
+      `[Billing] subscription ${subscription.id} changed (status=${subscription.status}) but is not the one on file ` +
+        `for user ${userId} — tier NOT changed`
     );
     return;
   }

@@ -36,7 +36,6 @@ vi.mock('../../server/lib/stripe', () => ({
   }),
 }));
 
-import { authRouter } from '../../server/routes/auth';
 import { handleStripeWebhook, eventCustomerId } from '../../server/routes/billingWebhook';
 import { applyTierUpgrade, suspendTierForNonPayment } from '../../server/lib/subscriptionUpgrade';
 import { CONFIG } from '../../server/lib/config';
@@ -50,17 +49,28 @@ function uniqueId(prefix: string): string {
   return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
 }
 
+/**
+ * A host account on the free tier, created in the database directly.
+ *
+ * Not through POST /api/auth/register: this spec is about the webhook, and the
+ * register route's limiter allows 25 accounts per address per 15 minutes. Past
+ * that every further host came back as a 429 with no user, and the tests that
+ * happened to run last failed for a reason that had nothing to do with them.
+ * The @test.com address is what the end-of-run purge matches on.
+ */
 async function registerHost(): Promise<string> {
-  const res = await fetch(`${BASE_URL}/api/auth/register`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      email: `webhook-${uniqueId('u')}@test.com`,
-      fullName: 'Webhook Spec Host',
-      password: 'Password123!',
-    }),
-  });
-  return (await res.json()).user.id as string;
+  const user = await query<{ id: string }>(
+    `INSERT INTO users (email, full_name, password_hash, role)
+     VALUES ($1, 'Webhook Spec Host', 'x', 'couple') RETURNING id`,
+    [`webhook-${uniqueId('u')}@test.com`]
+  );
+  const userId = user.rows[0].id;
+  await query(
+    `INSERT INTO subscriptions (user_id, tier, status, billing_type, amount_paid_cents, currency, event_limit)
+     VALUES ($1, 'free', 'active', 'one_time', 0, 'EUR', 1)`,
+    [userId]
+  );
+  return userId;
 }
 
 async function postEvent(event: Record<string, unknown>): Promise<Response> {
@@ -100,8 +110,6 @@ beforeAll(async () => {
   const app = express();
   server = createServer(app);
   app.post('/api/billing/webhook', express.raw({ type: 'application/json' }), handleStripeWebhook);
-  app.use(express.json({ limit: '10mb' }));
-  app.use('/api/auth', authRouter);
   await new Promise<void>((resolve) => server.listen(TEST_PORT, () => resolve()));
 });
 
@@ -242,16 +250,18 @@ describe('webhook idempotency', () => {
 
 describe('customer.subscription.deleted — cancellation', () => {
   it('downgrades via subscription metadata', async () => {
+    // One id for both. This used to cancel a different subscription from the
+    // one on file and expect a downgrade, which is the N-43 bug written down
+    // as a requirement: the point of the test is only that metadata finds
+    // the account.
     const userId = await registerHost();
-    await applyTierUpgrade(userId, 'pro_planner', {
-      billingType: 'monthly',
-      stripeSubscriptionId: uniqueId('sub_meta'),
-    });
+    const subscriptionId = uniqueId('sub_meta');
+    await applyTierUpgrade(userId, 'pro_planner', { billingType: 'monthly', stripeSubscriptionId: subscriptionId });
 
     await postEvent({
       id: uniqueId('evt'),
       type: 'customer.subscription.deleted',
-      data: { object: { id: uniqueId('sub'), status: 'canceled', metadata: { userId } } },
+      data: { object: { id: subscriptionId, status: 'canceled', metadata: { userId } } },
     });
 
     expect((await subscriptionRow(userId)).tier).toBe('free');
@@ -508,6 +518,71 @@ describe('dunning suspension (N-35)', () => {
     await postEvent(renewalInvoice(subscriptionId, { userId }));
 
     expect((await subscriptionRow(userId)).tier).toBe('free');
+  });
+});
+
+/**
+ * N-43 — the handlers found the account by metadata.userId, which every
+ * checkout-created subscription carries, and never asked whether the event's
+ * subscription was the one on file. An account can hold two: two checkouts
+ * opened in parallel, or a new one started after an old one's id was lost.
+ * Then the old one ending downgraded an account paid up on the new one.
+ */
+describe('events about a subscription other than the one on file (N-43)', () => {
+  async function payingOn(subscriptionId: string): Promise<string> {
+    const userId = await registerHost();
+    await applyTierUpgrade(userId, 'pro_planner', { billingType: 'monthly', stripeSubscriptionId: subscriptionId });
+    return userId;
+  }
+
+  it('an old subscription ending does not downgrade an account paying on a newer one', async () => {
+    const current = uniqueId('sub_current');
+    const userId = await payingOn(current);
+
+    await postEvent({
+      id: uniqueId('evt'),
+      type: 'customer.subscription.deleted',
+      data: { object: { id: uniqueId('sub_old'), status: 'canceled', metadata: { userId } } },
+    });
+
+    const row = await subscriptionRow(userId);
+    expect(row.tier).toBe('pro_planner');
+    expect(row.stripe_subscription_id).toBe(current);
+  });
+
+  it('an old subscription going past_due does not start a grace window', async () => {
+    const userId = await payingOn(uniqueId('sub_current'));
+
+    await postEvent({
+      id: uniqueId('evt'),
+      type: 'customer.subscription.updated',
+      data: { object: { id: uniqueId('sub_old'), status: 'past_due', metadata: { userId } } },
+    });
+
+    expect((await subscriptionRow(userId)).past_due_grace_expiry).toBeNull();
+  });
+
+  it('an old subscription renewing does not replace the one on file', async () => {
+    const current = uniqueId('sub_current');
+    const userId = await payingOn(current);
+
+    await postEvent({
+      id: uniqueId('evt'),
+      type: 'invoice.paid',
+      data: {
+        object: {
+          id: uniqueId('in'),
+          billing_reason: 'subscription_cycle',
+          amount_paid: 4900,
+          parent: {
+            type: 'subscription_details',
+            subscription_details: { subscription: uniqueId('sub_old'), metadata: { userId } },
+          },
+        },
+      },
+    });
+
+    expect((await subscriptionRow(userId)).stripe_subscription_id).toBe(current);
   });
 });
 
