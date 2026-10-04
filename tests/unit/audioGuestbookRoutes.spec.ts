@@ -1,8 +1,9 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, vi, type MockInstance } from 'vitest';
 import { createServer } from 'http';
 import express from 'express';
 import { authRouter } from '../../server/routes/auth';
 import { audioRouter } from '../../server/routes/audio';
+import { wsManager } from '../../server/ws/wsServer';
 import { pool, query } from '../../server/lib/db';
 import { deleteEventFixture } from '../helpers/cleanup';
 
@@ -355,6 +356,56 @@ describe('who may hear the messages', () => {
 
     await deleteEventFixture(locked.eventId);
   }, 30_000);
+
+  describe('the live broadcast of a new message', () => {
+    // N-37 — the SEC-07 fix gated GET /api/audio, but POST still broadcast
+    // every new recording to the whole room. A guest who never asked the
+    // listing for anything heard each voice message the moment it was
+    // recorded, before the reveal.
+    let toEvent: MockInstance<typeof wsManager.broadcastToEvent>;
+    let toHosts: MockInstance<typeof wsManager.broadcastToEventHosts>;
+
+    beforeEach(() => {
+      toEvent = vi.spyOn(wsManager, 'broadcastToEvent').mockImplementation(() => undefined);
+      toHosts = vi.spyOn(wsManager, 'broadcastToEventHosts').mockImplementation(() => undefined);
+    });
+
+    afterEach(() => {
+      toEvent.mockRestore();
+      toHosts.mockRestore();
+    });
+
+    function audioBroadcasts(spy: MockInstance, eventId: string): unknown[][] {
+      return spy.mock.calls.filter(([id, type]) => id === eventId && type === 'AUDIO_ADDED');
+    }
+
+    it('reaches only the hosts while the album is locked', async () => {
+      const locked = await registerHost();
+      await query("UPDATE subscriptions SET tier = 'deluxe_keepsake' WHERE user_id = $1", [locked.userId]);
+      await setDisposable(locked.eventId, new Date(Date.now() + 3600_000).toISOString());
+
+      const res = await postAudio(WEBM, { eventId: locked.eventId, guestName: 'Ana' });
+
+      expect(res.status).toBe(201);
+      expect(audioBroadcasts(toEvent, locked.eventId)).toHaveLength(0);
+      expect(audioBroadcasts(toHosts, locked.eventId)).toHaveLength(1);
+
+      await deleteEventFixture(locked.eventId);
+    }, 30_000);
+
+    it('reaches the whole room once the reveal has passed', async () => {
+      const revealed = await registerHost();
+      await query("UPDATE subscriptions SET tier = 'deluxe_keepsake' WHERE user_id = $1", [revealed.userId]);
+      await setDisposable(revealed.eventId, new Date(Date.now() - 1000).toISOString());
+
+      const res = await postAudio(WEBM, { eventId: revealed.eventId, guestName: 'Ana' });
+
+      expect(res.status).toBe(201);
+      expect(audioBroadcasts(toEvent, revealed.eventId)).toHaveLength(1);
+
+      await deleteEventFixture(revealed.eventId);
+    }, 30_000);
+  });
 
   it('opens up once the reveal moment has passed', async () => {
     const revealed = await registerHost();

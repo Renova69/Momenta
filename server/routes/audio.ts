@@ -14,6 +14,15 @@ import { optionalAuth } from '../middleware/auth';
 
 export const audioRouter = Router();
 
+/**
+ * Disposable mode with a reveal still to come: the same rule photos/feed.ts
+ * applies. Guests hear nothing of the guestbook until then, neither from the
+ * listing nor from the live broadcast of a new message (SEC-07, N-37).
+ */
+function isDisposableLocked(event: { is_disposable_mode: boolean; reveal_at: Date | string | null }): boolean {
+  return !!event.is_disposable_mode && !!event.reveal_at && new Date(event.reveal_at).getTime() > Date.now();
+}
+
 // Binary multipart, not base64-in-JSON (P7) — a 60-120s WebM recording
 // inflates by ~33% as base64 for no benefit; every other upload path in this
 // app (photos, ingest) already streams raw bytes the same way.
@@ -47,7 +56,9 @@ audioRouter.post('/', uploadLimiter, upload.single('audio'), requireEventTier('d
       return res.status(400).json({ error: 'Invalid audio data.' });
     }
 
-    const eventCheck = await pool.query('SELECT id FROM events WHERE id = $1', [eventId]);
+    const eventCheck = await pool.query('SELECT id, is_disposable_mode, reveal_at FROM events WHERE id = $1', [
+      eventId,
+    ]);
     if (eventCheck.rows.length === 0) {
       return res.status(404).json({ error: 'Event not found' });
     }
@@ -169,7 +180,13 @@ audioRouter.post('/', uploadLimiter, upload.single('audio'), requireEventTier('d
 
     // No token in the broadcast — every other guest in the room receives it,
     // and a token there would let any of them impersonate this guest (SEC-A2).
-    wsManager.broadcastToEvent(eventId, 'AUDIO_ADDED', newEntry);
+    // While the album is locked only the hosts hear it (N-37); the recording
+    // guest has it already, from the response below.
+    if (isDisposableLocked(eventCheck.rows[0])) {
+      wsManager.broadcastToEventHosts(eventId, 'AUDIO_ADDED', newEntry);
+    } else {
+      wsManager.broadcastToEvent(eventId, 'AUDIO_ADDED', newEntry);
+    }
     res.status(201).json({ ...newEntry, guestToken: issueGuestToken(validGuestId!, eventId, guestTokenVersion) });
   } catch (err) {
     console.error('[Error in POST /api/audio]:', errorLabel(err));
@@ -201,12 +218,7 @@ audioRouter.get('/', optionalAuth, async (req, res) => {
     }
     const eventRow = eventRes.rows[0];
     const isHost = !!req.user?.userId && eventRow.host_user_id === req.user.userId;
-    const disposableLocked =
-      !isHost &&
-      !!eventRow.is_disposable_mode &&
-      !!eventRow.reveal_at &&
-      new Date(eventRow.reveal_at).getTime() > Date.now();
-    if (disposableLocked) {
+    if (!isHost && isDisposableLocked(eventRow)) {
       return res.json([]);
     }
 
