@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { pool } from '../lib/db';
 import { cleanSlug } from '../lib/storage';
 import { generateToken, hashPassword, comparePassword, requireAuth, DUMMY_PASSWORD_HASH } from '../middleware/auth';
-import { getEffectiveTierForEvent } from '../middleware/tierGate';
+import { getEffectiveTierForEvent, acquireUserEventCreationLock } from '../middleware/tierGate';
 import { validateBody } from '../middleware/validate';
 import { computeExpiry } from '../lib/retention';
 import { authLimiter } from '../middleware/rateLimit';
@@ -236,12 +236,10 @@ authRouter.post('/login', authLimiter, validateBody(LoginSchema), async (req, re
     }
 
     // Resolve event — create one if host has none yet (legitimate case for OAuth imports)
-    const eventRes = await pool.query(
-      `SELECT id, title, slug, host_name, host_email, host_user_id, event_date, venue_name,
+    const LATEST_EVENT_SQL = `SELECT id, title, slug, host_name, host_email, host_user_id, event_date, venue_name,
               welcome_message, theme_palette, cover_image_url, created_at
-       FROM events WHERE host_user_id = $1 ORDER BY created_at DESC LIMIT 1`,
-      [user.id]
-    );
+       FROM events WHERE host_user_id = $1 ORDER BY created_at DESC LIMIT 1`;
+    const eventRes = await pool.query(LATEST_EVENT_SQL, [user.id]);
     let event = eventRes.rows[0];
 
     if (!event) {
@@ -262,6 +260,19 @@ authRouter.post('/login', authLimiter, validateBody(LoginSchema), async (req, re
         const client = await pool.connect();
         try {
           await client.query('BEGIN');
+
+          // N-41 — the SELECT above ran with no lock, so concurrent logins
+          // all found nothing and each created an album. Take the lock
+          // POST /api/events takes (DB-06) and ask again under it: the first
+          // login creates the album, and every login behind it finds that one.
+          await acquireUserEventCreationLock(client, user.id);
+          const createdMeanwhile = await client.query(LATEST_EVENT_SQL, [user.id]);
+          if (createdMeanwhile.rows[0]) {
+            await client.query('COMMIT');
+            event = createdMeanwhile.rows[0];
+            break;
+          }
+
           const createdEvent = await client.query(
             `INSERT INTO events (title, slug, host_name, host_email, host_user_id, plan_tier, event_date, venue_name, welcome_message)
              VALUES ($1, $2, $3, $4, $5, 'free', $6, 'Голяма зала за тържества', 'Добре дошли на нашия сватбен ден! Сканирайте QR кода, снимайте весели и неподправени моменти и ни помогнете да запечатаме всеки миг заедно.')
