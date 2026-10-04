@@ -5,7 +5,7 @@
 **Feature review:** 2026-09-21 (§3c). **Accessibility review:** 2026-09-21 (§3d).
 **Client mutation sweep:** 2026-09-21 (§8).
 **Performance pass:** 2026-09-22 to 23 (§3e).
-**Security review, partial:** 2026-09-25 to 26, recorded 2026-10-04 (§3f). **23 of 25 findings open.**
+**Security review, partial:** 2026-09-25 to 26, recorded 2026-10-04 (§3f). **22 of 25 findings open.**
 
 > **Read this first.** The audit below is preserved as written — each finding
 > still describes the code as it was on 2026-09-15, because a finding rewritten
@@ -797,7 +797,7 @@ drawn.
 
 ## 3f. The Security Review, Three Domains of Eight (2026-09-25 to 26)
 
-**Open: 23 of 25.** Fixed so far: N-34, N-35.
+**Open: 22 of 25.** Fixed so far: N-34, N-35, N-36.
 
 Eight reviewers were each given one domain and told to hunt for what earlier
 passes miss: races, transaction boundaries, one route missing a check its
@@ -830,7 +830,7 @@ range for a function it had correctly identified.
 |---|---|---|---|---|---|
 | **N-34** | **An album's expiry date moves forward every night, so retention can never act.** `refreshExpiryDates` recomputes each album's expiry from its tier and then floors it at now + 30 days, the H7 grace floor. `retention-sweep` calls it for every album, every night, before it sweeps. Any album within 30 days of expiry, or already past it, is pushed back to about now + 30 days. No notice ever falls due (that needs < now + 14 days), no album ever passes grace (that needs < now − 30 days), and the expiry the host sees is always a month away. This happens whether or not `RETENTION_ENFORCED` is set, so resolving D1 would change nothing. | High | `server/lib/retention.ts`, `scripts/retention-sweep.ts` | lifecycle-1 | `c0846e9` |
 | **N-35** | **A dunning downgrade cannot be undone, and the customer keeps paying.** The grace sweep, the expired `past_due` branch and `unpaid` (treated as ended) all call `applyTierDowngradeToFree`. That sets the tier to free and clears `stripe_subscription_id` without asking Stripe whether the subscription is still live. A payment that recovers later grants nothing, because `invoice.paid` finds nothing to refresh, and Stripe keeps charging. With the id cleared, checkout will also open a second subscription. This is the H7 outcome by a route H7 did not cover. It needs `GRACE_ENFORCED=true`, and the 7-day grace is shorter than Stripe's retry window of about two weeks. | High | `server/routes/billingWebhook.ts`, `server/lib/subscriptionUpgrade.ts`, `scripts/subscription-grace-sweep.ts` | billing-1 | `e70c78f` |
-| **N-36** | **The public showcase serves disposable-locked photos before the reveal.** Its preview query filters on status only. A disposable-mode upload is stored as `approved` with `is_locked` set, so on any public album the four newest locked photos go out with their captions and, on R2, working quarantine URLs. This is the showcase half of SEC-07, which was fixed for audio only. | Medium | `server/routes/events/crud.ts` | lifecycle-2 | Open |
+| **N-36** | **The public showcase serves disposable-locked photos before the reveal.** Its preview query filters on status only. A disposable-mode upload is stored as `approved` with `is_locked` set, so on any public album the four newest locked photos go out with their captions and, on R2, working quarantine URLs. This is the showcase half of SEC-07, which was fixed for audio only. | Medium | `server/routes/events/crud.ts` | lifecycle-2 | `63e6d61` |
 | **N-37** | Voice messages reach every guest live during a disposable-mode lock. The SEC-07 fix gated `GET /api/audio`, but `POST` still broadcasts each new recording to the room. | Medium | `server/routes/audio.ts` | auth-4 | Open |
 | **N-38** | A WebSocket opened before logout keeps host privileges. The session token is re-checked only when an AUTH frame arrives, `JOIN_EVENT_ROOM` reuses the stale identity, logout never touches open sockets, and the client sends AUTH only on open. A signed-out tab keeps receiving host broadcasts, including pending photos with preview tokens. This is H9, incomplete. | Medium | `server/ws/wsServer.ts`, `src/services/realtimeSocket.ts` | auth-2 | Open |
 | **N-39** | Revoking an ingest key does not end an FTP session that is already logged in, and FTP sessions never time out. The key is checked at login only, every later `STOR` ingests without re-checking it, and `FtpSrv` is built with no timeout (the library's default is 0). | Medium | `server/ftp/ftpServer.ts` | auth-3 | Open |
