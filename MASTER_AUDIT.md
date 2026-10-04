@@ -5,6 +5,7 @@
 **Feature review:** 2026-09-21 (§3c). **Accessibility review:** 2026-09-21 (§3d).
 **Client mutation sweep:** 2026-09-21 (§8).
 **Performance pass:** 2026-09-22 to 23 (§3e).
+**Security review, partial:** 2026-09-25 to 26, recorded 2026-10-04 (§3f). **25 findings open.**
 
 > **Read this first.** The audit below is preserved as written — each finding
 > still describes the code as it was on 2026-09-15, because a finding rewritten
@@ -37,6 +38,12 @@
 >
 > What remains is operational (§9). Two of those items, key rotation and SMTP,
 > are **deferred by the owner** — see §9.
+>
+> **Superseded on 2026-10-04 by §3f.** A security review on 2026-09-25 and 26
+> covered three of eight domains before stopping. It returned **25 open
+> findings, two of them High**: N-34, album expiry that moves forward every
+> night so retention can never act, and N-35, a dunning downgrade that leaves
+> the customer paying. Code work remains, and five domains are unreviewed.
 
 Consolidates every completed audit and verification report into one authoritative
 list. Sources reconciled:
@@ -785,6 +792,85 @@ after, and burst shooting. That was a product change the owner asked for, not
 an audit finding, but the cause was the same shape: `canvas.toDataURL` at full
 sensor resolution, synchronously, on the main thread, before anything was
 drawn.
+
+---
+
+## 3f. The Security Review, Three Domains of Eight (2026-09-25 to 26)
+
+**Open. Nothing below is fixed yet.**
+
+Eight reviewers were each given one domain and told to hunt for what earlier
+passes miss: races, transaction boundaries, one route missing a check its
+siblings have, error paths that leave the database and storage disagreeing,
+and features that interact badly. Each reviewer was followed by a second
+agent whose job was to refute every finding against the code. The weekly
+usage limit stopped the run after three domains — **billing, lifecycle and
+auth**. Twenty-five findings came back. None was refuted: 23 confirmed, 2
+plausible (N-50 and N-58, where the path is real but the input that triggers
+it is uncommon). The results sat in the workflow's output file for eight days
+and were written here on 2026-10-04. Numbered N-34 onwards.
+
+**Not yet reviewed:** media, infra, db, guest-ui and host-ui.
+
+What the shape of them says: **six are earlier fixes that closed one route and
+left its sibling open.** H7 stopped the self-service downgrade from leaving a
+customer paying, but the dunning path (N-35) and a transient Stripe error
+(N-42) still do it. SEC-07 gated disposable-mode leaks in `GET /api/audio`
+but not the showcase feed (N-36) or the audio upload broadcast (N-37). H9
+re-checks a host's socket on AUTH but not on room join (N-38). H8 stopped
+guest-row minting on comments and quests but not on audio (N-57). When a
+finding names one route, the fix needs to cover every route that does the
+same thing.
+
+Severity is the verifier's, which sometimes differs from the reviewer's.
+Line numbers are left out on purpose: at least one verifier quoted the wrong
+range for a function it had correctly identified.
+
+| ID | Finding | Severity | Files | Review ID | Fixed |
+|---|---|---|---|---|---|
+| **N-34** | **An album's expiry date moves forward every night, so retention can never act.** `refreshExpiryDates` recomputes each album's expiry from its tier and then floors it at now + 30 days, the H7 grace floor. `retention-sweep` calls it for every album, every night, before it sweeps. Any album within 30 days of expiry, or already past it, is pushed back to about now + 30 days. No notice ever falls due (that needs < now + 14 days), no album ever passes grace (that needs < now − 30 days), and the expiry the host sees is always a month away. This happens whether or not `RETENTION_ENFORCED` is set, so resolving D1 would change nothing. | High | `server/lib/retention.ts`, `scripts/retention-sweep.ts` | lifecycle-1 | Open |
+| **N-35** | **A dunning downgrade cannot be undone, and the customer keeps paying.** The grace sweep, the expired `past_due` branch and `unpaid` (treated as ended) all call `applyTierDowngradeToFree`. That sets the tier to free and clears `stripe_subscription_id` without asking Stripe whether the subscription is still live. A payment that recovers later grants nothing, because `invoice.paid` finds nothing to refresh, and Stripe keeps charging. With the id cleared, checkout will also open a second subscription. This is the H7 outcome by a route H7 did not cover. It needs `GRACE_ENFORCED=true`, and the 7-day grace is shorter than Stripe's retry window of about two weeks. | High | `server/routes/billingWebhook.ts`, `server/lib/subscriptionUpgrade.ts`, `scripts/subscription-grace-sweep.ts` | billing-1 | Open |
+| **N-36** | **The public showcase serves disposable-locked photos before the reveal.** Its preview query filters on status only. A disposable-mode upload is stored as `approved` with `is_locked` set, so on any public album the four newest locked photos go out with their captions and, on R2, working quarantine URLs. This is the showcase half of SEC-07, which was fixed for audio only. | Medium | `server/routes/events/crud.ts` | lifecycle-2 | Open |
+| **N-37** | Voice messages reach every guest live during a disposable-mode lock. The SEC-07 fix gated `GET /api/audio`, but `POST` still broadcasts each new recording to the room. | Medium | `server/routes/audio.ts` | auth-4 | Open |
+| **N-38** | A WebSocket opened before logout keeps host privileges. The session token is re-checked only when an AUTH frame arrives, `JOIN_EVENT_ROOM` reuses the stale identity, logout never touches open sockets, and the client sends AUTH only on open. A signed-out tab keeps receiving host broadcasts, including pending photos with preview tokens. This is H9, incomplete. | Medium | `server/ws/wsServer.ts`, `src/services/realtimeSocket.ts` | auth-2 | Open |
+| **N-39** | Revoking an ingest key does not end an FTP session that is already logged in, and FTP sessions never time out. The key is checked at login only, every later `STOR` ingests without re-checking it, and `FtpSrv` is built with no timeout (the library's default is 0). | Medium | `server/ftp/ftpServer.ts` | auth-3 | Open |
+| **N-40** | The published demo host credential controls the only public showcase album, and that album accepts unmoderated anonymous uploads. Whatever anyone uploads there can appear on the landing page. | Medium | `database/migrations/022_event_public_showcase_optin.sql`, `database/migrations/002_seed_data.sql` | auth-5 | Open |
+| **N-41** | Login's fallback for a host with no albums creates one without the DB-06 lock or the event-limit check that `POST /api/events` uses. Concurrent logins each create an album on the paid tier, each with its own allowance. | Medium | `server/routes/auth.ts` | auth-1 | Open |
+| **N-42** | The H7 guard fails open on any Stripe error, not only a missing subscription. A timeout, 429 or 5xx while the host clicks "downgrade to free" skips the guard. The tier drops to free while the subscription keeps billing, and renewals then refresh nothing. | Medium | `server/lib/stripe.ts`, `server/routes/subscriptions.ts` | billing-7 | Open |
+| **N-43** | When any of a user's subscriptions ends, the account is downgraded, even if another subscription on file is still live. The `deleted` and `past_due` handlers never compare the event's subscription id with the stored one. Two subscriptions arise from N-35's cleared id, or from two checkouts opened in parallel. | Medium | `server/routes/billingWebhook.ts` | billing-2 | Open |
+| **N-44** | Webhook handlers act on each event's snapshot. They never check `event.created` or re-read the subscription, and Stripe does not guarantee delivery order. A redelivered `past_due` after recovery stamps a new 7-day deadline on a paid-up account. A `checkout.session.completed` processed after `deleted` attaches Pro to a cancelled subscription permanently. | Medium | `server/routes/billingWebhook.ts` | billing-3 | Open |
+| **N-45** | Upgrading from a one-time pass to Pro Planner and later cancelling loses the pass. The grant overwrites the single subscriptions row, nothing records the earlier purchase, and when the subscription ends the account drops to free. | Medium | `server/routes/billing.ts`, `server/lib/subscriptionUpgrade.ts` | billing-4 | Open |
+| **N-46** | After any downgrade, photos waiting for moderation are stranded. The moderation queue is the only screen that can approve a photo, and it locks below Celebration Pass. The pending photos still count against the free tier's cap. | Medium | `src/components/host/HostDashboard.tsx`, `server/middleware/tierGate.ts` | billing-6 | Open |
+| **N-47** | Deleting an album takes a snapshot of its media, deletes the files one by one, then deletes the rows, and nothing stops uploads, FTP ingests or promotions in between. A photo that arrives mid-purge loses its row but keeps its file. On R2 the file stays publicly reachable. Locally it stays under the served `/uploads`, because the directory removal ignores `ENOTEMPTY`. | Medium | `server/lib/retention.ts`, `server/routes/events/crud.ts`, `server/lib/storage.ts` | lifecycle-4 | Open |
+| **N-48** | The ZIP export takes a snapshot of every photo's path at the start and silently skips any photo whose file moves during the download (approved, withheld or revealed). The archive still finishes as if it were complete. | Medium | `server/routes/events/export.ts` | lifecycle-5 | Open |
+| **N-49** | On local storage, `storage:orphans` reads the event list before walking the directories and has no age guard. `--delete` can therefore remove an album created in the seconds between. The R2 branch and `storage-orphan-sweep` both avoid this. | Medium | `scripts/storage-orphans.ts` | lifecycle-6 | Open |
+| **N-50** | *Plausible.* Postgres matches event ids regardless of case, but storage paths keep the caller's casing, and the orphan sweeps and the export compare them case-sensitively. An upload with an uppercase event id would have its live photos classed as orphans. No first-party client sends one; a third-party tool or a hand-typed id would. | Medium | `server/routes/photos/upload.ts`, `server/routes/ingest.ts`, `scripts/storage-orphan-sweep.ts`, `scripts/storage-orphans.ts`, `server/lib/storage.ts` | lifecycle-3 | Open |
+| **N-51** | One click on the Free plan card forfeits a paid one-time pass. There is no confirmation, and the click fires confetti. | Low | `src/components/host/PricingPlansModal.tsx`, `server/routes/subscriptions.ts` | billing-5 | Open |
+| **N-52** | Pro Planner's pooled storage cap is checked under a per-event lock. Concurrent uploads to different albums of one host all see the same total and all pass. The overshoot is limited to the uploads in flight at once. | Low | `server/lib/photoWrite.ts`, `server/middleware/tierGate.ts` | billing-8 | Open |
+| **N-53** | The pricing page sells custom palettes as a Deluxe Keepsake feature (`plan.deluxe.f4`), but they unlock at Celebration Pass. | Low | `src/i18n/translations/en.ts`, `src/i18n/translations/bg.ts` | billing-9 | Open |
+| **N-54** | After checkout, the banner says "Your plan is now active" before the webhook has granted the plan, and the tier is refetched at most once. For delayed payment methods such as SEPA, the banner stays wrong. | Low | `src/App.tsx` | billing-10 | Open |
+| **N-55** | A quest retake moves the guest's tie-break time later, so the guest who reached the top score first can lose the prize to someone who finished after them. | Low | `server/routes/photos/upload.ts`, `server/lib/questLeaderboard.ts` | lifecycle-7 | Open |
+| **N-56** | A 0-point quest is stored as 10 points (`points \|\| 10`). Only a direct API call can send 0; the host UI clamps the input to 5–100. | Low | `server/routes/quests.ts` | lifecycle-8 | Open |
+| **N-57** | `POST /api/audio` still creates a new guest row on every unproven request, with no per-IP backstop limit. This is H8's residual; its scope did not include audio. | Low | `server/routes/audio.ts` | auth-6 | Open |
+| **N-58** | *Plausible.* Another host can claim a deleted album's custom slug immediately, so old QR codes send guests, and their uploads, to a stranger's album. Arguably a policy question rather than a defect. | Low | `server/routes/events/crud.ts` | lifecycle-9 | Open |
+
+**Checked and found sound, recorded so it is not re-reported:** webhook
+signature verification (the raw body is mounted before `express.json`, and a
+missing secret answers 503); webhook idempotency (claim and dispatch share one
+transaction); price authority (the client names only a tier, and the webhook
+cross-checks the Price); the redirect allow-list; the no-lowering upsert from
+N-15; the per-event photo-count lock; and a server-side gate on every
+`FEATURE_GATES` item except `live_tv`, which is presentation-only by design.
+
+**A workspace incident during the run.** On 2026-09-25 `OPEN_ITEMS.md`,
+`MASTER_AUDIT.md` and `FIX_PLAN.md` were each cut to their first 50 lines
+within 4 ms of each other, while every reviewer was read-only. The likely
+cause is the ruflo-core `post-command` hook. On Windows it passes the Bash
+command text to `cmd.exe` with `shell: true`, which re-tokenizes it, and a
+read like `sed -n 1,50p … OPEN_ITEMS.md MASTER_AUDIT.md FIX_PLAN.md` can be
+turned into an in-place edit. The files were restored from git. After any
+agent session that reads these documents, check `git diff --stat` before
+trusting them.
 
 ---
 
