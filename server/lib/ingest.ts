@@ -35,6 +35,25 @@ export function hashIngestKey(key: string): string {
 }
 
 /**
+ * Whether a key that was valid at login still is: not revoked, not expired.
+ * Asked on every FTP upload, because a session outlives the login that
+ * checked its key (N-39). Fails closed: a lookup error drops the upload.
+ */
+export async function isIngestKeyActive(keyId: string): Promise<boolean> {
+  try {
+    const res = await pool.query(
+      `SELECT 1 FROM photographer_ingest_keys
+        WHERE id = $1 AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at > NOW())`,
+      [keyId]
+    );
+    return res.rows.length > 0;
+  } catch (err) {
+    console.error('[Ingest] key status lookup failed:', err instanceof Error ? err.message : String(err));
+    return false;
+  }
+}
+
+/**
  * Validate a raw ingest key against an event. Returns the key row id when valid
  * (not revoked, not expired), otherwise null. Touches `last_used_at` on success.
  */

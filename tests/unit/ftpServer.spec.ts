@@ -15,8 +15,10 @@ import {
   resetLoginThrottle,
   resolveStoredPath,
   LOGIN_THROTTLE,
+  buildFtpServerOptions,
   type FtpConnectionLike,
 } from '../../server/ftp/ftpServer';
+import sharp from 'sharp';
 import { generateIngestKey, hashIngestKey } from '../../server/lib/ingest';
 import { deleteEventFixture } from '../helpers/cleanup';
 
@@ -205,6 +207,85 @@ describe('handleLogin (SEC-F2, SEC-F5 wired together)', () => {
 
     // Before the fix, this would be 3 — one accumulated per re-login.
     expect(connection.listenerCount('STOR')).toBe(1);
+  });
+
+  // N-39 — the key was checked once, at login. Revoking it in the dashboard
+  // set revoked_at and nothing more: a session already logged in went on
+  // ingesting every frame into the album for as long as it stayed open.
+  describe('a key revoked while its session is open (N-39)', () => {
+    async function loginWithFreshKey(ip: string) {
+      const key = generateIngestKey();
+      const ins = await query<{ id: string }>(
+        `INSERT INTO photographer_ingest_keys (event_id, label, key_hash) VALUES ($1, 'N-39 Key', $2) RETURNING id`,
+        [eventId, hashIngestKey(key)]
+      );
+      const closed: unknown[][] = [];
+      const connection = Object.assign(mockConnection(ip), {
+        close: async (...args: unknown[]) => {
+          closed.push(args);
+        },
+      });
+      await handleLogin(stagingRoot, { connection, username: eventId, password: key }, () => {}, () => {});
+      return { connection, closed, keyId: ins.rows[0].id };
+    }
+
+    async function stageFrame(name: string): Promise<string> {
+      const staged = path.join(stagingRoot, eventId, name);
+      const jpeg = await sharp({
+        create: { width: 16, height: 16, channels: 3, background: { r: 200, g: 180, b: 160 } },
+      })
+        .jpeg()
+        .toBuffer();
+      fs.writeFileSync(staged, jpeg);
+      return staged;
+    }
+
+    async function untilGone(file: string): Promise<void> {
+      for (let i = 0; i < 100 && fs.existsSync(file); i++) await new Promise((r) => setTimeout(r, 50));
+    }
+
+    async function photoCount(): Promise<number> {
+      const res = await query<{ n: number }>('SELECT COUNT(*)::int AS n FROM photos WHERE event_id = $1', [eventId]);
+      return res.rows[0].n;
+    }
+
+    it('drops an upload sent after the key was revoked, and closes the session', async () => {
+      const { connection, closed, keyId } = await loginWithFreshKey('198.51.100.39');
+      await query('UPDATE photographer_ingest_keys SET revoked_at = NOW() WHERE id = $1', [keyId]);
+
+      const before = await photoCount();
+      const name = `revoked-${Date.now()}.jpg`;
+      const staged = await stageFrame(name);
+      connection.emit('STOR', null, `/${name}`);
+      await untilGone(staged);
+      // The ingest, had it run, finishes after the unlink is scheduled.
+      await new Promise((r) => setTimeout(r, 300));
+
+      expect(fs.existsSync(staged)).toBe(false);
+      expect(await photoCount()).toBe(before);
+      expect(closed).toHaveLength(1);
+    });
+
+    it('still ingests an upload while the key is live', async () => {
+      const { connection, closed } = await loginWithFreshKey('198.51.100.40');
+
+      const before = await photoCount();
+      const name = `live-${Date.now()}.jpg`;
+      const staged = await stageFrame(name);
+      connection.emit('STOR', null, `/${name}`);
+      await untilGone(staged);
+      for (let i = 0; i < 40 && (await photoCount()) === before; i++) await new Promise((r) => setTimeout(r, 50));
+
+      expect(await photoCount()).toBe(before + 1);
+      expect(closed).toHaveLength(0);
+    });
+  });
+});
+
+describe('the FTP server idles out a silent session (N-39)', () => {
+  it('builds the server with an idle timeout, not the library default of none', () => {
+    const options = buildFtpServerOptions(false);
+    expect(options.timeout).toBeGreaterThan(0);
   });
 });
 

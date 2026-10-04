@@ -3,7 +3,7 @@ import path from 'path';
 import { FtpSrv } from '@electerm/ftp-srv';
 import { CONFIG } from '../lib/config';
 import { pool } from '../lib/db';
-import { validateIngestKey } from '../lib/ingest';
+import { validateIngestKey, isIngestKeyActive } from '../lib/ingest';
 import { ingestPhoto } from '../lib/ingestPipeline';
 
 let ftpServer: FtpSrv | null = null;
@@ -184,6 +184,54 @@ export interface FtpConnectionLike {
   ip: string;
   on(event: string, listener: (...args: unknown[]) => void): unknown;
   removeAllListeners(event: string): unknown;
+  /** Ends the session. Optional only so a test double may leave it out. */
+  close?(code?: number, message?: string): Promise<unknown>;
+}
+
+/**
+ * How long a session may sit silent before the server drops it (N-39). The
+ * library's default is no limit, so a session nobody closed stayed open, and
+ * logged in, indefinitely. Generous on purpose: a photographer's camera can
+ * hold one session open through a long gap between shots, and the command
+ * socket is also silent while a large frame transfers on the data socket. A
+ * client that is dropped simply logs in again — with a key that is still live.
+ */
+export const FTP_IDLE_TIMEOUT_MS = 30 * 60 * 1000;
+
+/** The FtpSrv options, built apart from the listener so they can be checked. */
+export function buildFtpServerOptions(tls: { key: Buffer; cert: Buffer } | false) {
+  return {
+    url: `ftp://0.0.0.0:${CONFIG.FTP_PORT}`,
+    pasv_url: CONFIG.FTP_PASV_URL || undefined,
+    anonymous: false,
+    tls,
+    timeout: FTP_IDLE_TIMEOUT_MS,
+    greeting: ['WedMoments Pro Photographer Ingest', 'Upload JPEGs to the live screen'],
+  };
+}
+
+/**
+ * N-39 — the key is checked at login, and revoking it used to change nothing
+ * for a session already logged in: every later frame was ingested into the
+ * album for as long as the session stayed open. So each upload asks again.
+ * One primary-key lookup per frame. A revoked or expired key drops the frame
+ * and ends the session, so the photographer's client says so instead of
+ * uploading into nothing.
+ */
+async function ingestIfKeyStillActive(
+  connection: FtpConnectionLike,
+  keyId: string,
+  eventId: string,
+  storeErr: Error | null,
+  serverPath: string | undefined
+): Promise<void> {
+  if (!(await isIngestKeyActive(keyId))) {
+    console.warn(`[FTP] Ingest key ${keyId} is revoked or expired — dropped an upload and closed the session`);
+    if (serverPath) fs.unlink(serverPath, () => {});
+    await connection.close?.(530, 'Ingest key revoked').catch(() => undefined);
+    return;
+  }
+  await handleStoredFile(eventId, storeErr, serverPath);
 }
 
 export type LoginResolve = (config: { root: string; cwd: string }) => void;
@@ -236,7 +284,7 @@ export async function handleLogin(
     connection.on('STOR', (...args: unknown[]) => {
       const [storeErr, clientPath] = args as [Error | null, string | undefined];
       const serverPath = clientPath ? resolveStoredPath(eventDir, clientPath) ?? undefined : undefined;
-      handleStoredFile(eventId, storeErr, serverPath).catch(() => {});
+      ingestIfKeyStillActive(connection, keyId, eventId, storeErr, serverPath).catch(() => {});
     });
 
     resolve({ root: eventDir, cwd: '/' });
@@ -277,13 +325,7 @@ export function startFtpServer(): void {
     return;
   }
 
-  ftpServer = new FtpSrv({
-    url: `ftp://0.0.0.0:${CONFIG.FTP_PORT}`,
-    pasv_url: CONFIG.FTP_PASV_URL || undefined,
-    anonymous: false,
-    tls: tlsOptions,
-    greeting: ['WedMoments Pro Photographer Ingest', 'Upload JPEGs to the live screen'],
-  });
+  ftpServer = new FtpSrv(buildFtpServerOptions(tlsOptions));
 
   // username = event id (or slug), password = photographer ingest key
   ftpServer.on('login', (data, resolve, reject) => {
