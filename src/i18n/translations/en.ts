@@ -433,6 +433,8 @@ export const en: Record<string, string> = {
   'error.confirmation_mismatch': 'Type the album address exactly as written to confirm deletion.',
   'error.storage_delete_failed': 'The photo could not be removed from storage. Nothing was deleted — please try again.',
   'error.already_entitled': 'Your current plan already includes everything in this one.',
+  'error.billing_unverifiable':
+    'We could not check your subscription with our payment provider. Please try again in a few minutes.',
   'error.stripe_not_configured': 'Payments are not configured yet.',
   'storage.title': 'Storage used',
   'storage.pooled': 'shared across account',

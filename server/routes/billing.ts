@@ -6,7 +6,7 @@ import { CONFIG } from '../lib/config';
 import { requireAuth } from '../middleware/auth';
 import { validateBody } from '../middleware/validate';
 import { errorLabel } from '../lib/errors';
-import { getStripeClient, isStripeConfigured, isSubscriptionLiveAtStripe } from '../lib/stripe';
+import { getStripeClient, isStripeConfigured, subscriptionLivenessAtStripe } from '../lib/stripe';
 import { PAID_TIER_PRICING, PaidPlanTier, isPriceMapConfigured, priceIdForTier } from '../lib/stripePlans';
 import { getEffectiveTierForUser } from '../middleware/tierGate';
 import { TIER_WEIGHTS } from '../../shared/planCaps';
@@ -135,9 +135,17 @@ billingRouter.post(
 
       // Asked once, used twice below: whether the subscription this account
       // has on file is still live at Stripe.
-      const subscriptionLive = storedSubscriptionId
-        ? await isSubscriptionLiveAtStripe(storedSubscriptionId)
-        : false;
+      const liveness = storedSubscriptionId ? await subscriptionLivenessAtStripe(storedSubscriptionId) : 'ended';
+      // N-42 — both guards below read "could not ask" as "not live", which let
+      // a second subscription start beside one Stripe could not see. Refuse
+      // for now instead; checkout needs Stripe anyway.
+      if (liveness === 'unknown') {
+        return res.status(503).json({
+          error: 'We could not check your subscription with our payment provider. Please try again in a few minutes.',
+          code: 'BILLING_UNVERIFIABLE',
+        });
+      }
+      const subscriptionLive = liveness === 'live';
 
       if (pricing.mode === 'subscription' && storedSubscriptionId) {
         if (subscriptionLive) {

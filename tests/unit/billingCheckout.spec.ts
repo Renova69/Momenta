@@ -16,9 +16,11 @@ vi.hoisted(() => {
 
 /** Status Stripe will report for a subscription id, set per test. */
 const subscriptionStatuses = new Map<string, string>();
+/** A "status" meaning Stripe could not be asked at all. */
+const UNREACHABLE = '__unreachable__';
 
 vi.mock('../../server/lib/stripe', async () => {
-  // isSubscriptionLiveAtStripe lives in this module, so the mock has to supply
+  // subscriptionLivenessAtStripe lives in this module, so the mock has to supply
   // it — but it delegates to the module's REAL status predicate rather than
   // restating the list, which is what this spec is actually driving through
   // `subscriptionStatuses`. Restating it here would let the two copies drift
@@ -27,8 +29,11 @@ vi.mock('../../server/lib/stripe', async () => {
   return {
   ...actual,
   isStripeConfigured: () => true,
-  isSubscriptionLiveAtStripe: async (id: string) =>
-    actual.isLiveSubscriptionStatus(subscriptionStatuses.get(id) ?? ''),
+  subscriptionLivenessAtStripe: async (id: string) => {
+    const status = subscriptionStatuses.get(id);
+    if (status === UNREACHABLE) return 'unknown';
+    return actual.isLiveSubscriptionStatus(status ?? '') ? 'live' : 'ended';
+  },
   getStripeClient: () => ({
     subscriptions: {
       retrieve: (id: string) => {
@@ -143,6 +148,19 @@ describe('duplicate subscription guard', () => {
     expect((await startCheckout(token, 'pro_planner')).status).toBe(200);
   });
 
+  it('refuses, for now, when Stripe cannot say whether the stored one is live (N-42)', async () => {
+    // Unknown used to read as "not live", which let a second subscription
+    // start beside one Stripe could not be asked about.
+    const { token, userId } = await registerHost();
+    const subscriptionId = uniqueId('sub_unreachable');
+    subscriptionStatuses.set(subscriptionId, UNREACHABLE);
+    await applyTierUpgrade(userId, 'pro_planner', { billingType: 'monthly', stripeSubscriptionId: subscriptionId });
+
+    const res = await startCheckout(token, 'pro_planner');
+
+    expect(res.status).toBe(503);
+    expect((await res.json()).code).toBe('BILLING_UNVERIFIABLE');
+  });
 });
 
 describe('selling a plan the account already has', () => {

@@ -68,15 +68,37 @@ export function isLiveSubscriptionStatus(status: string): boolean {
   return LIVE_SUBSCRIPTION_STATUSES.includes(status);
 }
 
-export async function isSubscriptionLiveAtStripe(subscriptionId: string): Promise<boolean> {
+/**
+ * `live`, `ended`, or `unknown` when Stripe could not be asked.
+ *
+ * N-42 — this used to be a boolean that answered false on any error. Its
+ * callers allow a downgrade or a new checkout on false, so a timeout, a 429 or
+ * a Stripe outage at the wrong moment let a host drop to free while the
+ * subscription went on billing — the H7 outcome by a transient error. Unknown
+ * is not "no": callers refuse for now and ask the customer to retry.
+ *
+ * An id Stripe has never heard of is `ended`, not `unknown`. That is the stale
+ * row a missed cancellation webhook leaves behind, and treating it as unknown
+ * would block that customer from downgrading or subscribing again for good.
+ */
+export type SubscriptionLiveness = 'live' | 'ended' | 'unknown';
+
+function isMissingResource(err: unknown): boolean {
+  const e = err as { code?: string; statusCode?: number } | null;
+  return e?.code === 'resource_missing' || e?.statusCode === 404;
+}
+
+export async function subscriptionLivenessAtStripe(subscriptionId: string): Promise<SubscriptionLiveness> {
   try {
     const subscription = await getStripeClient().subscriptions.retrieve(subscriptionId);
-    return isLiveSubscriptionStatus(subscription.status);
+    return isLiveSubscriptionStatus(subscription.status) ? 'live' : 'ended';
   } catch (err) {
-    console.warn(
-      `[Billing] could not verify subscription ${subscriptionId} at Stripe:`,
-      err instanceof Error ? err.message : String(err)
-    );
-    return false;
+    const reason = err instanceof Error ? err.message : String(err);
+    if (isMissingResource(err)) {
+      console.warn(`[Billing] Stripe has no subscription ${subscriptionId} — treating the stored id as stale:`, reason);
+      return 'ended';
+    }
+    console.warn(`[Billing] could not verify subscription ${subscriptionId} at Stripe:`, reason);
+    return 'unknown';
   }
 }

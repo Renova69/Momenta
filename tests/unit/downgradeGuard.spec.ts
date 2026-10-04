@@ -24,13 +24,16 @@ import express from 'express';
  */
 
 const LIVE_SUBSCRIPTIONS = new Set<string>();
+/** Ids Stripe cannot be asked about: a timeout, a 429, an outage. */
+const UNREACHABLE_SUBSCRIPTIONS = new Set<string>();
 
 vi.mock('../../server/lib/stripe', () => ({
   isStripeConfigured: () => true,
   // The real helper is a thin wrapper over subscriptions.retrieve; mocking it
   // directly keeps this spec about the downgrade decision rather than about
   // Stripe's status vocabulary, which lib/stripe owns and states explicitly.
-  isSubscriptionLiveAtStripe: async (id: string) => LIVE_SUBSCRIPTIONS.has(id),
+  subscriptionLivenessAtStripe: async (id: string) =>
+    UNREACHABLE_SUBSCRIPTIONS.has(id) ? 'unknown' : LIVE_SUBSCRIPTIONS.has(id) ? 'live' : 'ended',
   getStripeClient: () => ({
     subscriptions: {
       retrieve: async (id: string) => ({ status: LIVE_SUBSCRIPTIONS.has(id) ? 'active' : 'canceled' }),
@@ -133,6 +136,27 @@ describe('downgrade guard (H7)', () => {
     );
     expect(sub.rows[0].tier).toBe('pro_planner');
     expect(sub.rows[0].stripe_subscription_id).toBe(subId);
+  });
+
+  it('refuses, for now, a downgrade it cannot verify with Stripe (N-42)', async () => {
+    // A transient Stripe error used to read as "not live" and let the
+    // downgrade through, dropping the tier while the subscription went on
+    // billing. Unknown is not "no": the host is told to try again.
+    const host = await registerHost();
+    const subId = `sub_unreachable_${Date.now()}`;
+    UNREACHABLE_SUBSCRIPTIONS.add(subId);
+    await givePaidPlan(host, subId);
+
+    const res = await downgrade(host);
+    const body = await res.json();
+
+    expect(res.status).toBe(503);
+    expect(body.code).toBe('BILLING_UNVERIFIABLE');
+    const sub = await query<{ tier: string }>(
+      "SELECT tier FROM subscriptions WHERE user_id = $1 AND status = 'active'",
+      [host.userId]
+    );
+    expect(sub.rows[0].tier).toBe('pro_planner');
   });
 
   it('allows the downgrade once the subscription is no longer live at Stripe', async () => {

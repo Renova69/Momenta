@@ -460,6 +460,8 @@ export const bg: Record<string, string> = {
   'error.confirmation_mismatch': 'Въведете адреса на албума точно както е изписан, за да потвърдите изтриването.',
   'error.storage_delete_failed': 'Снимката не можа да бъде премахната от хранилището. Нищо не е изтрито — опитайте отново.',
   'error.already_entitled': 'Текущият ви план вече включва всичко от този.',
+  'error.billing_unverifiable':
+    'Не успяхме да проверим абонамента ви при доставчика на плащания. Опитайте отново след няколко минути.',
   'error.stripe_not_configured': 'Плащанията още не са настроени.',
   'storage.title': 'Използвано място',
   'storage.pooled': 'общо за профила',

@@ -47,6 +47,7 @@ export const ERROR_CODE_KEYS: Record<string, string> = {
   CONFIRMATION_MISMATCH: 'error.confirmation_mismatch',
   STORAGE_DELETE_FAILED: 'error.storage_delete_failed',
   ALREADY_ENTITLED: 'error.already_entitled',
+  BILLING_UNVERIFIABLE: 'error.billing_unverifiable',
   // Translating this does not disturb `isStripeNotConfigured`, which reads
   // `ApiError.code` and never the message: the pre-Stripe upgrade route still
   // takes over silently.

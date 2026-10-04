@@ -5,7 +5,7 @@ import { validateBody } from '../middleware/validate';
 import { errorLabel } from '../lib/errors';
 import { BackendPlanTier } from '../middleware/tierGate';
 import { applyTierUpgrade } from '../lib/subscriptionUpgrade';
-import { isStripeConfigured, isSubscriptionLiveAtStripe } from '../lib/stripe';
+import { isStripeConfigured, subscriptionLivenessAtStripe } from '../lib/stripe';
 import { pool } from '../lib/db';
 
 export const subscriptionsRouter = Router();
@@ -69,12 +69,22 @@ subscriptionsRouter.post('/upgrade', requireAuth, validateBody(UpgradeSchema), a
       );
       const subscriptionId = existing.rows[0]?.stripe_subscription_id as string | null | undefined;
 
-      if (subscriptionId && (await isSubscriptionLiveAtStripe(subscriptionId))) {
+      const liveness = subscriptionId ? await subscriptionLivenessAtStripe(subscriptionId) : 'ended';
+      if (liveness === 'live') {
         return res.status(409).json({
           error:
             'Your subscription is still active with our payment provider. ' +
             'Cancel it in the billing portal so you stop being charged.',
           code: 'MANAGE_SUBSCRIPTION_IN_PORTAL',
+        });
+      }
+      // N-42 — Stripe could not be asked. Letting the downgrade through on a
+      // guess is the H7 outcome; refusing for good would strand the customer.
+      // Refuse for now.
+      if (liveness === 'unknown') {
+        return res.status(503).json({
+          error: 'We could not check your subscription with our payment provider. Please try again in a few minutes.',
+          code: 'BILLING_UNVERIFIABLE',
         });
       }
     }
