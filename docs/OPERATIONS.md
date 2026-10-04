@@ -88,7 +88,7 @@ service.
 
 ```bash
 RETENTION_ENFORCED=true    # retention sweep may delete expired album media
-GRACE_ENFORCED=true        # grace sweep may downgrade accounts past their deadline
+GRACE_ENFORCED=true        # grace sweep may suspend accounts past their deadline
 ```
 
 Leave them unset to watch what *would* happen first. That is the recommended
@@ -101,7 +101,7 @@ npm run retention:report   # what is due, deletes nothing
 npm run retention:sweep    # deletes (RETENTION_ENFORCED baked in)
 
 npm run grace:report       # accounts past their dunning deadline
-npm run grace:sweep        # downgrades them
+npm run grace:sweep        # suspends them (a later payment restores the plan)
 
 npm run maintenance:once   # run every scheduled job a single time, then exit
 ```

@@ -4,6 +4,7 @@ import { errorLabel } from './errors';
 import { BackendPlanTier } from '../middleware/tierGate';
 import { TIER_WEIGHTS } from '../../shared/planCaps';
 import { refreshExpiryDates } from './retention';
+import { isPaidTier } from './stripePlans';
 
 // Pro Planner pools its allowance across up to 10 concurrent weddings; every
 // other tier is single-event. Mirrors the comment on the same number in
@@ -44,7 +45,9 @@ export interface TierUpgradeOptions {
    * Blank out any stored Stripe subscription id instead of keeping it.
    * Omitting a subscription id and *wanting it gone* are different
    * intentions, and only a cancellation means the latter — see the
-   * COALESCE note on the upsert below.
+   * COALESCE note on the upsert below. Clears any suspension record with it:
+   * a plan suspended for non-payment can only be restored through the
+   * subscription it lapsed from, and that subscription is now gone.
    */
   clearStripeSubscriptionId?: boolean;
   /**
@@ -141,6 +144,7 @@ export async function applyTierUpgrade(
          WHEN $8::boolean THEN NULL
          ELSE COALESCE(EXCLUDED.stripe_subscription_id, subscriptions.stripe_subscription_id)
        END,
+       lapsed_tier = CASE WHEN $8::boolean THEN NULL ELSE subscriptions.lapsed_tier END,
        past_due_grace_expiry = CASE
          WHEN $9::boolean THEN EXCLUDED.past_due_grace_expiry
          ELSE subscriptions.past_due_grace_expiry
@@ -177,20 +181,30 @@ export async function applyTierUpgrade(
   // uses; scoped to this user so a burst of concurrent upgrades never
   // means a burst of full-table recomputes.
   //
-  // A failure here must not fail the upgrade itself when the tier write has
-  // already committed on its own — so on the pool it is logged, not thrown.
-  // Inside a caller's transaction the opposite is true: the tier write has
-  // NOT committed yet, and swallowing the error would commit a tier whose
-  // retention deadlines were never recomputed. There, let it propagate and
-  // roll the whole thing back — Stripe will retry the webhook.
+  await refreshExpiriesAfterTierChange(userId, db, options.db !== undefined);
+
+  return result.rows[0];
+}
+
+/**
+ * A failure here must not fail the tier change itself when the tier write has
+ * already committed on its own — so on the pool it is logged, not thrown.
+ * Inside a caller's transaction the opposite is true: the tier write has NOT
+ * committed yet, and swallowing the error would commit a tier whose retention
+ * deadlines were never recomputed. There, let it propagate and roll the whole
+ * thing back — Stripe will retry the webhook.
+ */
+async function refreshExpiriesAfterTierChange(
+  userId: string,
+  db: Pool | PoolClient,
+  inCallerTransaction: boolean
+): Promise<void> {
   try {
     await refreshExpiryDates(userId, db);
   } catch (err) {
-    if (options.db) throw err;
-    console.error('[Subscriptions] expires_at refresh after upgrade failed:', errorLabel(err));
+    if (inCallerTransaction) throw err;
+    console.error('[Subscriptions] expires_at refresh after tier change failed:', errorLabel(err));
   }
-
-  return result.rows[0];
 }
 
 /**
@@ -218,4 +232,68 @@ export async function applyTierDowngradeToFree(
     pastDueGraceExpiry: null,
     db,
   });
+}
+
+/**
+ * Suspends a plan whose payment has failed for good: the grace window ran out,
+ * or Stripe marked the subscription `unpaid`. Returns false when there was no
+ * paid plan to suspend.
+ *
+ * N-35 — this is not a cancellation, and used to be treated as one. Stripe is
+ * still retrying the card and the subscription is still live there, so the
+ * stored subscription id stays on file: it is what a later payment is matched
+ * against, and what stops checkout opening a second subscription beside this
+ * one. The tier drops to free so the plan stops being used without being paid
+ * for, and the tier it held is kept in `lapsed_tier` so a recovery can put it
+ * back (restoreLapsedTier). One statement, so the sweep — which runs outside
+ * any transaction — cannot leave the tier dropped and the record unwritten.
+ */
+export async function suspendTierForNonPayment(userId: string, db?: Pool | PoolClient): Promise<boolean> {
+  const client = db ?? pool;
+  const result = await client.query(
+    `UPDATE subscriptions
+        SET lapsed_tier = tier, tier = 'free', event_limit = $2,
+            past_due_grace_expiry = NULL, updated_at = NOW()
+      WHERE user_id = $1 AND status = 'active' AND tier <> 'free'`,
+    [userId, EVENT_LIMIT_FOR_TIER.free]
+  );
+  if ((result.rowCount ?? 0) === 0) return false;
+
+  await refreshExpiriesAfterTierChange(userId, client, db !== undefined);
+  return true;
+}
+
+/**
+ * Restores a plan suspended for non-payment, when a payment arrives on the
+ * subscription it lapsed from. Returns false, and changes nothing, unless this
+ * account is suspended and `subscriptionId` is the one on file — a payment on
+ * any other subscription says nothing about this plan.
+ *
+ * Reads then writes, so it must run inside the webhook's transaction, under
+ * the per-customer lock that serialises every event for this account.
+ */
+export async function restoreLapsedTier(
+  userId: string,
+  subscriptionId: string,
+  options: { amountPaidCents?: number; db: PoolClient }
+): Promise<boolean> {
+  const { rows } = await options.db.query(
+    `SELECT lapsed_tier FROM subscriptions
+      WHERE user_id = $1 AND status = 'active' AND tier = 'free'
+        AND lapsed_tier IS NOT NULL AND stripe_subscription_id = $2`,
+    [userId, subscriptionId]
+  );
+  const lapsedTier = rows[0]?.lapsed_tier as string | undefined;
+  if (!isPaidTier(lapsedTier)) return false;
+
+  await applyTierUpgrade(userId, lapsedTier, {
+    billingType: 'monthly',
+    amountPaidCents: options.amountPaidCents,
+    pastDueGraceExpiry: null,
+    db: options.db,
+  });
+  await options.db.query("UPDATE subscriptions SET lapsed_tier = NULL WHERE user_id = $1 AND status = 'active'", [
+    userId,
+  ]);
+  return true;
 }

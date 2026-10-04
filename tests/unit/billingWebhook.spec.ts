@@ -38,7 +38,7 @@ vi.mock('../../server/lib/stripe', () => ({
 
 import { authRouter } from '../../server/routes/auth';
 import { handleStripeWebhook, eventCustomerId } from '../../server/routes/billingWebhook';
-import { applyTierUpgrade } from '../../server/lib/subscriptionUpgrade';
+import { applyTierUpgrade, suspendTierForNonPayment } from '../../server/lib/subscriptionUpgrade';
 import { CONFIG } from '../../server/lib/config';
 import { query } from '../../server/lib/db';
 
@@ -372,15 +372,140 @@ describe('customer.subscription.updated', () => {
   });
 
   it('downgrades when the subscription has ended for good', async () => {
+    // `canceled`, not `unpaid`: an unpaid subscription has not ended at Stripe
+    // and can still be paid, so it suspends rather than ends (N-35, below).
     const userId = await registerHost();
-    const subscriptionId = uniqueId('sub_unpaid');
+    const subscriptionId = uniqueId('sub_canceled');
     await applyTierUpgrade(userId, 'pro_planner', { billingType: 'monthly', stripeSubscriptionId: subscriptionId });
 
     await postEvent({
       id: uniqueId('evt'),
       type: 'customer.subscription.updated',
-      data: { object: { id: subscriptionId, status: 'unpaid', metadata: { userId } } },
+      data: { object: { id: subscriptionId, status: 'canceled', metadata: { userId } } },
     });
+
+    const row = await subscriptionRow(userId);
+    expect(row.tier).toBe('free');
+    expect(row.stripe_subscription_id).toBeNull();
+  });
+});
+
+/**
+ * N-35 — running out of grace is not a cancellation.
+ *
+ * The grace sweep, the expired past_due branch and `unpaid` all used to end
+ * the plan the way a cancellation does: tier to free, stored subscription id
+ * cleared. But Stripe was still retrying the card. When a retry succeeded,
+ * the renewal found a free account and refreshed nothing, the subscription
+ * went on charging every month, and with the id gone checkout would open a
+ * second one. Now those paths suspend: the tier drops, the subscription stays
+ * on file, and a payment on it brings the plan back.
+ */
+describe('dunning suspension (N-35)', () => {
+  function renewalInvoice(subscriptionId: string, metadata: Record<string, string> = {}): Record<string, unknown> {
+    return {
+      id: uniqueId('evt'),
+      type: 'invoice.paid',
+      data: {
+        object: {
+          id: uniqueId('in'),
+          billing_reason: 'subscription_cycle',
+          amount_paid: 4900,
+          parent: { type: 'subscription_details', subscription_details: { subscription: subscriptionId, metadata } },
+        },
+      },
+    };
+  }
+
+  function subscriptionUpdated(subscriptionId: string, userId: string, status: string): Record<string, unknown> {
+    return {
+      id: uniqueId('evt'),
+      type: 'customer.subscription.updated',
+      data: { object: { id: subscriptionId, status, metadata: { userId } } },
+    };
+  }
+
+  it('keeps the subscription on file when grace runs out, and a late payment restores the plan', async () => {
+    const userId = await registerHost();
+    const subscriptionId = uniqueId('sub_late_payer');
+    await seedExpiredGrace(userId, subscriptionId, 1);
+
+    await postEvent(subscriptionUpdated(subscriptionId, userId, 'past_due'));
+
+    const suspended = await subscriptionRow(userId);
+    expect(suspended.tier).toBe('free');
+    // Still live at Stripe, so still ours to match a recovery against — and
+    // still there for checkout's ALREADY_SUBSCRIBED guard to find.
+    expect(suspended.stripe_subscription_id).toBe(subscriptionId);
+
+    await postEvent(renewalInvoice(subscriptionId));
+
+    const restored = await subscriptionRow(userId);
+    expect(restored.tier).toBe('pro_planner');
+    expect(restored.past_due_grace_expiry).toBeNull();
+  });
+
+  it('suspends an unpaid subscription, and restores it once it is active again', async () => {
+    const userId = await registerHost();
+    const subscriptionId = uniqueId('sub_unpaid');
+    await applyTierUpgrade(userId, 'pro_planner', { billingType: 'monthly', stripeSubscriptionId: subscriptionId });
+
+    await postEvent(subscriptionUpdated(subscriptionId, userId, 'unpaid'));
+
+    const suspended = await subscriptionRow(userId);
+    expect(suspended.tier).toBe('free');
+    expect(suspended.stripe_subscription_id).toBe(subscriptionId);
+
+    await postEvent(subscriptionUpdated(subscriptionId, userId, 'active'));
+
+    expect((await subscriptionRow(userId)).tier).toBe('pro_planner');
+  });
+
+  it('suspends from the grace sweep the same way', async () => {
+    const userId = await registerHost();
+    const subscriptionId = uniqueId('sub_swept');
+    await seedExpiredGrace(userId, subscriptionId, 1);
+
+    await suspendTierForNonPayment(userId);
+
+    const suspended = await subscriptionRow(userId);
+    expect(suspended.tier).toBe('free');
+    expect(suspended.stripe_subscription_id).toBe(subscriptionId);
+    expect(suspended.past_due_grace_expiry).toBeNull();
+
+    await postEvent(renewalInvoice(subscriptionId));
+
+    expect((await subscriptionRow(userId)).tier).toBe('pro_planner');
+  });
+
+  it('restores nothing from a payment on a different subscription', async () => {
+    const userId = await registerHost();
+    const subscriptionId = uniqueId('sub_suspended');
+    await seedExpiredGrace(userId, subscriptionId, 1);
+    await postEvent(subscriptionUpdated(subscriptionId, userId, 'past_due'));
+
+    await postEvent(renewalInvoice(uniqueId('sub_other'), { userId }));
+
+    expect((await subscriptionRow(userId)).tier).toBe('free');
+  });
+
+  it('ends a suspended plan for good when Stripe finally cancels, and a stray payment then restores nothing', async () => {
+    const userId = await registerHost();
+    const subscriptionId = uniqueId('sub_gave_up');
+    await seedExpiredGrace(userId, subscriptionId, 1);
+    await postEvent(subscriptionUpdated(subscriptionId, userId, 'past_due'));
+
+    await postEvent({
+      id: uniqueId('evt'),
+      type: 'customer.subscription.deleted',
+      data: { object: { id: subscriptionId, status: 'canceled', metadata: { userId } } },
+    });
+
+    const ended = await subscriptionRow(userId);
+    expect(ended.tier).toBe('free');
+    expect(ended.stripe_subscription_id).toBeNull();
+
+    await postEvent(renewalInvoice(subscriptionId, { userId }));
 
     expect((await subscriptionRow(userId)).tier).toBe('free');
   });

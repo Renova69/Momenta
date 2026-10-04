@@ -17,9 +17,14 @@
  * Downgrading only happens with GRACE_ENFORCED=true, matching
  * retention-sweep.ts: taking a plan away is never a side effect of running a
  * report. Run from cron; hourly is plenty, daily is fine.
+ *
+ * N-35 — "downgrade" here means suspend, not cancel. Stripe may still be
+ * retrying the card, so the subscription stays on file and a later payment
+ * on it restores the plan. This used to clear it, and a late payment then
+ * bought nothing while the subscription went on charging.
  */
 import { pool } from '../server/lib/db';
-import { applyTierDowngradeToFree } from '../server/lib/subscriptionUpgrade';
+import { suspendTierForNonPayment } from '../server/lib/subscriptionUpgrade';
 import { errorLabel } from '../server/lib/errors';
 
 const enforce = process.env.GRACE_ENFORCED === 'true';
@@ -74,9 +79,9 @@ async function main(): Promise<void> {
   for (const row of expired) {
     try {
       // One account's failure must not abandon the rest of the sweep.
-      await applyTierDowngradeToFree(row.user_id);
+      await suspendTierForNonPayment(row.user_id);
       downgraded += 1;
-      console.log(`  downgraded ${row.email}`);
+      console.log(`  suspended ${row.email}`);
     } catch (err) {
       console.error(`  FAILED to downgrade ${row.email}:`, errorLabel(err));
     }

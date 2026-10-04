@@ -5,7 +5,12 @@ import { pool } from '../lib/db';
 import { CONFIG } from '../lib/config';
 import { errorLabel } from '../lib/errors';
 import { getStripeClient, isStripeConfigured } from '../lib/stripe';
-import { applyTierUpgrade, applyTierDowngradeToFree } from '../lib/subscriptionUpgrade';
+import {
+  applyTierUpgrade,
+  applyTierDowngradeToFree,
+  restoreLapsedTier,
+  suspendTierForNonPayment,
+} from '../lib/subscriptionUpgrade';
 import { PAID_TIER_PRICING, PaidPlanTier, isPaidTier, isPriceMapConfigured, tierForPriceId } from '../lib/stripePlans';
 import { BackendPlanTier } from '../middleware/tierGate';
 
@@ -24,9 +29,11 @@ import { BackendPlanTier } from '../middleware/tierGate';
 /**
  * Statuses that mean the subscription is over for good. `past_due` is
  * pointedly absent — it opens a grace window instead (see handleSubscriptionChange).
- * `paused` likewise: Stripe still considers that subscription live.
+ * `paused` likewise: Stripe still considers that subscription live. So does
+ * `unpaid` (N-35): the invoice stays open and can still be paid, so it
+ * suspends the plan rather than ending it.
  */
-const ENDED_SUBSCRIPTION_STATUSES = new Set<Stripe.Subscription.Status>(['canceled', 'unpaid', 'incomplete_expired']);
+const ENDED_SUBSCRIPTION_STATUSES = new Set<Stripe.Subscription.Status>(['canceled', 'incomplete_expired']);
 
 /** Statuses where the customer is paid up and any open dunning window is over. */
 const HEALTHY_SUBSCRIPTION_STATUSES = new Set<Stripe.Subscription.Status>(['active', 'trialing']);
@@ -266,6 +273,16 @@ async function handleInvoicePaid(db: PoolClient, invoice: Stripe.Invoice): Promi
   // renewal never changes the plan anyway.
   const current = await activeSubscriptionRow(db, userId);
   if (!isPaidTier(current?.tier)) {
+    // N-35 — a free account paying on its subscription is a late payment
+    // arriving after the plan was suspended for non-payment. Put it back.
+    const restored = await restoreLapsedTier(userId, subscriptionId, {
+      amountPaidCents: invoice.amount_paid ?? undefined,
+      db,
+    });
+    if (restored) {
+      console.info(`[Billing] payment on subscription ${subscriptionId} restored user ${userId}'s suspended plan`);
+      return;
+    }
     console.warn(
       `[Billing] renewal for subscription ${subscriptionId} but user ${userId} is on tier=${current?.tier} — nothing to refresh`
     );
@@ -285,16 +302,22 @@ async function handleInvoicePaid(db: PoolClient, invoice: Stripe.Invoice): Promi
 /**
  * Handles both customer.subscription.updated and .deleted.
  *
- * Three outcomes, and the middle one is the point of the grace window:
+ * Four outcomes, and the middle two are the point of the grace window:
  *
- *  - terminal status (or `deleted`) → downgrade now.
+ *  - terminal status (or `deleted`) → downgrade now, and forget the subscription.
  *  - `past_due` → keep the tier, stamp a deadline. Stripe is still retrying
  *    the card; cutting a paying customer off on the first failed charge —
  *    possibly mid-wedding — is worse than carrying them for a week. If a
  *    deadline is already set it is left alone, so repeated retry failures
- *    cannot keep pushing it forward indefinitely. Past the deadline, downgrade.
+ *    cannot keep pushing it forward indefinitely. Past the deadline, suspend.
+ *  - `unpaid` → suspend now. Stripe's retries are over, but the invoice can
+ *    still be paid.
  *  - anything else (`active`, `trialing`, `paused`, `cancel_at_period_end`)
- *    → keep the tier; clear the deadline once healthy again.
+ *    → keep the tier; clear the deadline once healthy again, and restore a
+ *    suspended plan.
+ *
+ * Suspending is not downgrading (N-35). The subscription is still live at
+ * Stripe, so it stays on file for a recovery to be matched against.
  */
 async function handleSubscriptionChange(
   db: PoolClient,
@@ -303,8 +326,9 @@ async function handleSubscriptionChange(
 ): Promise<void> {
   const isDeleted = eventType === 'customer.subscription.deleted';
   const hasEnded = isDeleted || ENDED_SUBSCRIPTION_STATUSES.has(subscription.status);
-  const needsWrite =
-    hasEnded || subscription.status === 'past_due' || HEALTHY_SUBSCRIPTION_STATUSES.has(subscription.status);
+  const isUnpaid = subscription.status === 'unpaid';
+  const isHealthy = HEALTHY_SUBSCRIPTION_STATUSES.has(subscription.status);
+  const needsWrite = hasEnded || isUnpaid || subscription.status === 'past_due' || isHealthy;
   if (!needsWrite) return;
 
   const userId = await resolveSubscriptionUserId(db, subscription);
@@ -321,6 +345,18 @@ async function handleSubscriptionChange(
     return;
   }
 
+  if (isUnpaid) {
+    if (await suspendTierForNonPayment(userId, db)) {
+      console.warn(`[Billing] subscription ${subscription.id} is unpaid — suspended user ${userId}'s plan`);
+    }
+    return;
+  }
+
+  if (isHealthy && (await restoreLapsedTier(userId, subscription.id, { db }))) {
+    console.info(`[Billing] subscription ${subscription.id} is ${subscription.status} again — restored user ${userId}'s plan`);
+    return;
+  }
+
   const current = await activeSubscriptionRow(db, userId);
   if (!isPaidTier(current?.tier)) return;
 
@@ -328,9 +364,9 @@ async function handleSubscriptionChange(
     const existingDeadline = current.past_due_grace_expiry ? new Date(current.past_due_grace_expiry) : null;
     if (existingDeadline && Date.now() > existingDeadline.getTime()) {
       console.warn(
-        `[Billing] grace expired for user ${userId} at ${existingDeadline.toISOString()} — downgrading to free`
+        `[Billing] grace expired for user ${userId} at ${existingDeadline.toISOString()} — suspending the plan`
       );
-      await applyTierDowngradeToFree(userId, db);
+      await suspendTierForNonPayment(userId, db);
       return;
     }
 
