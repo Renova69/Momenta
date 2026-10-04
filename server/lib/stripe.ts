@@ -88,6 +88,20 @@ function isMissingResource(err: unknown): boolean {
   return e?.code === 'resource_missing' || e?.statusCode === 404;
 }
 
+/**
+ * The subscription as Stripe holds it now, or null when Stripe has no such
+ * subscription. Throws on anything else — a caller that cannot learn the
+ * current state must not quietly fall back to a stale one (N-44).
+ */
+export async function retrieveSubscriptionOrNull(subscriptionId: string): Promise<Stripe.Subscription | null> {
+  try {
+    return await getStripeClient().subscriptions.retrieve(subscriptionId);
+  } catch (err) {
+    if (isMissingResource(err)) return null;
+    throw err;
+  }
+}
+
 export async function subscriptionLivenessAtStripe(subscriptionId: string): Promise<SubscriptionLiveness> {
   try {
     const subscription = await getStripeClient().subscriptions.retrieve(subscriptionId);

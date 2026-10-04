@@ -4,7 +4,7 @@ import Stripe from 'stripe';
 import { pool } from '../lib/db';
 import { CONFIG } from '../lib/config';
 import { errorLabel } from '../lib/errors';
-import { getStripeClient, isStripeConfigured } from '../lib/stripe';
+import { getStripeClient, isLiveSubscriptionStatus, isStripeConfigured, retrieveSubscriptionOrNull } from '../lib/stripe';
 import {
   applyTierUpgrade,
   applyTierDowngradeToFree,
@@ -220,7 +220,7 @@ async function resolvePurchasedTier(session: Stripe.Checkout.Session): Promise<P
 async function grantTierFromSession(
   db: PoolClient,
   session: Stripe.Checkout.Session,
-  purchasedTier: PaidPlanTier | null
+  prefetched: PrefetchedEventData
 ): Promise<void> {
   const userId = session.metadata?.userId || session.client_reference_id;
   if (!userId) {
@@ -242,9 +242,17 @@ async function grantTierFromSession(
     return;
   }
 
-  // M7 — already resolved, outside the transaction. See prefetchSessionTier.
-  const tier = purchasedTier;
+  // M7 — already resolved, outside the transaction. See prefetchExternalData.
+  const tier = prefetched.purchasedTier;
   if (!tier) return;
+
+  if (prefetched.subscriptionEnded) {
+    console.warn(
+      `[Billing] checkout session ${session.id} completed for subscription ${sessionSubscriptionId(session)}, ` +
+        'which Stripe says has already ended — no tier granted'
+    );
+    return;
+  }
 
   await applyTierUpgrade(userId, tier, {
     billingType: session.mode === 'subscription' ? 'monthly' : 'one_time',
@@ -348,26 +356,29 @@ async function handleInvoicePaid(db: PoolClient, invoice: Stripe.Invoice): Promi
 async function handleSubscriptionChange(
   db: PoolClient,
   subscription: Stripe.Subscription,
-  eventType: string
+  eventType: string,
+  currentStatus?: Stripe.Subscription.Status
 ): Promise<void> {
+  // N-44 — what Stripe says now, not what this event carried, when known.
+  const status = currentStatus ?? subscription.status;
   const isDeleted = eventType === 'customer.subscription.deleted';
-  const hasEnded = isDeleted || ENDED_SUBSCRIPTION_STATUSES.has(subscription.status);
-  const isUnpaid = subscription.status === 'unpaid';
-  const isHealthy = HEALTHY_SUBSCRIPTION_STATUSES.has(subscription.status);
-  const needsWrite = hasEnded || isUnpaid || subscription.status === 'past_due' || isHealthy;
+  const hasEnded = isDeleted || ENDED_SUBSCRIPTION_STATUSES.has(status);
+  const isUnpaid = status === 'unpaid';
+  const isHealthy = HEALTHY_SUBSCRIPTION_STATUSES.has(status);
+  const needsWrite = hasEnded || isUnpaid || status === 'past_due' || isHealthy;
   if (!needsWrite) return;
 
   const userId = await resolveSubscriptionUserId(db, subscription);
   if (!userId) {
     console.warn(
-      `[Billing] subscription ${subscription.id} changed (status=${subscription.status}) but no account matches it ` +
+      `[Billing] subscription ${subscription.id} changed (status=${status}) but no account matches it ` +
         '— no userId metadata and no stored stripe_subscription_id. Tier NOT changed; check this account by hand.'
     );
     return;
   }
   if (!(await isSubscriptionOnFile(db, userId, subscription.id))) {
     console.warn(
-      `[Billing] subscription ${subscription.id} changed (status=${subscription.status}) but is not the one on file ` +
+      `[Billing] subscription ${subscription.id} changed (status=${status}) but is not the one on file ` +
         `for user ${userId} — tier NOT changed`
     );
     return;
@@ -386,14 +397,14 @@ async function handleSubscriptionChange(
   }
 
   if (isHealthy && (await restoreLapsedTier(userId, subscription.id, { db }))) {
-    console.info(`[Billing] subscription ${subscription.id} is ${subscription.status} again — restored user ${userId}'s plan`);
+    console.info(`[Billing] subscription ${subscription.id} is ${status} again — restored user ${userId}'s plan`);
     return;
   }
 
   const current = await activeSubscriptionRow(db, userId);
   if (!isPaidTier(current?.tier)) return;
 
-  if (subscription.status === 'past_due') {
+  if (status === 'past_due') {
     const existingDeadline = current.past_due_grace_expiry ? new Date(current.past_due_grace_expiry) : null;
     if (existingDeadline && Date.now() > existingDeadline.getTime()) {
       console.warn(
@@ -421,7 +432,7 @@ async function dispatchEvent(db: PoolClient, event: Stripe.Event, prefetched: Pr
   switch (event.type) {
     case 'checkout.session.completed':
     case 'checkout.session.async_payment_succeeded':
-      await grantTierFromSession(db, event.data.object as Stripe.Checkout.Session, prefetched.purchasedTier);
+      await grantTierFromSession(db, event.data.object as Stripe.Checkout.Session, prefetched);
       break;
 
     case 'checkout.session.async_payment_failed': {
@@ -436,7 +447,12 @@ async function dispatchEvent(db: PoolClient, event: Stripe.Event, prefetched: Pr
 
     case 'customer.subscription.updated':
     case 'customer.subscription.deleted':
-      await handleSubscriptionChange(db, event.data.object as Stripe.Subscription, event.type);
+      await handleSubscriptionChange(
+        db,
+        event.data.object as Stripe.Subscription,
+        event.type,
+        prefetched.currentStatus
+      );
       break;
 
     default:
@@ -476,9 +492,35 @@ async function dispatchEvent(db: PoolClient, event: Stripe.Event, prefetched: Pr
  */
 interface PrefetchedEventData {
   purchasedTier: PaidPlanTier | null;
+  /**
+   * N-44 — the subscription's status as Stripe holds it now, for a
+   * subscription.updated event. Stripe does not guarantee delivery order, so
+   * the snapshot an event carries can be older than one already applied: a
+   * past_due redelivered after the recovery started a new grace window on a
+   * paid-up account. Absent when Stripe no longer has the subscription, where
+   * the snapshot is all there is.
+   */
+  currentStatus?: Stripe.Subscription.Status;
+  /**
+   * N-44 — a checkout for a subscription Stripe says has already ended. A
+   * completion processed after the cancellation used to grant Pro against a
+   * dead subscription, and nothing later took it away.
+   */
+  subscriptionEnded?: boolean;
 }
 
+/**
+ * A failure to reach Stripe throws, so the transaction never opens, the
+ * delivery answers 500 and Stripe retries it — rather than acting on a
+ * snapshot that may be stale.
+ */
 async function prefetchExternalData(event: Stripe.Event): Promise<PrefetchedEventData> {
+  if (event.type === 'customer.subscription.updated') {
+    const snapshot = event.data.object as Stripe.Subscription;
+    const current = await retrieveSubscriptionOrNull(snapshot.id);
+    return { purchasedTier: null, currentStatus: current?.status };
+  }
+
   if (event.type !== 'checkout.session.completed' && event.type !== 'checkout.session.async_payment_succeeded') {
     return { purchasedTier: null };
   }
@@ -490,7 +532,11 @@ async function prefetchExternalData(event: Stripe.Event): Promise<PrefetchedEven
     return { purchasedTier: null };
   }
 
-  return { purchasedTier: await resolvePurchasedTier(session) };
+  const subscriptionId = sessionSubscriptionId(session);
+  const subscription = subscriptionId ? await retrieveSubscriptionOrNull(subscriptionId) : null;
+  const subscriptionEnded = !!subscriptionId && (!subscription || !isLiveSubscriptionStatus(subscription.status));
+
+  return { purchasedTier: await resolvePurchasedTier(session), subscriptionEnded };
 }
 
 async function processEvent(event: Stripe.Event, prefetched: PrefetchedEventData): Promise<{ duplicate: boolean }> {

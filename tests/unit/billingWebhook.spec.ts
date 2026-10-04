@@ -27,14 +27,42 @@ vi.hoisted(() => {
  * accepted, so constructEvent is stubbed to parse the raw body it was handed
  * — the same Stripe.Event object a real verified delivery produces.
  */
-vi.mock('../../server/lib/stripe', () => ({
-  isStripeConfigured: () => true,
-  getStripeClient: () => ({
-    webhooks: {
-      constructEvent: (body: Buffer) => JSON.parse(body.toString()),
+/**
+ * What Stripe says a subscription's status is *now*, as opposed to what the
+ * event carrying it says (N-44). postEvent records each subscription.updated
+ * snapshot here, so an in-order delivery reads back exactly what it carried;
+ * a test about a stale delivery pins the current status first with stripeSays.
+ * Absent means active.
+ */
+const stripeNow = vi.hoisted(() => new Map<string, string>());
+const pinnedByTest = vi.hoisted(() => new Set<string>());
+const UNREACHABLE = '__unreachable__';
+const MISSING = '__missing__';
+
+vi.mock('../../server/lib/stripe', async () => {
+  // The real status rule, not a restated copy that could drift from it.
+  const actual = await vi.importActual<typeof import('../../server/lib/stripe')>('../../server/lib/stripe');
+  return {
+    isStripeConfigured: () => true,
+    isLiveSubscriptionStatus: actual.isLiveSubscriptionStatus,
+    getStripeClient: () => ({
+      webhooks: {
+        constructEvent: (body: Buffer) => JSON.parse(body.toString()),
+      },
+    }),
+    retrieveSubscriptionOrNull: async (id: string) => {
+      const status = stripeNow.get(id) ?? 'active';
+      if (status === '__unreachable__') throw new Error('ECONNRESET');
+      if (status === '__missing__') return null;
+      return { id, status };
     },
-  }),
-}));
+  };
+});
+
+function stripeSays(subscriptionId: string, status: string): void {
+  stripeNow.set(subscriptionId, status);
+  pinnedByTest.add(subscriptionId);
+}
 
 import { handleStripeWebhook, eventCustomerId } from '../../server/routes/billingWebhook';
 import { applyTierUpgrade, suspendTierForNonPayment } from '../../server/lib/subscriptionUpgrade';
@@ -74,6 +102,10 @@ async function registerHost(): Promise<string> {
 }
 
 async function postEvent(event: Record<string, unknown>): Promise<Response> {
+  if (event.type === 'customer.subscription.updated') {
+    const object = (event.data as { object: { id: string; status: string } }).object;
+    if (!pinnedByTest.has(object.id)) stripeNow.set(object.id, object.status);
+  }
   return fetch(`${BASE_URL}/api/billing/webhook`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'stripe-signature': 't=1,v1=stubbed' },
@@ -583,6 +615,87 @@ describe('events about a subscription other than the one on file (N-43)', () => 
     });
 
     expect((await subscriptionRow(userId)).stripe_subscription_id).toBe(current);
+  });
+});
+
+/**
+ * N-44 — Stripe does not guarantee delivery order, and every handler acted on
+ * the snapshot its event carried. A past_due redelivered after the recovery
+ * started a new grace window on a paid-up account; a checkout completion
+ * processed after its subscription was deleted granted Pro for good. The
+ * handlers now ask Stripe for the subscription's state when it decides.
+ */
+describe('events delivered out of order (N-44)', () => {
+  it('a past_due delivered after the recovery does not start a grace window', async () => {
+    const userId = await registerHost();
+    const subscriptionId = uniqueId('sub_recovered_first');
+    await applyTierUpgrade(userId, 'pro_planner', { billingType: 'monthly', stripeSubscriptionId: subscriptionId });
+    stripeSays(subscriptionId, 'active');
+
+    await postEvent({
+      id: uniqueId('evt'),
+      type: 'customer.subscription.updated',
+      data: { object: { id: subscriptionId, status: 'past_due', metadata: { userId } } },
+    });
+
+    const row = await subscriptionRow(userId);
+    expect(row.tier).toBe('pro_planner');
+    expect(row.past_due_grace_expiry).toBeNull();
+  });
+
+  it('a checkout completion processed after its subscription was cancelled grants nothing', async () => {
+    const userId = await registerHost();
+    const subscriptionId = uniqueId('sub_cancelled_first');
+    stripeSays(subscriptionId, 'canceled');
+
+    await postEvent(
+      checkoutSessionEvent('checkout.session.completed', {
+        mode: 'subscription',
+        payment_status: 'paid',
+        amount_total: 4900,
+        customer: uniqueId('cus'),
+        subscription: subscriptionId,
+        metadata: { userId, tier: 'pro_planner' },
+      })
+    );
+
+    expect((await subscriptionRow(userId)).tier).toBe('free');
+  });
+
+  it('asks Stripe to retry when it cannot be asked, rather than acting on the snapshot', async () => {
+    const userId = await registerHost();
+    const subscriptionId = uniqueId('sub_unreachable');
+    stripeSays(subscriptionId, UNREACHABLE);
+
+    const res = await postEvent(
+      checkoutSessionEvent('checkout.session.completed', {
+        mode: 'subscription',
+        payment_status: 'paid',
+        amount_total: 4900,
+        customer: uniqueId('cus'),
+        subscription: subscriptionId,
+        metadata: { userId, tier: 'pro_planner' },
+      })
+    );
+
+    expect(res.status).toBe(500);
+    expect((await subscriptionRow(userId)).tier).toBe('free');
+  });
+
+  it('acts on the snapshot when Stripe no longer has the subscription at all', async () => {
+    // Nothing newer exists to prefer over it.
+    const userId = await registerHost();
+    const subscriptionId = uniqueId('sub_vanished');
+    await applyTierUpgrade(userId, 'pro_planner', { billingType: 'monthly', stripeSubscriptionId: subscriptionId });
+    stripeSays(subscriptionId, MISSING);
+
+    await postEvent({
+      id: uniqueId('evt'),
+      type: 'customer.subscription.updated',
+      data: { object: { id: subscriptionId, status: 'canceled', metadata: { userId } } },
+    });
+
+    expect((await subscriptionRow(userId)).tier).toBe('free');
   });
 });
 
