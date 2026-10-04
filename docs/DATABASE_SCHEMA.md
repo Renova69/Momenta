@@ -35,6 +35,7 @@ This schema is designed for PostgreSQL 14+ and is 100% compatible with local Doc
 - `role` (VARCHAR(50)): `'couple'`, `'planner'`, `'venue'`, `'photographer'`
 - `companyName` (VARCHAR(150), Nullable)
 - `avatar_url` (TEXT, Nullable)
+- `is_demo` (BOOLEAN, NOT NULL, default false — migration 030): a demo login whose password is public (it ships in the client bundle). The public showcase leaves out every album such an account owns, whatever the album's own `is_public` says — otherwise anyone could sign in as the demo host and publish whatever they liked on the landing page (MASTER_AUDIT N-40). True for the two logins seeded by migration 007.
 - `token_version` (INTEGER, NOT NULL, default 0 — migration 019): the session
   generation for this account. Every host JWT carries the version it was minted
   at, and `requireAuth`/`optionalAuth` reject a token whose version is behind
@@ -350,6 +351,7 @@ the strength of mail nobody received.
 | 027 | `027_quest_grand_prize.sql` | `events.quest_prize` — the host names the prize for the scavenger quests; NULL shows the client's localized default. |
 | 028 | `028_tv_leaderboard.sql` | `events.show_tv_leaderboard` — the host's choice to show the quest leaderboard beside the photos on the TV wall. Off by default. |
 | 029 | `029_subscription_lapsed_tier.sql` | `subscriptions.lapsed_tier` — a plan suspended for non-payment, rather than ended, so a payment that recovers after the grace window restores it (N-35). |
+| 030 | `030_demo_accounts_off_showcase.sql` | `users.is_demo` — the public demo logins can no longer put an album on the landing page; the seeded demo wedding is unpublished (N-40). |
 
 Full detail on the security/architecture-motivated migrations (009-019) is in
 `OPEN_ITEMS.md`, which is kept current as the working audit log for this kind

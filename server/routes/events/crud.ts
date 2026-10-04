@@ -90,6 +90,9 @@ eventsRouter.get('/showcase/feed', async (_req, res) => {
         SELECT id, title, slug, host_name, event_date, venue_name, cover_image_url, theme_palette
           FROM events
          WHERE is_public
+           -- N-40: a demo login's password is public, so nothing it owns may
+           -- reach the landing page, whatever the album's own flag says.
+           AND NOT EXISTS (SELECT 1 FROM users u WHERE u.id = events.host_user_id AND u.is_demo)
          ORDER BY created_at DESC
          LIMIT 6
       )

@@ -142,14 +142,43 @@ describe('showcase requires opt-in (H6)', () => {
     expect(row.rows[0].is_public).toBe(false);
   });
 
-  it('keeps the seeded demo wedding public so the landing page is not empty', async () => {
+  // N-40 — the seeded demo wedding used to be kept public "so the landing page
+  // is not empty". But its host is the demo login, whose password ships in the
+  // client bundle, and the album takes unmoderated anonymous uploads: anyone
+  // could put anything on the landing page. The page has static sample
+  // weddings for an empty feed, so it is not empty without it.
+  it('does not publish the seeded demo wedding', async () => {
     const seeded = await query<{ is_public: boolean }>(
       "SELECT is_public FROM events WHERE id = 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11'"
     );
     // Present in every environment that ran the seed migration; skip where it
     // was deliberately purged rather than assert on data that is not there.
     if (seeded.rows.length === 0) return;
-    expect(seeded.rows[0].is_public).toBe(true);
+    expect(seeded.rows[0].is_public).toBe(false);
+  });
+
+  it('never shows an album a demo account owns, even after it opts in', async () => {
+    // Unpublishing the seed is not enough on its own: anyone signed in with
+    // the public demo login can switch the album back on.
+    const host = await registerHost();
+    await query('UPDATE users SET is_demo = true WHERE id = $1', [host.userId]);
+
+    const optIn = await fetch(`${BASE_URL}/api/events/${host.eventId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${host.token}` },
+      body: JSON.stringify({ isPublic: true }),
+    });
+    expect(optIn.status).toBe(200);
+
+    expect((await showcase()).map((e) => e.id)).not.toContain(host.eventId);
+  });
+
+  it('marks exactly the two seeded demo logins as demo accounts', async () => {
+    const demo = await query<{ email: string }>('SELECT email FROM users WHERE is_demo ORDER BY email');
+    const seededDemo = demo.rows.map((r) => r.email).filter((e) => e.endsWith('@wedmoments.bg'));
+    // Absent where the seed was purged; otherwise exactly these two.
+    if (seededDemo.length === 0) return;
+    expect(seededDemo).toEqual(['demo.couple@wedmoments.bg', 'demo.planner@wedmoments.bg']);
   });
 
   // N-36 — the preview query filtered on status alone. A disposable-mode
