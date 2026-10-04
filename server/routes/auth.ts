@@ -8,6 +8,7 @@ import { validateBody } from '../middleware/validate';
 import { computeExpiry } from '../lib/retention';
 import { authLimiter } from '../middleware/rateLimit';
 import { errorLabel, isUniqueViolation } from '../lib/errors';
+import { wsManager } from '../ws/wsServer';
 
 export const authRouter = Router();
 
@@ -400,6 +401,9 @@ authRouter.post('/logout', requireAuth, async (req, res) => {
     await pool.query('UPDATE users SET token_version = token_version + 1 WHERE id = $1', [
       req.user!.userId,
     ]);
+    // An open socket proved its identity before this and never re-checks it
+    // on its own; close it so it cannot keep host privileges (N-38).
+    wsManager.closeUserSessions(req.user!.userId);
     res.status(204).send();
   } catch (err) {
     console.error('[Auth] POST /logout error:', errorLabel(err));

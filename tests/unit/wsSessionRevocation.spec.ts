@@ -162,4 +162,55 @@ describe('WebSocket honours session revocation (H9)', () => {
     const { isHost } = await joinAndAwait(ws, eventId, fresh);
     expect(isHost).toBe(true);
   });
+
+  // N-38 — the H9 fix checked token_version only when an AUTH frame arrived.
+  // A socket that authenticated before the logout kept its host privileges
+  // for as long as it stayed open, and a re-join reused the identity it had
+  // proven earlier. The tests above all open a new socket after the logout,
+  // which is the one case that was already covered.
+  describe('a socket that was already open when the host signed out (N-38)', () => {
+    async function freshHost(): Promise<{ token: string; eventId: string; userId: string }> {
+      const host = await registerHost();
+      cleanup.push(host);
+      return host;
+    }
+    const cleanup: { eventId: string; userId: string }[] = [];
+
+    afterAll(async () => {
+      for (const host of cleanup) {
+        await deleteEventFixture(host.eventId);
+        await query('DELETE FROM users WHERE id = $1', [host.userId]).catch(() => undefined);
+      }
+    });
+
+    it('stops receiving hosts-only broadcasts the moment the host logs out', async () => {
+      const host = await freshHost();
+      const ws = await open();
+      expect((await joinAndAwait(ws, host.eventId, host.token)).isHost).toBe(true);
+
+      const res = await fetch(`${BASE_URL}/api/auth/logout`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${host.token}` },
+      });
+      expect(res.status).toBe(204);
+
+      const received = awaitMessage(ws, 'PHOTO_ADDED');
+      wsManager.broadcastToEventHosts(host.eventId, 'PHOTO_ADDED', { id: 'pending-photo', status: 'pending' });
+
+      expect(await received).toBeNull();
+    });
+
+    it('does not reuse a revoked identity when the socket re-joins a room', async () => {
+      // Revoked without going through this process's logout route — another
+      // instance served the logout, or the row was changed by hand. The join
+      // is where this process can notice.
+      const host = await freshHost();
+      const ws = await open();
+      expect((await joinAndAwait(ws, host.eventId, host.token)).isHost).toBe(true);
+
+      await query('UPDATE users SET token_version = token_version + 1 WHERE id = $1', [host.userId]);
+
+      expect((await joinAndAwait(ws, host.eventId)).isHost).toBe(false);
+    });
+  });
 });

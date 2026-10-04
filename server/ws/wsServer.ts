@@ -249,6 +249,14 @@ export class WsEventManager {
               this.eventRooms.get(oldMeta.eventId)?.delete(ws);
             }
 
+            // N-38 — the identity was proven when AUTH arrived, which may be
+            // long before this join. A session revoked since then (a logout
+            // served by another process, say) must not be carried into a new
+            // room. One primary-key lookup, and joins are rate-limited.
+            if (verifiedUser && !(await isSessionTokenCurrent(verifiedUser))) {
+              verifiedUser = null;
+            }
+
             // Verify if user actually owns this event for isHost privilege.
             // Cached — a client re-joining the same room repeatedly (or a
             // reconnect storm) does not re-hit the DB every time (SEC-D6).
@@ -290,6 +298,26 @@ export class WsEventManager {
     });
 
     return this.wss;
+  }
+
+  /**
+   * Closes every socket this process holds that authenticated as `userId`.
+   * Called on logout (N-38): token_version only stops a revoked token at the
+   * next AUTH, and an already-open socket never sends another one, so it kept
+   * its host privileges — and the hosts-only channel, with pending photos and
+   * their preview tokens — for as long as the tab stayed open. Closing is what
+   * drops the identity the connection proved; the client reconnects as
+   * whatever its storage now says, which after a logout is a guest.
+   */
+  public closeUserSessions(userId: string): number {
+    let closed = 0;
+    for (const [ws, meta] of this.clientMeta) {
+      if (meta.userId !== userId) continue;
+      this.removeClient(ws);
+      ws.close(4001, 'Session revoked');
+      closed += 1;
+    }
+    return closed;
   }
 
   private removeClient(ws: WebSocket) {
