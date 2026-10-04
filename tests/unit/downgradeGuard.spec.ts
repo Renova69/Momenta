@@ -46,7 +46,7 @@ vi.mock('../../server/lib/stripe', () => ({
 import { authRouter } from '../../server/routes/auth';
 import { subscriptionsRouter } from '../../server/routes/subscriptions';
 import { billingRouter } from '../../server/routes/billing';
-import { refreshExpiryDates, GRACE_PERIOD_DAYS } from '../../server/lib/retention';
+import { refreshExpiryDates, sweepExpiredAlbums, GRACE_PERIOD_DAYS } from '../../server/lib/retention';
 import { CONFIG } from '../../server/lib/config';
 import { query } from '../../server/lib/db';
 import { deleteEventFixtures } from '../helpers/cleanup';
@@ -200,9 +200,16 @@ describe('downgrade guard (H7)', () => {
       // A wedding that happened months ago, on an account being recomputed at
       // the free tier's 7 days. Without a floor the new expiry is a date long
       // gone, and the very next sweep treats the album as eligible.
+      //
+      // The stored deadline is the one the paid plan gave it, six months out.
+      // That is what makes this a downgrade: the floor protects a deadline the
+      // host already had from being pulled into the past, and is measured
+      // against it (N-34).
       const host = await registerHost();
       await query(
-        "UPDATE events SET event_date = NOW() - INTERVAL '6 months', created_at = NOW() - INTERVAL '7 months' WHERE id = $1",
+        `UPDATE events SET event_date = NOW() - INTERVAL '6 months', created_at = NOW() - INTERVAL '7 months',
+                           expires_at = NOW() + INTERVAL '6 months'
+          WHERE id = $1`,
         [host.eventId]
       );
 
@@ -231,6 +238,74 @@ describe('downgrade guard (H7)', () => {
       // Free tier keeps an album 7 days past the celebration.
       const expected = eventDate + 7 * 24 * 60 * 60 * 1000;
       expect(Math.abs(expiresAt - expected)).toBeLessThan(60 * 1000);
+    });
+
+    it('floors a Pro Planner album that loses its indefinite retention', async () => {
+      // A null expiry is indefinite retention. Dropping to a tier with a window
+      // is the largest shortening there is, and the floor has to catch it.
+      const host = await registerHost();
+      await query(
+        `UPDATE events SET event_date = NOW() - INTERVAL '6 months', created_at = NOW() - INTERVAL '7 months',
+                           expires_at = NULL
+          WHERE id = $1`,
+        [host.eventId]
+      );
+
+      await refreshExpiryDates(host.userId);
+
+      const row = await query<{ expires_at: string }>('SELECT expires_at FROM events WHERE id = $1', [host.eventId]);
+      const graceFloor = Date.now() + (GRACE_PERIOD_DAYS - 1) * 24 * 60 * 60 * 1000;
+      expect(new Date(row.rows[0].expires_at).getTime()).toBeGreaterThan(graceFloor);
+    });
+
+    // N-34 — the floor was re-applied on every run, measured from that run's
+    // `now`. The retention sweep refreshes every album nightly, so any album
+    // within 30 days of its deadline was pushed back to 30 days out, every
+    // night, forever: no notice fell due, nothing reached grace, and the
+    // expiry the host saw was always a month away.
+    it('leaves an album that expired on its own plan expired', async () => {
+      // Free tier throughout, no tier change: the deadline is the plan's own,
+      // and it passed months ago. A refresh must not resurrect it.
+      const host = await registerHost();
+      await query(
+        `UPDATE events SET event_date = NOW() - INTERVAL '3 months', created_at = NOW() - INTERVAL '4 months',
+                           expires_at = NOW() - INTERVAL '3 months' + INTERVAL '7 days'
+          WHERE id = $1`,
+        [host.eventId]
+      );
+      const before = await query<{ expires_at: string }>('SELECT expires_at FROM events WHERE id = $1', [host.eventId]);
+
+      await refreshExpiryDates(host.userId);
+
+      const after = await query<{ expires_at: string }>('SELECT expires_at FROM events WHERE id = $1', [host.eventId]);
+      expect(new Date(after.rows[0].expires_at).toISOString()).toBe(
+        new Date(before.rows[0].expires_at).toISOString()
+      );
+
+      // And the sweep can see it. Report only: nothing is deleted here.
+      const sweep = await sweepExpiredAlbums(false, { eventIds: [host.eventId] });
+      expect(sweep.awaitingNotice.map((c) => c.eventId)).toEqual([host.eventId]);
+    });
+
+    it('does not move a floored deadline again on the next run', async () => {
+      // Yesterday's downgrade floored this album to 30 days out, so today it
+      // sits 29 days out. Today's refresh must leave it there, or the
+      // deadline never arrives.
+      const host = await registerHost();
+      await query(
+        `UPDATE events SET event_date = NOW() - INTERVAL '6 months', created_at = NOW() - INTERVAL '7 months',
+                           expires_at = NOW() + INTERVAL '29 days'
+          WHERE id = $1`,
+        [host.eventId]
+      );
+      const before = await query<{ expires_at: string }>('SELECT expires_at FROM events WHERE id = $1', [host.eventId]);
+
+      await refreshExpiryDates(host.userId);
+
+      const after = await query<{ expires_at: string }>('SELECT expires_at FROM events WHERE id = $1', [host.eventId]);
+      expect(new Date(after.rows[0].expires_at).toISOString()).toBe(
+        new Date(before.rows[0].expires_at).toISOString()
+      );
     });
 
     it('leaves an indefinite retention indefinite', async () => {

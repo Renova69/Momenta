@@ -143,7 +143,7 @@ export async function refreshExpiryDates(
   db: Pool | PoolClient = pool
 ): Promise<number> {
   const { rows } = await db.query(
-    `SELECT e.id, e.event_date, e.created_at,
+    `SELECT e.id, e.event_date, e.created_at, e.expires_at,
            COALESCE(s.tier, 'free') AS tier
       FROM events e
       LEFT JOIN subscriptions s
@@ -167,7 +167,15 @@ export async function refreshExpiryDates(
   //
   // This is a floor, not a freeze: a shorter plan still shortens retention,
   // it just cannot do so retroactively.
-  const floor = new Date(Date.now() + GRACE_PERIOD_DAYS * 24 * 60 * 60 * 1000);
+  //
+  // N-34 — and the floor is capped by the deadline the album already has. It
+  // exists to stop a recompute pulling a deadline closer; it must never push
+  // one further away. Measured from `now` alone, it did exactly that: this
+  // runs nightly for every album, so any album inside 30 days of its deadline
+  // was moved back to 30 days out every night — no notice ever fell due and
+  // nothing ever reached grace. Capped, an album floored once stays put, and
+  // one that expired on its own plan stays expired.
+  const floor = Date.now() + GRACE_PERIOD_DAYS * 24 * 60 * 60 * 1000;
 
   const ids: string[] = [];
   const expiries: (string | null)[] = [];
@@ -179,7 +187,10 @@ export async function refreshExpiryDates(
       expiries.push(null);
       continue;
     }
-    expiries.push((expiry.getTime() < floor.getTime() ? floor : expiry).toISOString());
+    // A null stored expiry was indefinite, so the full floor applies.
+    const current = row.expires_at ? new Date(row.expires_at).getTime() : Infinity;
+    const cappedFloor = Math.min(current, floor);
+    expiries.push(new Date(Math.max(expiry.getTime(), cappedFloor)).toISOString());
   }
 
   await db.query(
