@@ -13,56 +13,52 @@ import { TIER_WEIGHTS } from '../../shared/planCaps';
  */
 export type CheckoutBannerState = 'confirming' | 'active' | 'delayed' | 'cancelled' | null;
 
-/** Where the pricing modal records the tier being bought before redirecting. */
-export const CHECKOUT_TIER_KEY = 'wedmoments_checkout_tier';
 export const CHECKOUT_POLL_MS = 3000;
 export const CHECKOUT_POLL_ATTEMPTS = 20;
 
-function readBoughtTier(): PlanTier | null {
-  try {
-    const tier = window.sessionStorage.getItem(CHECKOUT_TIER_KEY) as PlanTier | null;
-    window.sessionStorage.removeItem(CHECKOUT_TIER_KEY);
-    return tier && tier in TIER_WEIGHTS ? tier : null;
-  } catch {
-    return null;
-  }
-}
+const rank = (tier: PlanTier): number => TIER_WEIGHTS[tier] ?? 0;
 
-/** Whether `tier` is at least the plan bought; any paid tier when that is unknown. */
-function hasArrived(tier: PlanTier | undefined, bought: PlanTier | null): boolean {
-  if (!tier) return false;
-  if (!bought) return tier !== 'free';
-  return (TIER_WEIGHTS[tier] ?? 0) >= (TIER_WEIGHTS[bought] ?? 0);
+/** The plan named in the return URL, if it is one. */
+function parseTier(value: string | null): PlanTier | null {
+  return value && value in TIER_WEIGHTS ? (value as PlanTier) : null;
 }
 
 /**
  * N-54 — the plan is granted by Stripe's webhook, not by this redirect. The
  * banner used to announce "your plan is now active" before the webhook had
- * run, and refetched the album once, only if it was already loaded. Now it
- * says what is known, refetches every few seconds until the album's plan
- * reaches the one bought, and says plainly if that takes longer than a minute.
+ * run. Now it says what is known, quietly refreshes the album every few
+ * seconds until its plan reaches the one bought, and says plainly if that
+ * takes longer than a minute.
  *
- * Reads and strips `?checkout=` once, so a reload does not show it again.
+ * The plan bought arrives as `?tier=` on the return URL (PricingPlansModal
+ * puts it there), so nothing depends on browser storage. Without it, the plan
+ * must rise above the first tier seen here: an album that was already paid is
+ * not evidence that this purchase arrived.
+ *
+ * `refresh` must be quiet — no loading screen, no navigation — because it
+ * runs every few seconds while the host is looking at the page.
  */
 export function useCheckoutReturn(
   planTier: PlanTier | undefined,
-  slug: string | undefined,
-  reload: (slug: string) => unknown
+  refresh: () => unknown
 ): [CheckoutBannerState, () => void] {
   const [state, setState] = useState<CheckoutBannerState>(null);
   const [bought, setBought] = useState<PlanTier | null>(null);
+  const [baseline, setBaseline] = useState<PlanTier | null>(null);
   const [attempts, setAttempts] = useState(0);
   // Held in a ref so a caller passing a new function each render does not
   // keep resetting the poll timer before it can fire.
-  const reloadRef = useRef(reload);
-  reloadRef.current = reload;
+  const refreshRef = useRef(refresh);
+  refreshRef.current = refresh;
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const checkout = params.get('checkout');
     if (checkout !== 'success' && checkout !== 'cancelled') return;
 
+    const tier = parseTier(params.get('tier'));
     params.delete('checkout');
+    params.delete('tier');
     const cleanSearch = params.toString();
     window.history.replaceState({}, '', window.location.pathname + (cleanSearch ? `?${cleanSearch}` : ''));
 
@@ -70,13 +66,21 @@ export function useCheckoutReturn(
       setState('cancelled');
       return;
     }
-    setBought(readBoughtTier());
+    setBought(tier);
     setState('confirming');
   }, []);
 
+  // The first tier seen while confirming, for when the URL named none.
+  useEffect(() => {
+    if (state === 'confirming' && !bought && !baseline && planTier) setBaseline(planTier);
+  }, [state, bought, baseline, planTier]);
+
   useEffect(() => {
     if (state !== 'confirming') return;
-    if (hasArrived(planTier, bought)) {
+    const arrived = bought
+      ? !!planTier && rank(planTier) >= rank(bought)
+      : !!planTier && !!baseline && rank(planTier) > rank(baseline);
+    if (arrived) {
       setState('active');
       return;
     }
@@ -85,11 +89,11 @@ export function useCheckoutReturn(
       return;
     }
     const timer = setTimeout(() => {
-      if (slug) reloadRef.current(slug);
+      refreshRef.current();
       setAttempts((n) => n + 1);
     }, CHECKOUT_POLL_MS);
     return () => clearTimeout(timer);
-  }, [state, planTier, bought, attempts, slug]);
+  }, [state, planTier, bought, baseline, attempts]);
 
   return [state, () => setState(null)];
 }

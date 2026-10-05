@@ -6,7 +6,6 @@ import { PricingPlansModal } from '../../src/components/host/PricingPlansModal';
 import { PLANS } from '../../src/config/plans';
 import { PlanTier } from '../../src/types';
 import { i18n } from '../../src/i18n';
-import { CHECKOUT_TIER_KEY } from '../../src/hooks/useCheckoutReturn';
 import confetti from 'canvas-confetti';
 
 // G1 (OPEN_ITEMS.md) — billing-critical: this is the only place a host
@@ -146,10 +145,10 @@ describe('PricingPlansModal', () => {
   });
 
   it('redirects to a real Stripe Checkout URL instead of the self-serve write when Stripe is configured', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockResolvedValue(mockFetchResponse(200, { url: 'https://checkout.stripe.com/c/pay/cs_test_123' }))
-    );
+    const checkoutFetch = vi
+      .fn()
+      .mockResolvedValue(mockFetchResponse(200, { url: 'https://checkout.stripe.com/c/pay/cs_test_123' }));
+    vi.stubGlobal('fetch', checkoutFetch);
     const onUpgradePlan = vi.fn().mockResolvedValue(undefined);
     const hrefSetter = vi.fn();
     Object.defineProperty(window, 'location', {
@@ -168,9 +167,10 @@ describe('PricingPlansModal', () => {
     expect(hrefSetter).toHaveBeenCalledWith('https://checkout.stripe.com/c/pay/cs_test_123');
     // The real path never touches the direct tier-write fallback.
     expect(onUpgradePlan).not.toHaveBeenCalled();
-    // And the return page is told which plan to wait for (N-54).
-    expect(window.sessionStorage.getItem(CHECKOUT_TIER_KEY)).toBe('celebration_pass');
-    window.sessionStorage.removeItem(CHECKOUT_TIER_KEY);
+    // And the return page is told which plan to wait for (N-54), in the URL
+    // Stripe sends the host back to.
+    const sent = JSON.parse(String(checkoutFetch.mock.calls[0][1].body));
+    expect(new URL(sent.successUrl).searchParams.get('tier')).toBe('celebration_pass');
   });
 
   it('surfaces a genuine checkout error directly instead of silently falling back to self-serve', async () => {

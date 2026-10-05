@@ -49,6 +49,8 @@ interface AppContextType {
   // Actions
   updateEvent: (updates: Partial<WeddingEvent>) => void;
   upgradePlanTier: (tier: PlanTier) => Promise<void>;
+  /** Re-read the album record quietly: no loading screen, no navigation. */
+  refreshEventDetails: () => Promise<void>;
   updateQRConfig: (updates: Partial<QRCanvasConfig>) => void;
   registerGuest: (name: string, tableNumber?: string, avatarUrl?: string) => Promise<Guest>;
   addPhoto: (photoData: {
@@ -241,6 +243,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     storageService.updateEvent(updates);
   }, []);
 
+  const refreshEventDetails = useCallback(() => storageService.refreshEventDetails(), []);
+
   const upgradePlanTier = useCallback(async (tier: PlanTier) => {
     return storageService.upgradePlanTier(tier);
   }, []);
@@ -350,6 +354,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           loadEventBySlug,
           updateEvent,
           upgradePlanTier,
+          refreshEventDetails,
           updateQRConfig,
           registerGuest,
           addPhoto,

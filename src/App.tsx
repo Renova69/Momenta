@@ -104,6 +104,7 @@ function WeddingAppContent() {
     navigateView,
     navigateGuestTab,
     loadEventBySlug,
+    refreshEventDetails,
     updateEvent,
     upgradePlanTier,
     updateQRConfig,
@@ -132,8 +133,10 @@ function WeddingAppContent() {
   const [isHostProfileOpen, setIsHostProfileOpen] = useState(false);
   // Stripe redirects the browser back here after a real checkout. The plan is
   // granted by the webhook, not by this redirect, so the banner says what is
-  // actually known and keeps checking until the plan arrives (N-54).
-  const [checkoutBanner, dismissCheckoutBanner] = useCheckoutReturn(event?.planTier, event?.slug, loadEventBySlug);
+  // actually known and keeps checking until the plan arrives (N-54). The
+  // refresh is the quiet one: loadEventBySlug would put up the full-screen
+  // spinner and move the host to the guest feed on every poll.
+  const [checkoutBanner, dismissCheckoutBanner] = useCheckoutReturn(event?.planTier, refreshEventDetails);
 
   const currentTheme = (event?.themePalette && THEMES[event.themePalette]) ? THEMES[event.themePalette] : THEMES.champagne_gold;
 

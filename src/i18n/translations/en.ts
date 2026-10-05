@@ -189,7 +189,7 @@ export const en: Record<string, string> = {
   'billing.checkout_success': 'Payment confirmed! Your plan is now active.',
   'billing.checkout_confirming': 'Payment received. Your plan will be active as soon as it is confirmed…',
   'billing.checkout_delayed':
-    'Payment received, but your plan is still being confirmed. Some payment methods, such as SEPA bank transfers, take a few days. Your plan will appear on its own.',
+    'Payment received, but your plan is still being confirmed. Some payment methods, such as SEPA bank transfers, take a few days. It is applied automatically when the payment clears; reload this page later to see it.',
   'billing.checkout_cancelled': 'Checkout was cancelled. Your plan was not changed.',
   'host.title': 'Host & Planner Studio',
   'host.subtitle': 'Sign in to manage your wedding settings, approve guest photos, and export high-res print posters.',

@@ -214,6 +214,11 @@ class WedStorageService {
    * showing anything else here would just reproduce the bug this replaces
    * (client claims an upgrade the server doesn't have).
    */
+  /** Re-read the album's own record only. See eventService.refreshEventDetails. */
+  public refreshEventDetails(): Promise<void> {
+    return eventService.refreshEventDetails(this.ctx);
+  }
+
   public async upgradePlanTier(tier: PlanTier): Promise<void> {
     await eventService.upgradePlanTier(this.ctx, tier);
   }

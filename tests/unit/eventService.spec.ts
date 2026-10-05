@@ -4,6 +4,7 @@ import {
   updateEvent,
   upgradePlanTier,
   refreshEventFromBackend,
+  refreshEventDetails,
   loadEventBySlug,
 } from '../../src/services/eventService';
 import { eventsApi } from '../../src/api/eventsApi';
@@ -217,6 +218,35 @@ describe('upgradePlanTier', () => {
     vi.spyOn(subscriptionsApi, 'upgrade').mockRejectedValue(new Error('Payment required'));
 
     await expect(upgradePlanTier(ctx, 'pro_planner')).rejects.toThrow('Payment required');
+  });
+});
+
+/**
+ * N-54 — the post-checkout banner polls the album every few seconds while a
+ * purchase settles. Through loadEventBySlug that meant the app's full-screen
+ * spinner and a jump to the guest feed on every poll, plus a full feed sync.
+ * This refresh re-reads the album record and nothing else.
+ */
+describe('refreshEventDetails (N-54)', () => {
+  it('updates the album record without joining the room or syncing the feed', async () => {
+    const { ctx, joinEventRoom, syncFromBackend, updateEventSpy } = makeContext();
+    vi.spyOn(eventsApi, 'getBySlug').mockResolvedValue({
+      id: EVENT_ID, slug: 'ivan-and-maria', plan_tier: 'celebration_pass',
+    } as never);
+
+    await refreshEventDetails(ctx);
+
+    expect(updateEventSpy).toHaveBeenCalledWith(expect.objectContaining({ id: EVENT_ID }), false);
+    expect(joinEventRoom).not.toHaveBeenCalled();
+    expect(syncFromBackend).not.toHaveBeenCalled();
+  });
+
+  it('swallows a failed attempt; the next poll asks again', async () => {
+    const { ctx, updateEventSpy } = makeContext();
+    vi.spyOn(eventsApi, 'getBySlug').mockRejectedValue(new Error('offline'));
+
+    await expect(refreshEventDetails(ctx)).resolves.toBeUndefined();
+    expect(updateEventSpy).not.toHaveBeenCalled();
   });
 });
 

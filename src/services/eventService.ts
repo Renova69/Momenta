@@ -68,6 +68,25 @@ export async function upgradePlanTier(ctx: ServiceContext, tier: PlanTier): Prom
   await refreshEventFromBackend(ctx);
 }
 
+/**
+ * Re-read only the album's own record — its plan above all — without the
+ * feed sync and room join loadEventBySlug also runs. For polling while a
+ * purchase settles (N-54): quiet, cheap, and a failed attempt just waits for
+ * the next one.
+ */
+export async function refreshEventDetails(ctx: ServiceContext): Promise<void> {
+  const slug = getEvent()?.slug;
+  if (!slug) return;
+  try {
+    const remote = await eventsApi.getBySlug(slug);
+    if (remote && (remote.id || remote.slug)) {
+      ctx.updateEvent(normalizeEvent(remote as RemoteEventPayload), false);
+    }
+  } catch {
+    // Offline or a blip: the next poll asks again.
+  }
+}
+
 /** Pull the event back from the server, discarding a rejected local edit. */
 export async function refreshEventFromBackend(ctx: ServiceContext): Promise<void> {
   const slug = getEvent()?.slug;
