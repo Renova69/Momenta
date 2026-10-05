@@ -144,6 +144,36 @@ eventsRouter.get('/showcase/feed', async (_req, res) => {
 });
 
 
+/** How long a deleted album's address stays with the host who deleted it (N-58). */
+const SLUG_RESERVATION_DAYS = 365;
+
+/**
+ * Whether `slug` belonged to an album another host deleted within the last
+ * SLUG_RESERVATION_DAYS.
+ *
+ * N-58 — deleting an album freed its address at once, and its printed QR
+ * codes and table cards stay in circulation. The next host to choose the same
+ * custom address received the guests who scanned them, and their photos. A
+ * reserved address is treated exactly like a taken one: the caller is given a
+ * variant. The host who deleted it may take it back.
+ */
+async function isSlugReservedForOthers(slug: string, userId: string): Promise<boolean> {
+  const { rows } = await pool.query(
+    `SELECT 1 FROM event_deletions
+      WHERE slug = $1
+        AND host_user_id IS DISTINCT FROM $2
+        AND deleted_at > NOW() - make_interval(days => $3)
+      LIMIT 1`,
+    [slug, userId, SLUG_RESERVATION_DAYS]
+  );
+  return rows.length > 0;
+}
+
+/** The variant a taken or reserved address is replaced with. */
+function slugVariant(slug: string, attempt: number): string {
+  return `${slug}-${Date.now().toString(36).slice(-4)}${attempt}`;
+}
+
 // POST /api/events — create a new event for the authenticated host (multi-event management)
 eventsRouter.post('/', requireAuth, validateBody(CreateEventSchema), async (req, res) => {
   const { title, hostName, slug, eventDate, venueName, themePalette, welcomeMessage, coverImageUrl } = req.body;
@@ -197,6 +227,8 @@ eventsRouter.post('/', requireAuth, validateBody(CreateEventSchema), async (req,
     }
 
     const baseSlug = slug ? slug.trim().toLowerCase() : `${cleanSlug(hostName)}-${Date.now().toString(36)}`;
+    // N-58 — an address another host deleted recently is taken, not free.
+    const baseSlugReserved = await isSlugReservedForOthers(baseSlug, userId);
     const eventDateIso = eventDate ? new Date(eventDate).toISOString() : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
     // Computed from the request-time clock rather than the row's own
     // created_at (not known until after the INSERT) — retention windows are
@@ -233,7 +265,7 @@ eventsRouter.post('/', requireAuth, validateBody(CreateEventSchema), async (req,
 
       for (let attempt = 0; attempt < MAX_SLUG_ATTEMPTS; attempt++) {
         const finalSlug =
-          attempt === 0 ? baseSlug : `${baseSlug}-${Date.now().toString(36).slice(-4)}${attempt}`;
+          attempt === 0 && !baseSlugReserved ? baseSlug : slugVariant(baseSlug, attempt);
         // A failed statement aborts the rest of a Postgres transaction until
         // rolled back - now that the retry loop runs inside one explicit
         // BEGIN (for the advisory lock above), each attempt needs its own
@@ -433,9 +465,14 @@ eventsRouter.put('/:id', requireAuth, requireUuidParams('id'), validateBody(Upda
     const MAX_SLUG_ATTEMPTS = 5;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let updated: any;
+    // N-58 — an address another host deleted recently is taken, not free.
+    const requestedSlug = String(updateRecord.slug ?? '');
+    if (slugValueIndex >= 0 && (await isSlugReservedForOthers(requestedSlug, req.user!.userId))) {
+      values[slugValueIndex] = slugVariant(requestedSlug, 0);
+    }
     for (let attempt = 0; attempt < MAX_SLUG_ATTEMPTS; attempt++) {
       if (attempt > 0 && slugValueIndex >= 0) {
-        values[slugValueIndex] = `${updateRecord.slug}-${Date.now().toString(36).slice(-4)}${attempt}`;
+        values[slugValueIndex] = slugVariant(requestedSlug, attempt);
       }
       try {
         updated = await pool.query(
