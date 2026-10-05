@@ -100,13 +100,14 @@ describe('the moderation queue after a downgrade (N-46)', () => {
     fireEvent.click(screen.getByText(i18n.t('host.approve')));
 
     expect(onSetPhotoStatus).toHaveBeenCalledWith('waiting-1', 'approved');
-    expect(screen.getByText(i18n.t('moderation.plan_lapsed_notice'))).toBeInTheDocument();
+    expect(screen.getByText(i18n.t('moderation.plan_lapsed_notice_off'))).toBeInTheDocument();
   });
 
   it('stays open while moderation is still switched on, even with nothing waiting yet', () => {
     openModeration({ ...baseEvent, isModerationEnabled: true }, []);
 
     expect(screen.getByText(i18n.t('host.all_caught_up'))).toBeInTheDocument();
+    expect(screen.getByText(i18n.t('moderation.plan_lapsed_notice'))).toBeInTheDocument();
     expect(screen.queryByText(i18n.t('gate.photo_moderation.title'))).not.toBeInTheDocument();
   });
 
@@ -114,6 +115,13 @@ describe('the moderation queue after a downgrade (N-46)', () => {
     openModeration(baseEvent, []);
 
     expect(screen.getByText(i18n.t('gate.photo_moderation.title'))).toBeInTheDocument();
+  });
+
+  it('does not tell the host to switch off moderation that is already off', () => {
+    openModeration(baseEvent, [pendingPhoto('waiting-3')]);
+
+    expect(screen.queryByText(i18n.t('moderation.plan_lapsed_notice'))).not.toBeInTheDocument();
+    expect(screen.getByText(i18n.t('moderation.plan_lapsed_notice_off'))).toBeInTheDocument();
   });
 
   it('shows no lapse notice on a plan that includes moderation', () => {

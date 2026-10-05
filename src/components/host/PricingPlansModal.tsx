@@ -1,4 +1,4 @@
-import React, { useId, useState } from 'react';
+import React, { useEffect, useId, useRef, useState } from 'react';
 import { PlanTier } from '../../types';
 import { PLANS } from '../../config/plans';
 import { i18n } from '../../i18n';
@@ -39,7 +39,25 @@ export const PricingPlansModal: React.FC<PricingPlansModalProps> = ({
   // N-51 — giving up a paid plan is asked about first, never done on one click.
   const [confirmingFree, setConfirmingFree] = useState(false);
   const titleId = useId();
+  const confirmTitleId = useId();
+  const confirmBodyId = useId();
+  const keepPlanRef = useRef<HTMLButtonElement>(null);
   const { dialogRef, dialogProps } = useDialog({ onClose, labelledBy: titleId, enabled: isOpen });
+
+  // The modal stays mounted while closed, so a question left open must not
+  // greet the host the next time they open it.
+  useEffect(() => {
+    if (!isOpen) {
+      setConfirmingFree(false);
+      setUpgradeError(null);
+    }
+  }, [isOpen]);
+
+  // Focus the safe answer, so a keyboard user does not have to tab back past
+  // the plan grid to reach the question.
+  useEffect(() => {
+    if (confirmingFree) keepPlanRef.current?.focus();
+  }, [confirmingFree]);
 
   if (!isOpen) return null;
 
@@ -174,21 +192,28 @@ export const PricingPlansModal: React.FC<PricingPlansModalProps> = ({
           {confirmingFree && (
             <div
               role="alert"
+              aria-labelledby={confirmTitleId}
+              aria-describedby={confirmBodyId}
               className="mt-5 mx-auto max-w-xl rounded-2xl border border-red-400/40 bg-red-500/10 p-4 text-left"
             >
-              <p className="text-sm font-semibold text-cream-100">
+              <p id={confirmTitleId} className="text-sm font-semibold text-cream-100">
                 {i18n.t('pricing.confirm_free_title', { plan: i18n.t(PLANS[currentPlanTier].name) })}
               </p>
-              <p className="mt-1 text-xs text-cream-300">{i18n.t('pricing.confirm_free_body')}</p>
+              <p id={confirmBodyId} className="mt-1 text-xs text-cream-300">
+                {i18n.t('pricing.confirm_free_body')}
+              </p>
               <div className="mt-4 flex flex-col-reverse sm:flex-row gap-2 sm:justify-end">
                 <button
+                  ref={keepPlanRef}
                   onClick={() => setConfirmingFree(false)}
+                  disabled={pendingTier !== null}
                   className="px-4 py-2 rounded-xl text-xs font-bold bg-gold-400 text-noir-900 hover:brightness-110"
                 >
                   {i18n.t('pricing.confirm_free_keep', { plan: i18n.t(PLANS[currentPlanTier].name) })}
                 </button>
                 <button
                   onClick={() => handleSelectPlan('free', true)}
+                  disabled={pendingTier !== null}
                   className="px-4 py-2 rounded-xl text-xs font-bold border border-red-400/50 text-red-300 hover:bg-red-500/15"
                 >
                   {i18n.t('pricing.confirm_free_switch')}

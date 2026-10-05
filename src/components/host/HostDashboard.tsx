@@ -272,7 +272,7 @@ export const HostDashboard: React.FC<HostDashboardProps> = ({
             <>
               {!moderationUnlocked && (
                 <p role="status" className="text-xs text-cream-300 bg-noir-900/60 border border-gold-400/20 rounded-2xl px-4 py-3">
-                  {i18n.t('moderation.plan_lapsed_notice')}
+                  {i18n.t(event.isModerationEnabled ? 'moderation.plan_lapsed_notice' : 'moderation.plan_lapsed_notice_off')}
                 </p>
               )}
               <ModerationQueue

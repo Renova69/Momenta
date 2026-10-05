@@ -246,6 +246,29 @@ describe('PricingPlansModal', () => {
       expect(screen.queryByText(i18n.t('pricing.confirm_free_title', { plan: passName() }))).not.toBeInTheDocument();
     });
 
+    it('moves focus to the safe choice when it asks', () => {
+      render(
+        <PricingPlansModal isOpen onClose={vi.fn()} currentPlanTier="deluxe_keepsake" onUpgradePlan={vi.fn()} />
+      );
+
+      fireEvent.click(choosePlanButton('free'));
+
+      expect(document.activeElement).toBe(
+        screen.getByRole('button', { name: i18n.t('pricing.confirm_free_keep', { plan: passName() }) })
+      );
+    });
+
+    it('does not reopen still asking, after being closed mid-question', () => {
+      const props = { onClose: vi.fn(), currentPlanTier: 'deluxe_keepsake' as PlanTier, onUpgradePlan: vi.fn() };
+      const { rerender } = render(<PricingPlansModal isOpen {...props} />);
+      fireEvent.click(choosePlanButton('free'));
+
+      rerender(<PricingPlansModal isOpen={false} {...props} />);
+      rerender(<PricingPlansModal isOpen {...props} />);
+
+      expect(screen.queryByText(i18n.t('pricing.confirm_free_title', { plan: passName() }))).not.toBeInTheDocument();
+    });
+
     it('switches once confirmed, without celebrating it', async () => {
       const onUpgradePlan = vi.fn().mockResolvedValue(undefined);
       render(

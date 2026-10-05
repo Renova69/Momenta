@@ -580,6 +580,8 @@ export const en: Record<string, string> = {
   'host.active_quests': 'Active challenges ({{count}})',
   'host.archive_contents': 'All {{photos}} photos and {{audio}} recordings at full size',
   'moderation.pending_count': '{{count}} waiting',
+  'moderation.plan_lapsed_notice_off':
+    'Your current plan does not include photo moderation. These photos were waiting for approval when it changed; review them here. New photos appear straight away.',
   'moderation.plan_lapsed_notice':
     'Your current plan does not include photo moderation. You can still review the photos waiting here. Turn off “Approve photos before they appear” under Overview so new photos appear straight away.',
   'feed.approaching_limit': 'You are approaching the {{max}}-photo limit ({{used}}/{{max}}).',
