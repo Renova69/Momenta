@@ -243,9 +243,10 @@ describe('insertPhotoUnderQuota', () => {
     return client;
   }
 
+  // The lock and the locked re-read are lockAndLoadUploadContext's job now
+  // (N-52), and it has its own tests below.
   function allow(context: UploadContext | null = CONTEXT) {
-    vi.spyOn(tierGate, 'getUploadContext').mockResolvedValue(context);
-    vi.spyOn(tierGate, 'acquireEventUploadLock').mockResolvedValue(undefined);
+    vi.spyOn(tierGate, 'lockAndLoadUploadContext').mockResolvedValue(context);
     vi.spyOn(tierGate, 'checkUploadAllowance').mockReturnValue({ allowed: true });
   }
 
@@ -265,7 +266,7 @@ describe('insertPhotoUnderQuota', () => {
 
     expect(outcome).toMatchObject({ ok: true, row: { id: 'photo-1' }, hostUserId: 'host-1' });
     expect(client.query.mock.calls[0][0]).toBe('BEGIN');
-    expect(tierGate.acquireEventUploadLock).toHaveBeenCalledWith(client, EVENT);
+    expect(tierGate.lockAndLoadUploadContext).toHaveBeenCalledWith(client, EVENT, undefined);
     expect(client.query).toHaveBeenCalledWith('COMMIT');
     expect(client.release).toHaveBeenCalledTimes(1);
   });
@@ -284,7 +285,7 @@ describe('insertPhotoUnderQuota', () => {
       insert: vi.fn().mockResolvedValue({}),
     });
 
-    expect(tierGate.getUploadContext).toHaveBeenCalledWith(EVENT, 'device-7', client);
+    expect(tierGate.lockAndLoadUploadContext).toHaveBeenCalledWith(client, EVENT, 'device-7');
   });
 
   it('rolls back and removes the files when the event has gone', async () => {
@@ -508,5 +509,53 @@ describe('broadcastPhotoAdded', () => {
     });
 
     expect(toEvent.mock.calls[0][2]).toMatchObject({ fullUrl: 'https://cdn/real.jpg' });
+  });
+});
+
+/**
+ * N-52 — the lock order the final upload check runs under. A stub client
+ * answers each query; what matters is which locks are taken, in what order,
+ * and that a pooled plan's context is read again after the host lock.
+ */
+describe('lockAndLoadUploadContext (N-52)', () => {
+  function clientAnswering(tier: string) {
+    const row = {
+      id: EVENT,
+      host_user_id: 'host-1',
+      tier,
+      storage_bytes: 0,
+      pooled_bytes: 0,
+      photo_count: 0,
+      device_photo_count: 0,
+    };
+    return {
+      query: vi.fn(async (sql: string) => (sql.includes('pg_advisory_xact_lock') ? { rows: [] } : { rows: [row] })),
+    };
+  }
+
+  function kinds(client: { query: { mock: { calls: unknown[][] } } }): string[] {
+    return client.query.mock.calls.map(([sql, params]) => {
+      const text = String(sql);
+      if (!text.includes('pg_advisory_xact_lock')) return 'read';
+      return String((params as string[])[0]).startsWith('host_storage_') ? 'host-lock' : 'event-lock';
+    });
+  }
+
+  it('takes only the album lock for a plan whose storage is per album', async () => {
+    const client = clientAnswering('celebration_pass');
+
+    const context = await tierGate.lockAndLoadUploadContext(client as never, EVENT);
+
+    expect(context?.pooled).toBe(false);
+    expect(kinds(client)).toEqual(['event-lock', 'read']);
+  });
+
+  it('adds the host storage lock for a pooled plan, then reads again', async () => {
+    const client = clientAnswering('pro_planner');
+
+    const context = await tierGate.lockAndLoadUploadContext(client as never, EVENT);
+
+    expect(context?.pooled).toBe(true);
+    expect(kinds(client)).toEqual(['event-lock', 'read', 'host-lock', 'read']);
   });
 });
