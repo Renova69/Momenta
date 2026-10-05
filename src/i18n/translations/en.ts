@@ -186,7 +186,10 @@ export const en: Record<string, string> = {
     'You lose everything this plan includes: its storage, its features and how long your album is kept. Nothing is refunded, and buying it again means paying again.',
   'pricing.confirm_free_keep': 'Keep {{plan}}',
   'pricing.confirm_free_switch': 'Switch to Free',
-  'billing.checkout_success': 'Payment successful! Your plan is now active.',
+  'billing.checkout_success': 'Payment confirmed! Your plan is now active.',
+  'billing.checkout_confirming': 'Payment received. Your plan will be active as soon as it is confirmed…',
+  'billing.checkout_delayed':
+    'Payment received, but your plan is still being confirmed. Some payment methods, such as SEPA bank transfers, take a few days. Your plan will appear on its own.',
   'billing.checkout_cancelled': 'Checkout was cancelled. Your plan was not changed.',
   'host.title': 'Host & Planner Studio',
   'host.subtitle': 'Sign in to manage your wedding settings, approve guest photos, and export high-res print posters.',

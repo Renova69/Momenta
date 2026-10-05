@@ -69,6 +69,7 @@ const PhotographerIngestPortal = lazy(() =>
 );
 import { isFeatureUnlocked } from './config/tierGating';
 import { useQuestLeaderboard } from './hooks/useQuestLeaderboard';
+import { useCheckoutReturn } from './hooks/useCheckoutReturn';
 import { LockedFeatureCard } from './components/common/LockedFeatureBadge';
 import {
   Heart,
@@ -129,30 +130,10 @@ function WeddingAppContent() {
   const [isPricingOpen, setIsPricingOpen] = useState(false);
   const [isEventsListOpen, setIsEventsListOpen] = useState(false);
   const [isHostProfileOpen, setIsHostProfileOpen] = useState(false);
-  const [checkoutBanner, setCheckoutBanner] = useState<'success' | 'cancelled' | null>(null);
-
-  // Stripe redirects the browser back here after a real checkout (once
-  // STRIPE_SECRET_KEY is configured — see billingApi.ts/PricingPlansModal).
-  // The actual tier change already happened server-side via the webhook by
-  // the time this fires; this is purely the confirmation banner. Read once
-  // and strip the query param so a page refresh doesn't re-show it.
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const checkout = params.get('checkout');
-    if (checkout === 'success' || checkout === 'cancelled') {
-      setCheckoutBanner(checkout);
-      params.delete('checkout');
-      const cleanSearch = params.toString();
-      window.history.replaceState({}, '', window.location.pathname + (cleanSearch ? `?${cleanSearch}` : ''));
-
-      // The tier only changed server-side, via the webhook — refetch so the
-      // UI (locked features, plan badge) reflects it without a manual reload.
-      if (checkout === 'success' && event?.slug) {
-        loadEventBySlug(event.slug);
-      }
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  // Stripe redirects the browser back here after a real checkout. The plan is
+  // granted by the webhook, not by this redirect, so the banner says what is
+  // actually known and keeps checking until the plan arrives (N-54).
+  const [checkoutBanner, dismissCheckoutBanner] = useCheckoutReturn(event?.planTier, event?.slug, loadEventBySlug);
 
   const currentTheme = (event?.themePalette && THEMES[event.themePalette]) ? THEMES[event.themePalette] : THEMES.champagne_gold;
 
@@ -280,10 +261,21 @@ function WeddingAppContent() {
         </div>
       )}
 
-      {checkoutBanner === 'success' && (
-        <div className="bg-sage-600 text-white px-4 py-2 text-xs font-bold flex items-center justify-center gap-3 sticky top-0 z-50">
-          <span>{i18n.t('billing.checkout_success')}</span>
-          <button onClick={() => setCheckoutBanner(null)} className="underline underline-offset-2 hover:opacity-80">
+      {(checkoutBanner === 'confirming' || checkoutBanner === 'active' || checkoutBanner === 'delayed') && (
+        <div
+          role="status"
+          className={`${checkoutBanner === 'active' ? 'bg-sage-600 text-white' : 'bg-noir-700 text-cream-100 border-b border-gold-400/20'} px-4 py-2 text-xs font-bold flex items-center justify-center gap-3 sticky top-0 z-50`}
+        >
+          <span>
+            {i18n.t(
+              checkoutBanner === 'active'
+                ? 'billing.checkout_success'
+                : checkoutBanner === 'delayed'
+                ? 'billing.checkout_delayed'
+                : 'billing.checkout_confirming'
+            )}
+          </span>
+          <button onClick={dismissCheckoutBanner} className="underline underline-offset-2 hover:opacity-80">
             {i18n.t('common.dismiss')}
           </button>
         </div>
@@ -292,7 +284,7 @@ function WeddingAppContent() {
       {checkoutBanner === 'cancelled' && (
         <div className="bg-noir-700 text-cream-100 px-4 py-2 text-xs font-bold flex items-center justify-center gap-3 sticky top-0 z-50 border-b border-cream-400/10">
           <span>{i18n.t('billing.checkout_cancelled')}</span>
-          <button onClick={() => setCheckoutBanner(null)} className="underline underline-offset-2 hover:opacity-80">
+          <button onClick={dismissCheckoutBanner} className="underline underline-offset-2 hover:opacity-80">
             {i18n.t('common.dismiss')}
           </button>
         </div>

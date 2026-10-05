@@ -6,6 +6,7 @@ import { PricingPlansModal } from '../../src/components/host/PricingPlansModal';
 import { PLANS } from '../../src/config/plans';
 import { PlanTier } from '../../src/types';
 import { i18n } from '../../src/i18n';
+import { CHECKOUT_TIER_KEY } from '../../src/hooks/useCheckoutReturn';
 import confetti from 'canvas-confetti';
 
 // G1 (OPEN_ITEMS.md) — billing-critical: this is the only place a host
@@ -167,6 +168,9 @@ describe('PricingPlansModal', () => {
     expect(hrefSetter).toHaveBeenCalledWith('https://checkout.stripe.com/c/pay/cs_test_123');
     // The real path never touches the direct tier-write fallback.
     expect(onUpgradePlan).not.toHaveBeenCalled();
+    // And the return page is told which plan to wait for (N-54).
+    expect(window.sessionStorage.getItem(CHECKOUT_TIER_KEY)).toBe('celebration_pass');
+    window.sessionStorage.removeItem(CHECKOUT_TIER_KEY);
   });
 
   it('surfaces a genuine checkout error directly instead of silently falling back to self-serve', async () => {

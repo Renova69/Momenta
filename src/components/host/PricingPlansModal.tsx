@@ -10,6 +10,7 @@ import {
   createBillingPortalSession,
 } from '../../api/billingApi';
 import { hostReturnUrl } from '../../router';
+import { CHECKOUT_TIER_KEY } from '../../hooks/useCheckoutReturn';
 import confetti from 'canvas-confetti';
 import {
   X,
@@ -114,7 +115,13 @@ export const PricingPlansModal: React.FC<PricingPlansModalProps> = ({
       );
       // Full-page redirect to Stripe's own hosted checkout — the tier is
       // only ever written once Stripe's webhook confirms the payment, not
-      // by this client.
+      // by this client. Remembered so the return page knows which plan to
+      // wait for (N-54); losing it only makes that wait less precise.
+      try {
+        window.sessionStorage.setItem(CHECKOUT_TIER_KEY, tier);
+      } catch {
+        // Private mode or blocked storage: the banner falls back to "any paid plan".
+      }
       window.location.href = url;
       return;
     } catch (err) {
