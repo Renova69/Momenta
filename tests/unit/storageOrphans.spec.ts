@@ -2,7 +2,15 @@ import { describe, it, expect, afterEach, vi } from 'vitest';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { eventIdFromKey, localEventRoots, removeOrphanDirs } from '../../scripts/storage-orphans';
+import {
+  eventIdFromKey,
+  findLocalOrphans,
+  localEventRoots,
+  removeOrphanDirs,
+  type LocalRoot,
+} from '../../scripts/storage-orphans';
+import { query } from '../../server/lib/db';
+import { deleteEventFixtures } from '../helpers/cleanup';
 import { CONFIG } from '../../server/lib/config';
 
 /**
@@ -200,5 +208,77 @@ describe('what the sweep claims it removed', () => {
     expect(result.failed).toBe(1);
     expect(result.removed).toBe(1);
     expect(result.reclaimed).toBe(100);
+  });
+});
+
+/**
+ * N-49 — the local branch read the event list first, then walked the trees,
+ * measuring every directory along the way, and `--delete` removed whatever was
+ * not on that list. An album created in the seconds between was an orphan by
+ * that reading, and its directory went with the photos in it. Two guards now,
+ * the same pair storage-orphan-sweep has always had: a directory touched
+ * recently is left alone, and every candidate is checked against the database
+ * again after the walk.
+ */
+describe('a directory that only looks orphaned (N-49)', () => {
+  const HOUR = 60 * 60 * 1000;
+  let tmpRoot = '';
+  const createdEvents: string[] = [];
+
+  afterEach(async () => {
+    if (tmpRoot) fs.rmSync(tmpRoot, { recursive: true, force: true });
+    tmpRoot = '';
+    await deleteEventFixtures(createdEvents.splice(0));
+  });
+
+  function rootWith(eventIds: string[], ageMs: number): LocalRoot {
+    tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'wedmoments-orphans-n49-'));
+    const eventsRoot = path.join(tmpRoot, 'events');
+    for (const id of eventIds) {
+      const dir = path.join(eventsRoot, id);
+      fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(path.join(dir, 'photo.jpg'), 'x');
+      const when = new Date(Date.now() - ageMs);
+      fs.utimesSync(dir, when, when);
+    }
+    return { label: 'uploads', eventsRoot };
+  }
+
+  async function newEvent(): Promise<string> {
+    const { rows } = await query<{ id: string }>(
+      `INSERT INTO events (title, slug, host_name, host_email, event_date, venue_name, welcome_message)
+       VALUES ('N-49 Spec', $1, 'Host', 'n49@test.com', NOW(), 'Venue', 'Welcome') RETURNING id`,
+      [`n49-spec-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`]
+    );
+    createdEvents.push(rows[0].id);
+    return rows[0].id;
+  }
+
+  it('keeps an album created after the event list was read', async () => {
+    const id = await newEvent();
+    const root = rootWith([id], 2 * HOUR);
+
+    // The list the scan read before this album existed.
+    const { orphans } = await findLocalOrphans([root], { knownIds: new Set() });
+
+    expect(orphans.map((o) => o.dir)).not.toContain(path.join(root.eventsRoot, id));
+  });
+
+  it('keeps a directory touched within the last hour, event or not', async () => {
+    const stranger = '11111111-2222-4333-8444-555555555555';
+    const root = rootWith([stranger], 5 * 60 * 1000);
+
+    const { orphans } = await findLocalOrphans([root], { knownIds: new Set() });
+
+    expect(orphans).toEqual([]);
+  });
+
+  it('still finds a genuine orphan', async () => {
+    const stranger = '11111111-2222-4333-8444-666666666666';
+    const root = rootWith([stranger], 2 * HOUR);
+
+    const { orphans } = await findLocalOrphans([root], { knownIds: new Set() });
+
+    expect(orphans.map((o) => o.dir)).toEqual([path.join(root.eventsRoot, stranger)]);
   });
 });

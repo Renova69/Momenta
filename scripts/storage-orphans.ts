@@ -240,6 +240,76 @@ export function localEventRoots(): LocalRoot[] {
   ].filter((root) => fs.existsSync(root.eventsRoot));
 }
 
+/** Directories touched more recently than this are never called orphans (N-49). */
+const MIN_AGE_MS = parseInt(process.env.MIN_AGE_MINUTES || '60', 10) * 60 * 1000;
+
+export interface LocalScan {
+  orphans: OrphanDir[];
+  /** Every event folder seen, orphaned or not — for the empty-database guard. */
+  onDiskCount: number;
+}
+
+/**
+ * Event folders on local disk that belong to no album.
+ *
+ * `knownIds` is the event list the caller read before walking. N-49 — that
+ * list was the whole decision: the walk took seconds (it measured every
+ * candidate as it went), and an album created meanwhile was not on it, so
+ * `--delete` removed its directory and the photos in it. Two guards now, the
+ * same pair storage-orphan-sweep.ts has always had. A folder touched within
+ * MIN_AGE_MINUTES (default 60) is left alone, and every remaining candidate is
+ * checked against the database again after the walk. Sizes are measured last,
+ * for the folders that survive both.
+ *
+ * The re-check compares ids case-insensitively, because Postgres matches a
+ * uuid in any case while a folder keeps whatever case it was created with:
+ * erring that way can only keep a folder, never delete one.
+ */
+export async function findLocalOrphans(
+  roots: LocalRoot[],
+  options: { knownIds: Set<string>; minAgeMs?: number; now?: number }
+): Promise<LocalScan> {
+  const minAgeMs = options.minAgeMs ?? MIN_AGE_MS;
+  const now = options.now ?? Date.now();
+
+  let onDiskCount = 0;
+  const candidates: { label: string; eventId: string; dir: string }[] = [];
+  for (const root of roots) {
+    const onDisk = fs
+      .readdirSync(root.eventsRoot, { withFileTypes: true })
+      .filter((e) => e.isDirectory())
+      .map((e) => e.name);
+    onDiskCount += onDisk.length;
+
+    for (const eventId of onDisk) {
+      if (options.knownIds.has(eventId)) continue;
+      const dir = path.join(root.eventsRoot, eventId);
+      if (now - fs.statSync(dir).mtimeMs < minAgeMs) continue;
+      candidates.push({ label: root.label, eventId, dir });
+    }
+  }
+
+  const candidateIds = [...new Set(candidates.map((c) => c.eventId.toLowerCase()))];
+  const { rows } =
+    candidateIds.length > 0
+      ? await pool.query<{ id: string }>('SELECT id::text AS id FROM events WHERE id::text = ANY($1::text[])', [
+          candidateIds,
+        ])
+      : { rows: [] as { id: string }[] };
+  const existsNow = new Set(rows.map((r) => r.id.toLowerCase()));
+
+  const orphans = candidates
+    .filter((c) => !existsNow.has(c.eventId.toLowerCase()))
+    .map((c) => {
+      const { files, bytes } = directorySize(c.dir);
+      // Labelled, because the same event id legitimately appears in both trees
+      // and an unlabelled report reads as a duplicate.
+      return { eventId: `${c.label}/${c.eventId}`, dir: c.dir, files, bytes };
+    });
+
+  return { orphans, onDiskCount };
+}
+
 export interface RemovalResult {
   removed: number;
   failed: number;
@@ -303,24 +373,7 @@ async function main() {
   const { rows } = await pool.query<{ id: string }>('SELECT id FROM events');
   const known = new Set(rows.map((r) => r.id));
 
-  let onDiskCount = 0;
-  const orphans: OrphanDir[] = [];
-  for (const root of roots) {
-    const onDisk = fs
-      .readdirSync(root.eventsRoot, { withFileTypes: true })
-      .filter((e) => e.isDirectory())
-      .map((e) => e.name);
-    onDiskCount += onDisk.length;
-
-    for (const eventId of onDisk) {
-      if (known.has(eventId)) continue;
-      const dir = path.join(root.eventsRoot, eventId);
-      const { files, bytes } = directorySize(dir);
-      // Labelled, because the same event id legitimately appears in both trees
-      // and an unlabelled report reads as a duplicate.
-      orphans.push({ eventId: `${root.label}/${eventId}`, dir, files, bytes });
-    }
-  }
+  const { orphans, onDiskCount } = await findLocalOrphans(roots, { knownIds: known });
 
   // The same empty-database guard the R2 branch carries. No events at all while
   // media is on disk reads as the wrong DATABASE_URL, not as a disk of orphans,
