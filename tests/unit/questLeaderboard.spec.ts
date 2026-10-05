@@ -232,6 +232,29 @@ describe('quest leaderboard', () => {
     expect((await board(host.eventId)).map((e) => e.name)).toEqual(['Early', 'Late']);
   });
 
+  it('stores a quest worth 0 points as 0, not 10 (N-56)', async () => {
+    // The schema allows 0, and `points || 10` turned it into 10 — a quest the
+    // host meant as a just-for-fun challenge silently decided the prize.
+    const host = await newHost();
+    const quest = await addQuest(host, 'Just for fun', 0);
+
+    const row = await query<{ points: number }>('SELECT points FROM scavenger_quests WHERE id = $1', [quest]);
+
+    expect(row.rows[0].points).toBe(0);
+  });
+
+  it('still gives a quest with no points stated the default 10', async () => {
+    const host = await newHost();
+    const res = await fetch(`${BASE_URL}/api/events/${host.eventId}/quests`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${host.token}` },
+      body: JSON.stringify({ title: 'Unscored' }),
+    });
+    expect(res.status).toBe(201);
+
+    expect((await res.json()).points).toBe(10);
+  });
+
   it('drops a photo the host rejects, but keeps one still awaiting a decision', async () => {
     const host = await newHost();
     const quest = await addQuest(host, 'Toast', 10);

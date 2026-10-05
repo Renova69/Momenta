@@ -96,10 +96,11 @@ questsRouter.post(
     }
 
     const result = await pool.query(
+      // N-56 — ?? not ||: 0 is a valid score the schema allows, not a missing one.
       `INSERT INTO scavenger_quests (event_id, title, description, icon_name, points)
        VALUES ($1, $2, $3, $4, $5)
        RETURNING id, event_id as "eventId", title, description, icon_name as "iconName", points, is_active as "isActive"`,
-      [id, title.trim(), description?.trim() || null, iconName || 'camera', points || 10]
+      [id, title.trim(), description?.trim() || null, iconName || 'camera', points ?? 10]
     );
 
     const quest = {
