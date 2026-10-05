@@ -209,6 +209,29 @@ describe('quest leaderboard', () => {
     expect((await board(host.eventId)).map((e) => e.name)).toEqual(['Early', 'Late']);
   });
 
+  it('keeps the tie-break of whoever finished first when they retake the shot (N-55)', async () => {
+    // A retake scores nothing new, but the upsert stamped completed_at = NOW()
+    // on it, so the guest who reached the top score first lost the tie — and
+    // the prize — to whoever finished after them.
+    const host = await newHost();
+    const quest = await addQuest(host, 'First dance', 20);
+    const early = guestDevice('Early');
+    const late = guestDevice('Late');
+
+    const earlyGuest = (await upload(host.eventId, early, quest)).guestId;
+    await upload(host.eventId, late, quest);
+    await query(
+      `UPDATE guest_quest_completions
+          SET completed_at = CASE guest_id WHEN $1::uuid THEN NOW() - INTERVAL '2 hours' ELSE NOW() - INTERVAL '1 hour' END
+        WHERE quest_id = $2`,
+      [earlyGuest, quest]
+    );
+
+    await upload(host.eventId, early, quest); // the retake
+
+    expect((await board(host.eventId)).map((e) => e.name)).toEqual(['Early', 'Late']);
+  });
+
   it('drops a photo the host rejects, but keeps one still awaiting a decision', async () => {
     const host = await newHost();
     const quest = await addQuest(host, 'Toast', 10);

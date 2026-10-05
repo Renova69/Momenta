@@ -402,9 +402,13 @@ async function recordQuestCompletion(
   if (!questId) return;
   const recorded = await pool
     .query(
+      // N-55 — a retake points the completion at the new photo but keeps the
+      // time it was first completed. The leaderboard breaks ties on that time,
+      // and restamping it handed the tie, and the prize, to whoever finished
+      // after this guest.
       `INSERT INTO guest_quest_completions (quest_id, guest_id, photo_id)
        VALUES ($1, $2, $3)
-       ON CONFLICT (quest_id, guest_id) DO UPDATE SET photo_id = $3, completed_at = NOW()`,
+       ON CONFLICT (quest_id, guest_id) DO UPDATE SET photo_id = $3`,
       [questId, guestId, photoId]
     )
     .then(() => true)
