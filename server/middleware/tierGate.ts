@@ -254,6 +254,31 @@ export function checkUploadAllowance(
  * already inside `BEGIN` — the lock is released automatically at
  * COMMIT/ROLLBACK, not by any explicit unlock call.
  */
+/**
+ * The lock, then the context an upload's final check must run against.
+ *
+ * Always the album's upload lock first. N-52 — for a plan whose storage is
+ * pooled across the host's albums, that lock was not enough: two uploads to
+ * two of one host's albums took two different locks, read the same pooled
+ * total, and both passed however close to the cap it was. So a pooled plan
+ * also takes a lock on the host's storage and reads the context again, since
+ * the total may have moved while it waited. The album lock is always taken
+ * first and the host lock second, so two uploads can never wait on each other
+ * in opposite orders.
+ */
+export async function lockAndLoadUploadContext(
+  client: PoolClient,
+  eventId: string,
+  deviceFingerprint?: string
+): Promise<UploadContext | null> {
+  await acquireEventUploadLock(client, eventId);
+  const context = await getUploadContext(eventId, deviceFingerprint, client);
+  if (!context || !context.pooled || !context.hostUserId) return context;
+
+  await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [`host_storage_${context.hostUserId}`]);
+  return getUploadContext(eventId, deviceFingerprint, client);
+}
+
 export async function acquireEventUploadLock(client: PoolClient, eventId: string): Promise<void> {
   // DB-11: hashtext() returns a 32-bit int, so two unrelated event ids had a
   // real (if small) chance of hashing to the same lock key and needlessly

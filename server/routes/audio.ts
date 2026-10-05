@@ -3,7 +3,7 @@ import multer from 'multer';
 import { pool } from '../lib/db';
 import { CONFIG } from '../lib/config';
 import { saveBuffer, toAbsoluteUrl, storageAdapter } from '../lib/storage';
-import { checkPhotoUploadTierLimit, getUploadContext, checkUploadAllowance, acquireEventUploadLock } from '../middleware/tierGate';
+import { checkPhotoUploadTierLimit, checkUploadAllowance, lockAndLoadUploadContext } from '../middleware/tierGate';
 import { isValidUuid, detectAudioFormat } from '../lib/validation';
 import { uploadLimiter } from '../middleware/rateLimit';
 import { requireEventTier } from '../middleware/tierGate';
@@ -146,9 +146,7 @@ audioRouter.post('/', uploadLimiter, upload.single('audio'), requireEventTier('d
     let insertedRow: any;
     try {
       await lockClient.query('BEGIN');
-      await acquireEventUploadLock(lockClient, eventId);
-
-      const freshContext = await getUploadContext(eventId, undefined, lockClient);
+      const freshContext = await lockAndLoadUploadContext(lockClient, eventId);
       if (!freshContext) {
         // Gone, or being deleted (N-47): the recording saved above belongs
         // to nothing now.

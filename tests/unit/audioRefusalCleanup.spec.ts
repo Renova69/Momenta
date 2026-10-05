@@ -11,8 +11,8 @@ import path from 'path';
  * left the saved recording in storage with no row naming it.
  *
  * The early check outside the lock passes, so the only way to reach the
- * refusal under the lock is to make that re-check — the call that carries a
- * client — answer differently. Everything else runs for real.
+ * refusal under the lock is to make that re-check answer differently.
+ * Everything else runs for real.
  */
 const refuseUnderLock = vi.hoisted(() => ({ on: false }));
 
@@ -22,10 +22,8 @@ vi.mock('../../server/middleware/tierGate', async () => {
   );
   return {
     ...actual,
-    getUploadContext: (eventId: string, fingerprint?: string, client?: unknown) =>
-      client && refuseUnderLock.on
-        ? Promise.resolve(null)
-        : actual.getUploadContext(eventId, fingerprint, client as never),
+    lockAndLoadUploadContext: (client: never, eventId: string, fingerprint?: string) =>
+      refuseUnderLock.on ? Promise.resolve(null) : actual.lockAndLoadUploadContext(client, eventId, fingerprint),
   };
 });
 

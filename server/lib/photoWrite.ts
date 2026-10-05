@@ -38,7 +38,7 @@ import { errorLabel } from './errors';
 import {
   getUploadContext,
   checkUploadAllowance,
-  acquireEventUploadLock,
+  lockAndLoadUploadContext,
 } from '../middleware/tierGate';
 
 /** The event settings, plan allowance and usage that one round trip returns. */
@@ -180,9 +180,7 @@ export async function insertPhotoUnderQuota<T>(args: {
   const lockClient = await pool.connect();
   try {
     await lockClient.query('BEGIN');
-    await acquireEventUploadLock(lockClient, eventId);
-
-    const freshContext = await getUploadContext(eventId, deviceFingerprint, lockClient);
+    const freshContext = await lockAndLoadUploadContext(lockClient, eventId, deviceFingerprint);
     if (!freshContext) {
       await lockClient.query('ROLLBACK');
       await cleanup();
