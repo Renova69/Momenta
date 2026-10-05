@@ -6,6 +6,7 @@
 **Client mutation sweep:** 2026-09-21 (§8).
 **Performance pass:** 2026-09-22 to 23 (§3e).
 **Security review, partial:** 2026-09-25 to 26, recorded 2026-10-04 (§3f). **All 25 findings fixed.**
+**Remaining five domains:** reviewed 2026-10-05 (§3g). **33 findings open.**
 
 > **Read this first.** The audit below is preserved as written — each finding
 > still describes the code as it was on 2026-09-15, because a finding rewritten
@@ -894,6 +895,62 @@ read like `sed -n 1,50p … OPEN_ITEMS.md MASTER_AUDIT.md FIX_PLAN.md` can be
 turned into an in-place edit. The files were restored from git. After any
 agent session that reads these documents, check `git diff --stat` before
 trusting them.
+
+---
+
+## 3g. The Remaining Five Domains (2026-10-05)
+
+**Open: 33 of 33.**
+
+The rest of the review §3f began: media, infra, db, guest UI and host UI, one
+reviewer each, with the same brief — races, missing checks, inconsistent
+state, contract mismatches — and the audit docs to skip what was already
+known. Thirty-three findings, numbered N-59 onwards. *Verified* means the
+finding has been checked against the code here, not only reported; every
+finding is verified again before it is fixed.
+
+Two of them are regressions from §3f's own fixes, which is worth saying first:
+N-59 is a consequence of N-57 (the audio route now asks for a device, and the
+offline queue's replay never sent one), and N-62 is made worse by N-58 (a
+reserved address is swapped for a variant the client never hears about). Both
+are the same lesson as §3f's review: a fix on the server is only half a fix
+until every client path that calls it has been read.
+
+| ID | Finding | Severity | Files | Verified | Fixed |
+|---|---|---|---|---|---|
+| **N-59** | **An offline voice message is refused on replay and then deleted.** Since N-57, `POST /api/audio` needs a guest token or the `x-device-fingerprint` header; the offline queue's replay sends neither, gets 401, and drops the recording after five tries. | High | `src/services/offlineQueueService.ts` | Yes | Open |
+| **N-60** | **A flapping venue Wi-Fi deletes queued photos.** A network error counts toward the five-retry limit exactly like a server refusal, and the item is then removed with only a console warning. | High | `src/services/offlineQueueService.ts` | Yes | Open |
+| **N-61** | Queued uploads are never flushed when the app starts — only on an `online` event or the next enqueue — and a stalled request with no timeout blocks every later flush until reload. | High | `src/services/offlineQueueService.ts`, `src/services/storageService.ts` | Yes | Open |
+| **N-62** | **The server renames an album's address and the dashboard never learns it.** A taken or reserved slug is stored as a variant, but `updateEvent` discards the PUT response, so the QR studio, projector and PDFs keep the requested address — someone else's album, or nothing. The slug field also commits every pause in typing as a separate permanent rename. | High | `src/services/eventService.ts`, `server/routes/events/crud.ts` | Yes | Open |
+| **N-63** | The photographer upload route buffers up to 10 files of 50 MB in memory before it checks the ingest key, with only a device-keyed limiter whose key the caller chooses. A few parallel unauthenticated requests can exhaust the heap. | High | `server/routes/ingest.ts` | No | Open |
+| **N-64** | A retention notice is stamped once and never cleared when the deadline later moves. An album warned, then extended by a purchase, then lapsed again is deletable with no warning about the new deadline. Latent while `RETENTION_ENFORCED` is off. | High | `server/lib/retention.ts`, `server/lib/retentionNotice.ts` | No | Open |
+| **N-65** | The 40-megapixel decode cap added for guest phones also applies to photographer ingest: a 45–61 MP frame from a professional body is reported as "not an image" and, over FTP, deleted after the camera was told it arrived. | Medium-High | `server/lib/images.ts`, `server/lib/ingestPipeline.ts` | No | Open |
+| **N-66** | Graceful shutdown never reaches the WebSocket close or `pool.end()` while any socket is open — `server.close()` waits for upgraded sockets — so every deploy ends at the 8-second hard exit. H-3, incomplete. | Medium | `server/index.ts` | Yes | Open |
+| **N-67** | A photo approved from the moderation queue never appears in guests' feeds live: approval broadcasts only `{photoId, status}`, and guests never held the photo. | Medium | `server/routes/photos/moderation.ts`, `src/services/realtimeMessages.ts` | Yes | Open |
+| **N-68** | Nothing re-syncs after a WebSocket reconnect, so photos added, approved or deleted during a drop never reach the guest or the projector wall until a reload; reconnect backoff has no jitter. | Medium | `src/services/realtimeSocket.ts` | Yes | Open |
+| **N-69** | `docker-compose.yml` does not persist the quarantine directory: pending and reveal-locked originals live in the container's writable layer and are lost on any recreate (local storage). | Medium | `docker-compose.yml` | Yes | Open |
+| **N-70** | Promote and withhold move three files in one `Promise.all` and update the row only if all succeed; a partial failure leaves a source missing that every retry then fails on, permanently. | Medium | `server/lib/photoQuarantine.ts` | No | Open |
+| **N-71** | A rejection that races an in-flight promotion can leave a photo marked rejected with its files public. | Medium | `server/lib/photoQuarantine.ts`, `server/routes/photos/moderation.ts` | No | Open |
+| **N-72** | The guest feed can return approved photos with still-quarantined URLs when the reveal promotion is running elsewhere or failed for one photo. | Medium | `server/routes/photos/feed.ts` | No | Open |
+| **N-73** | The retention sweep purges without the N-47 deletion mark, so an upload mid-purge loses its row and keeps its file; and the mark's one-hour staleness can expire during a very large purge. N-47, incomplete. | Medium | `server/lib/retention.ts` | No | Open |
+| **N-74** | The retention sweep works from a candidate list read once; an album extended after the list was made can still be purged. | Medium | `server/lib/retention.ts` | No | Open |
+| **N-75** | A photographer batch upload reports failure on the first bad file while the other files keep uploading in the background; a retry of the batch duplicates them on the wall. | Medium | `src/api/ingestApi.ts`, `src/components/ingest/PhotographerIngestPortal.tsx` | No | Open |
+| **N-76** | Host sign-in and registration errors are always English: the server's message always wins over the translated fallback. | Medium | `src/services/authService.ts`, `src/components/host/HostAuthPage.tsx` | No | Open |
+| **N-77** | The landing showcase fills any missing field of a real opted-in album from the sample weddings — a new album with no photos shows someone else's stock photos and invented counts. | Medium | `src/components/home/PublicWeddingsShowcase.tsx` | No | Open |
+| **N-78** | An offline replay is not idempotent: a server that committed an upload whose response was lost receives it again and stores a duplicate. | Medium | `src/services/offlineQueueService.ts`, `server/routes/photos/upload.ts` | No | Open |
+| **N-79** | The preview stream is piped with no error handler and is not destroyed when the client disconnects: a storage error can crash the process, and an abort leaks the R2 socket or file handle. | Medium | `server/routes/photos/feed.ts` | No | Open |
+| **N-80** | The microphone stays live if `MediaRecorder` throws after permission was granted. | Low | `src/components/audio/AudioGuestbook.tsx` | No | Open |
+| **N-81** | A host who signs in while the page's socket is already open stays a guest on it: `joinEventRoom` never re-sends AUTH. | Low | `src/services/realtimeSocket.ts` | Yes | Open |
+| **N-82** | A database error during the WebSocket host check caches "not host" for 60 seconds. | Low | `server/ws/wsServer.ts` | Yes | Open |
+| **N-83** | The production image installs an unpinned `tsx` at build time, and CI never builds the image. | Low | `Dockerfile`, `.github/workflows/ci.yml` | No | Open |
+| **N-84** | The per-guest photo cap is checked only outside the upload lock, so parallel uploads from one device can exceed it. | Low | `server/routes/photos/upload.ts`, `server/lib/photoWrite.ts` | No | Open |
+| **N-85** | Deleting one photo can half-delete it on a storage error, or orphan files a concurrent promotion just moved. | Low | `server/routes/photos/moderation.ts` | No | Open |
+| **N-86** | A voice message whose insert fails for any reason other than quota or a missing album leaves its file in storage. | Low | `server/routes/audio.ts` | No | Open |
+| **N-87** | A 101–120 character custom address passes validation and fails at the 100-character column with a 500; a 95–100 character one that needs a variant overflows the same way. | Low | `server/routes/events/shared.ts`, `server/routes/events/crud.ts` | No | Open |
+| **N-88** | The feed cursor carries `createdAt` at millisecond precision against microsecond rows, so a photo in the same millisecond can be skipped between pages. | Low | `server/routes/photos/feed.ts` | No | Open |
+| **N-89** | `storage-recount` reseeds totals without a lock, so an upload committing during it is undercounted. | Low | `scripts/storage-recount.ts` | No | Open |
+| **N-90** | A new album defaults to the date `2026-09-18`, already past, and clearing the date field throws. | Low | `src/components/host/HostEventsList.tsx` | No | Open |
+| **N-91** | The projector wall indexes into a list that new photos shift, so the slide changes mid-display and new photos wait a whole cycle; QR studio save failures are swallowed. | Low | `src/components/projector/LiveProjectorScreen.tsx`, `src/services/qrCanvasService.ts` | No | Open |
 
 ---
 
