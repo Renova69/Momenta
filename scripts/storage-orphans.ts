@@ -135,7 +135,7 @@ async function scanR2(): Promise<void> {
 
   const objects = await listAllObjects(s3);
   const { rows } = await pool.query<{ id: string }>('SELECT id::text AS id FROM events');
-  const known = new Set(rows.map((r) => r.id));
+  const known = new Set(rows.map((r) => r.id.toLowerCase()));
 
   // Safety 3: no events but objects present reads as a misconfigured database,
   // not as a bucket full of orphans.
@@ -162,7 +162,7 @@ async function scanR2(): Promise<void> {
       unparseableBytes += object.bytes;
       continue;
     }
-    if (known.has(eventId)) {
+    if (known.has(eventId.toLowerCase())) {
       live += 1;
       continue;
     }
@@ -282,7 +282,7 @@ export async function findLocalOrphans(
     onDiskCount += onDisk.length;
 
     for (const eventId of onDisk) {
-      if (options.knownIds.has(eventId)) continue;
+      if (options.knownIds.has(eventId.toLowerCase())) continue;
       const dir = path.join(root.eventsRoot, eventId);
       if (now - fs.statSync(dir).mtimeMs < minAgeMs) continue;
       candidates.push({ label: root.label, eventId, dir });
@@ -371,7 +371,7 @@ async function main() {
   }
 
   const { rows } = await pool.query<{ id: string }>('SELECT id FROM events');
-  const known = new Set(rows.map((r) => r.id));
+  const known = new Set(rows.map((r) => r.id.toLowerCase()));
 
   const { orphans, onDiskCount } = await findLocalOrphans(roots, { knownIds: known });
 

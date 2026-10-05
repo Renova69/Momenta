@@ -35,6 +35,7 @@
  */
 import fs from 'fs';
 import path from 'path';
+import { fileURLToPath } from 'url';
 import { S3Client, ListObjectsV2Command, DeleteObjectsCommand } from '@aws-sdk/client-s3';
 import { CONFIG } from '../server/lib/config';
 import { pool } from '../server/lib/db';
@@ -70,6 +71,16 @@ interface Tally {
 const emptyTally = (): Tally => ({ entries: 0, bytes: 0, skippedYoung: 0 });
 const mb = (bytes: number): string => `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 
+/**
+ * Whether a folder or key names a live album. N-50 — case-insensitive:
+ * Postgres matches a uuid in any case, and storage kept the case the uploader
+ * used, so an uppercase folder of a live album read as an orphan here.
+ * `live` holds lowercase ids.
+ */
+export function isLiveEventId(live: Set<string>, eventId: string): boolean {
+  return live.has(eventId.toLowerCase());
+}
+
 async function loadLiveEventIds(): Promise<Set<string>> {
   const { rows } = await pool.query<{ id: string }>('SELECT id FROM events');
   if (rows.length === 0) {
@@ -80,7 +91,7 @@ async function loadLiveEventIds(): Promise<Set<string>> {
         'orphaned, and this would delete all of them. Point at the right database, or clean up by hand.'
     );
   }
-  return new Set(rows.map((row) => String(row.id)));
+  return new Set(rows.map((row) => String(row.id).toLowerCase()));
 }
 
 function directorySize(dir: string): number {
@@ -99,7 +110,7 @@ function sweepLocalRoot(root: string, live: Set<string>, label: string): Tally {
 
   for (const entry of fs.readdirSync(eventsDir, { withFileTypes: true })) {
     if (!entry.isDirectory() || !UUID_RE.test(entry.name)) continue; // Guard 4
-    if (live.has(entry.name)) continue;
+    if (isLiveEventId(live, entry.name)) continue;
 
     const dir = path.join(eventsDir, entry.name);
     if (Date.now() - fs.statSync(dir).mtimeMs < MIN_AGE_MS) {
@@ -164,7 +175,7 @@ async function sweepR2(live: Set<string>): Promise<Tally> {
         const key = String(object.Key);
         const eventId = key.split('/')[idIndex] ?? '';
         if (!UUID_RE.test(eventId)) continue; // Guard 4
-        if (live.has(eventId)) continue;
+        if (isLiveEventId(live, eventId)) continue;
         if (object.LastModified && Date.now() - object.LastModified.getTime() < MIN_AGE_MS) {
           tally.skippedYoung += 1; // Guard 3
           continue;
@@ -224,9 +235,20 @@ async function main(): Promise<void> {
   console.log('');
 }
 
-main()
-  .catch((err) => {
-    console.error('[storage-orphan-sweep] failed:', errorLabel(err));
-    process.exitCode = 1;
-  })
-  .finally(() => pool.end());
+/**
+ * Run only when invoked as a script, not when imported — the same guard
+ * storage-orphans.ts carries. Its spec imports this file for its pure
+ * functions, and without the guard every test run started a real scan and
+ * closed the worker's connection pool when it finished.
+ */
+const invokedDirectly =
+  process.argv[1] !== undefined && path.resolve(process.argv[1]) === path.resolve(fileURLToPath(import.meta.url));
+
+if (invokedDirectly) {
+  main()
+    .catch((err) => {
+      console.error('[storage-orphan-sweep] failed:', errorLabel(err));
+      process.exitCode = 1;
+    })
+    .finally(() => pool.end());
+}

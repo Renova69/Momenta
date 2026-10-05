@@ -69,7 +69,10 @@ export class LocalStorageAdapter implements StorageAdapter {
   public async save(buffer: Buffer, filename: string, _mimetype?: string, eventId?: string, options?: SaveOptions): Promise<{ publicUrl: string; storagePath: string }> {
     const root = options?.quarantine ? this.quarantineDir : this.uploadsDir;
     const urlPrefix = options?.quarantine ? '/quarantine' : '/uploads';
-    const targetDir = eventId ? path.join(root, 'events', eventId) : root;
+    // N-50 — the lowercase id, whatever case the caller used. Postgres
+    // matches a uuid in any case; a folder name does not.
+    const eventDir = eventId?.toLowerCase();
+    const targetDir = eventDir ? path.join(root, 'events', eventDir) : root;
     if (!fs.existsSync(targetDir)) {
       fs.mkdirSync(targetDir, { recursive: true });
     }
@@ -77,7 +80,7 @@ export class LocalStorageAdapter implements StorageAdapter {
     const filePath = path.join(targetDir, filename);
     await fs.promises.writeFile(filePath, buffer);
 
-    const relativePath = eventId ? `${urlPrefix}/events/${eventId}/${filename}` : `${urlPrefix}/${filename}`;
+    const relativePath = eventDir ? `${urlPrefix}/events/${eventDir}/${filename}` : `${urlPrefix}/${filename}`;
     return {
       publicUrl: relativePath,
       storagePath: relativePath,
@@ -193,7 +196,7 @@ export class LocalStorageAdapter implements StorageAdapter {
   public async removeEventDirectory(eventId: string): Promise<void> {
     if (!eventId) return;
     for (const root of [this.uploadsDir, this.quarantineDir]) {
-      const dir = path.join(root, 'events', eventId);
+      const dir = path.join(root, 'events', eventId.toLowerCase());
       try {
         await fs.promises.rmdir(dir);
         console.log(`[LocalStorage] Removed empty event directory: ${path.relative(process.cwd(), dir)}`);
@@ -247,8 +250,9 @@ export class R2StorageAdapter implements StorageAdapter {
       // URL until promotion), just not against URL guessing. Local disk
       // storage does not have this caveat — quarantined files there sit
       // outside the statically-served root entirely.
+      // N-50 — the lowercase id, as the local adapter does.
       const key = eventId
-        ? `${options?.quarantine ? 'quarantine/' : ''}events/${eventId}/${filename}`
+        ? `${options?.quarantine ? 'quarantine/' : ''}events/${eventId.toLowerCase()}/${filename}`
         : filename;
 
       await this.s3.send(
@@ -490,7 +494,9 @@ export async function saveBuffer(
  */
 export function storagePathBelongsToEvent(storagePath: string | null | undefined, eventId: string): boolean {
   if (!storagePath) return false;
-  return storagePath.includes(`/events/${eventId}/`);
+  // N-50 — case-insensitive: a path written before ids were lowercased may
+  // carry the case its uploader used.
+  return storagePath.toLowerCase().includes(`/events/${eventId.toLowerCase()}/`);
 }
 
 /**
