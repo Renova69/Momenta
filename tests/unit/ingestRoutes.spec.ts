@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { createServer } from 'http';
+import http, { createServer } from 'http';
 import express from 'express';
 import { authRouter } from '../../server/routes/auth';
 import { ingestRouter } from '../../server/routes/ingest';
@@ -304,5 +304,42 @@ describe('Photographer Ingest Routes Spec', () => {
       }
     );
     expect(res.status).toBe(401);
+  });
+
+  // N-63 — the key was checked only after multer had buffered the whole body:
+  // up to ten files of 50 MB each, held in memory for a caller with no key at
+  // all. A few parallel requests could exhaust the heap. The key is now
+  // checked from the headers before a byte of the body is read, so a request
+  // without one is refused while it is still being sent.
+  it('refuses a request without a valid key before reading its body', async () => {
+    const status = await new Promise<number | 'no-answer'>((resolve) => {
+      const req = http.request({
+        host: 'localhost',
+        port: TEST_PORT,
+        method: 'POST',
+        path: `/api/ingest/${eventId}/photos`,
+        headers: {
+          'Content-Type': 'multipart/form-data; boundary=----n63',
+          'Content-Length': String(50 * 1024 * 1024),
+          'x-device-fingerprint': `n63-${Date.now()}`,
+        },
+      });
+      const timer = setTimeout(() => {
+        req.destroy();
+        resolve('no-answer');
+      }, 3000);
+      req.on('response', (res) => {
+        clearTimeout(timer);
+        res.resume();
+        req.destroy();
+        resolve(res.statusCode ?? 0);
+      });
+      req.on('error', () => undefined);
+      // A few bytes of the announced 50 MB, then nothing: the answer has to
+      // come before the body does.
+      req.write(['------n63', 'Content-Disposition: form-data; name="file"; filename="a.jpg"', '', ''].join(String.fromCharCode(13, 10)));
+    });
+
+    expect(status).toBe(401);
   });
 });

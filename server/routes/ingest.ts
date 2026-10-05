@@ -5,7 +5,8 @@ import { pool } from '../lib/db';
 import { CONFIG } from '../lib/config';
 import { requireAuth } from '../middleware/auth';
 import { validateBody, validateQuery } from '../middleware/validate';
-import { uploadLimiter } from '../middleware/rateLimit';
+import { uploadLimiter, uploadIpLimiter } from '../middleware/rateLimit';
+import type { Request, Response, NextFunction } from 'express';
 import { requireUuidParams } from '../middleware/uuid';
 import { generateIngestKey, hashIngestKey, validateIngestKey, extractIngestKeyFromRequest } from '../lib/ingest';
 import { ingestPhoto, IngestedPhoto } from '../lib/ingestPipeline';
@@ -134,23 +135,52 @@ ingestRouter.delete('/keys/:id', requireAuth, requireUuidParams('id'), async (re
   }
 });
 
+/**
+ * The album and the ingest key, checked from the headers alone, before multer
+ * reads a byte of the body.
+ *
+ * N-63 — they were checked after multer had buffered the whole request: up to
+ * MAX_INGEST_FILES files of MAX_UPLOAD_SIZE_MB each, held in memory for a
+ * caller with no key at all, behind a limiter keyed on a header the caller
+ * chooses. A few parallel requests could exhaust the heap and take the guest
+ * API, the WebSocket and FTP down with it. The key travels in a header
+ * (X-Ingest-Key or an ingest Bearer token), so nothing here needs the body.
+ */
+async function requireIngestKeyBeforeBody(req: Request, res: Response, next: NextFunction): Promise<void> {
+  const eventId = String(req.params.eventId);
+  try {
+    const eventCheck = await pool.query('SELECT id FROM events WHERE id = $1', [eventId]);
+    if (eventCheck.rows.length === 0) {
+      res.status(404).json({ error: 'Event not found' });
+      return;
+    }
+    const keyId = await validateIngestKey(eventId, extractIngestKeyFromRequest(req) || '');
+    if (!keyId) {
+      res.status(401).json({ error: 'Invalid or missing ingest key' });
+      return;
+    }
+    next();
+  } catch (err) {
+    console.error('[Ingest] key check error:', errorLabel(err));
+    res.status(500).json({ error: 'Internal server error' });
+  }
+}
+
 // POST /api/ingest/:eventId/photos — secured multipart upload (ingest key auth)
-ingestRouter.post('/:eventId/photos', uploadLimiter, requireUuidParams('eventId'), upload.array('file', MAX_INGEST_FILES), async (req, res) => {
+ingestRouter.post(
+  '/:eventId/photos',
+  // The per-IP backstop first: the device limiter keys on a header the caller
+  // sets, so on its own a fresh value per request was a fresh budget.
+  uploadIpLimiter,
+  uploadLimiter,
+  requireUuidParams('eventId'),
+  requireIngestKeyBeforeBody,
+  upload.array('file', MAX_INGEST_FILES),
+  async (req, res) => {
   const eventId = String(req.params.eventId);
   const files = (req.files || []) as unknown as IngestFile[];
 
   try {
-    const eventCheck = await pool.query('SELECT id FROM events WHERE id = $1', [eventId]);
-    if (eventCheck.rows.length === 0) {
-      return res.status(404).json({ error: 'Event not found' });
-    }
-
-    const rawKey = extractIngestKeyFromRequest(req);
-    const keyId = await validateIngestKey(eventId, rawKey || '');
-    if (!keyId) {
-      return res.status(401).json({ error: 'Invalid or missing ingest key' });
-    }
-
     if (!Array.isArray(files) || files.length === 0) {
       return res.status(400).json({ error: 'No files uploaded' });
     }
