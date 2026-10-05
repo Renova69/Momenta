@@ -163,6 +163,7 @@ export const HostDashboard: React.FC<HostDashboardProps> = ({
 
   const pendingPhotos = photos.filter((p) => p.status === 'pending');
   const currentTier = event.planTier || 'free';
+  const moderationUnlocked = isFeatureUnlocked(currentTier, 'photo_moderation');
 
   const handleExportAll = () => {
     const backupData = {
@@ -259,16 +260,27 @@ export const HostDashboard: React.FC<HostDashboardProps> = ({
         {/* 1. OVERVIEW & EVENT SETTINGS TAB */}
         {activeTab === 'overview' && <OverviewTab />}
 
-        {/* 2. MODERATION QUEUE TAB */}
+        {/* 2. MODERATION QUEUE TAB
+            N-46 — locked only when there is nothing to moderate. After a
+            downgrade the photos already waiting, and every upload while
+            moderation stays switched on, have no other screen that can
+            release them. Switching moderation on is what the plan sells. */}
         {activeTab === 'moderation' && (
-          !isFeatureUnlocked(currentTier, 'photo_moderation') ? (
+          !moderationUnlocked && !event.isModerationEnabled && pendingPhotos.length === 0 ? (
             <LockedFeatureCard feature="photo_moderation" onOpenPricing={onOpenPricing || (() => {})} />
           ) : (
-            <ModerationQueue
-              photos={photos}
-              onSetStatus={onSetPhotoStatus}
-              onDeletePhoto={onDeletePhoto}
-            />
+            <>
+              {!moderationUnlocked && (
+                <p role="status" className="text-xs text-cream-300 bg-noir-900/60 border border-gold-400/20 rounded-2xl px-4 py-3">
+                  {i18n.t('moderation.plan_lapsed_notice')}
+                </p>
+              )}
+              <ModerationQueue
+                photos={photos}
+                onSetStatus={onSetPhotoStatus}
+                onDeletePhoto={onDeletePhoto}
+              />
+            </>
           )
         )}
 

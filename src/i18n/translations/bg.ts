@@ -599,6 +599,8 @@ export const bg: Record<string, string> = {
   'host.active_quests': 'Активни предизвикателства ({{count}})',
   'host.archive_contents': 'Всички {{photos}} снимки и {{audio}} аудио в пълен размер',
   'moderation.pending_count': '{{count}} чакащи',
+  'moderation.plan_lapsed_notice':
+    'Текущият ви план не включва одобрение на снимки. Все още можете да прегледате чакащите снимки тук. Изключете „Предварително одобрение на снимките“ в „Общ преглед“, за да се появяват новите снимки веднага.',
   'feed.approaching_limit': 'Приближавате лимита от {{max}} снимки ({{used}}/{{max}}).',
   'landing.hero_tv_note': 'С мигновена прожекция на живо на ТВ екран в ресторанта.',
   'host.disposable_mode_label': 'Ретро режим "Еднократна камера"',
