@@ -131,7 +131,9 @@ describe('Offline Queue & Resilience Spec', () => {
   });
 
   it('increments retries on failure and drops item after exceeding max retries', async () => {
-    global.fetch = vi.fn().mockRejectedValue(new Error('Network offline'));
+    // A server error, not a network error: since N-60 a network failure no
+    // longer spends a retry, because flapping venue Wi-Fi was deleting photos.
+    global.fetch = vi.fn().mockResolvedValue(createMockResponse({ error: 'boom' }, 500, false));
 
     // Offline during enqueue so it does not also fire its own un-awaited
     // auto-flush racing the explicit flushQueue() calls below.

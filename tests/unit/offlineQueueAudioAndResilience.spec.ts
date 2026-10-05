@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { OfflineQueueService } from '../../src/services/offlineQueueService';
+import { getOrCreateDeviceFingerprint } from '../../src/services/storageKeys';
 
 /**
  * The flush path's shape and its refusals.
@@ -269,9 +270,11 @@ describe('a failed upload', () => {
     vi.spyOn(globalThis, 'fetch').mockRejectedValue(new TypeError('Failed to fetch'));
     await queue.flushQueue();
 
+    // Kept, and without spending a retry: the network failed, not the item
+    // (N-60). Counting it was how flapping venue Wi-Fi deleted photos.
     const remaining = await queue.getQueue();
     expect(remaining).toHaveLength(1);
-    expect(remaining[0].retryCount).toBe(1);
+    expect(remaining[0].retryCount).toBe(0);
   });
 
   it('does not stall the rest of the queue behind one bad item', async () => {
@@ -375,5 +378,98 @@ describe('isOnline', () => {
   it('reports the browser’s own answer when it has one', () => {
     setOnline(false);
     expect(queue.isOnline()).toBe(false);
+  });
+});
+
+/**
+ * §3g — what a replay must carry, and what a failure costs.
+ *
+ * N-59: since N-57 the audio route needs a guest token or the device header,
+ * and the replay sent neither — every offline voice message came back 401
+ * and was dropped. N-60: a plain network error counted toward the retry
+ * limit exactly like a server refusal, so flapping venue Wi-Fi deleted
+ * queued photos. N-61: a stalled request, with no timeout, held the flush
+ * forever.
+ */
+describe('replaying after the signal comes back (N-59, N-60, N-61)', () => {
+  async function queuedPhoto(): Promise<void> {
+    setOnline(false);
+    await queue.enqueue('photo', { eventId: 'e1' });
+    setOnline(true);
+  }
+
+  it('sends the device with a voice message, as the live upload does', async () => {
+    vi.spyOn(queue, 'getQueue').mockResolvedValue([
+      { id: 'q-a', type: 'audio', payload: { eventId: 'e1' }, queuedAt: new Date().toISOString(), retryCount: 0 },
+    ]);
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse({ id: 'a1' }));
+
+    await queue.flushQueue();
+
+    const headers = (fetchSpy.mock.calls[0][1] as RequestInit).headers as Record<string, string>;
+    expect(headers['x-device-fingerprint']).toBe(getOrCreateDeviceFingerprint());
+  });
+
+  it('sends the device with a photo too', async () => {
+    await queuedPhoto();
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse({ id: 'p1' }));
+
+    await queue.flushQueue();
+
+    const headers = (fetchSpy.mock.calls[0][1] as RequestInit).headers as Record<string, string>;
+    expect(headers['x-device-fingerprint']).toBe(getOrCreateDeviceFingerprint());
+  });
+
+  it('does not spend a retry on a network failure, and keeps the photo', async () => {
+    await queuedPhoto();
+    vi.spyOn(globalThis, 'fetch').mockRejectedValue(new TypeError('Failed to fetch'));
+
+    for (let i = 0; i < 8; i++) await queue.flushQueue();
+
+    const remaining = await queue.getQueue();
+    expect(remaining).toHaveLength(1);
+    expect(remaining[0].retryCount).toBe(0);
+  });
+
+  it('spends a retry on a server error', async () => {
+    await queuedPhoto();
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse({ error: 'boom' }, 500));
+
+    await queue.flushQueue();
+
+    expect((await queue.getQueue())[0].retryCount).toBe(1);
+  });
+
+  it('drops at once what can never succeed, and says so', async () => {
+    await queuedPhoto();
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse({ error: 'bad' }, 400));
+    const dropped = vi.fn();
+    queue.onItemDropped(dropped);
+
+    await queue.flushQueue();
+
+    expect(await queue.getQueue()).toHaveLength(0);
+    expect(dropped).toHaveBeenCalledTimes(1);
+  });
+
+  it('says so when it gives up after repeated server errors', async () => {
+    await queuedPhoto();
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse({ error: 'boom' }, 503));
+    const dropped = vi.fn();
+    queue.onItemDropped(dropped);
+
+    for (let i = 0; i < 12; i++) await queue.flushQueue();
+
+    expect(await queue.getQueue()).toHaveLength(0);
+    expect(dropped).toHaveBeenCalledTimes(1);
+  });
+
+  it('gives every replay a deadline, so one stalled request cannot hold the queue', async () => {
+    await queuedPhoto();
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse({ id: 'p1' }));
+
+    await queue.flushQueue();
+
+    expect((fetchSpy.mock.calls[0][1] as RequestInit).signal).toBeInstanceOf(AbortSignal);
   });
 });

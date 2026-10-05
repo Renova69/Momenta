@@ -13,6 +13,7 @@ import {
 import { ENV } from '../config/env';
 import { eventsApi } from '../api/eventsApi';
 import { offlineQueue, QueuedUpload } from './offlineQueueService';
+import { i18n } from '../i18n';
 import { ServiceContext } from './storageServiceContext';
 import { RealtimeSocket } from './realtimeSocket';
 import { RealtimeMessage, applyRealtimeMessage } from './realtimeMessages';
@@ -86,6 +87,14 @@ class WedStorageService {
       offlineQueue.onFlushSuccess((item, serverResponse) => {
         if (item.type === 'photo') this.reconcileFlushedPhoto(item, serverResponse);
       });
+      // N-60 — a photo or message the queue gave up on is said out loud, not
+      // left as a console warning the guest never sees.
+      offlineQueue.onItemDropped((item) => {
+        this.notifyError(i18n.t(item.type === 'audio' ? 'offline.audio_dropped' : 'offline.photo_dropped'));
+      });
+      // N-61 — uploads queued before the app was closed go up when it opens,
+      // not only at the next 'online' event or the next photo.
+      void offlineQueue.flushQueue();
     }
   }
 

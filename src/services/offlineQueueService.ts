@@ -1,4 +1,5 @@
 import { ENV } from '../config/env';
+import { getOrCreateDeviceFingerprint } from './storageKeys';
 
 /**
  * The JSON body of a queued upload, replayed verbatim against /api/photos or
@@ -18,10 +19,21 @@ export interface QueuedUpload {
 type OfflineQueueListener = (queuedCount: number, isOnline: boolean) => void;
 /** Fired once per successfully-uploaded item with the parsed server response, so a caller can reconcile an optimistic local entry (still under its temp id) with the real one (FE-03). */
 type FlushSuccessListener = (item: QueuedUpload, serverResponse: Record<string, unknown>) => void;
+/** Fired when an item is given up on, so the guest is told rather than finding out later (N-60). */
+type ItemDroppedListener = (item: QueuedUpload) => void;
 
 // [FIX H-13] Max items and max retries to prevent runaway growth
 const MAX_QUEUE_SIZE = 50;
 const MAX_RETRIES = 5;
+
+/** How long one replayed upload may take before it counts as a network failure (N-61). */
+const REPLAY_TIMEOUT_MS = 120_000;
+
+/**
+ * Answers a retry cannot change: malformed, the album gone, too large, the
+ * wrong type. Anything else — a 5xx, 401, 403, 408, 429 — may succeed later.
+ */
+const PERMANENT_HTTP_STATUSES = new Set([400, 404, 413, 415, 422]);
 
 const DB_NAME = 'wedmoments_offline_queue';
 const DB_VERSION = 1;
@@ -88,6 +100,7 @@ export async function withStore<T>(
 export class OfflineQueueService {
   private listeners: Set<OfflineQueueListener> = new Set();
   private flushSuccessListeners: Set<FlushSuccessListener> = new Set();
+  private itemDroppedListeners: Set<ItemDroppedListener> = new Set();
   private isProcessing = false;
   private available = typeof window !== 'undefined' && typeof window.indexedDB !== 'undefined';
 
@@ -217,13 +230,17 @@ export class OfflineQueueService {
         // Drop items that exceeded max retries
         if (item.retryCount >= MAX_RETRIES) {
           console.warn('[OfflineQueue] Dropping item after max retries:', item.id);
-          await this.removeItem(item.id);
+          await this.dropItem(item);
           continue;
         }
 
         try {
           const endpoint = item.type === 'photo' ? `${baseUrl}/api/photos` : `${baseUrl}/api/audio`;
-          const headers: Record<string, string> = {};
+          // N-59 — the device, as the live upload sends it. The audio route
+          // needs it (or a guest token) to know who is speaking, and the rate
+          // limiter keys on it; without it every replayed voice message was
+          // refused and, after five tries, deleted.
+          const headers: Record<string, string> = { 'x-device-fingerprint': getOrCreateDeviceFingerprint() };
           if (token) headers['Authorization'] = `Bearer ${token}`;
 
           let body: BodyInit;
@@ -248,8 +265,30 @@ export class OfflineQueueService {
             body = JSON.stringify(item.payload);
           }
 
-          const res = await fetch(endpoint, { method: 'POST', headers, body });
+          // N-61 — a deadline, so one stalled request on weak Wi-Fi cannot hold
+          // isProcessing, and with it every later flush, until a reload.
+          const controller = new AbortController();
+          const deadline = setTimeout(() => controller.abort(), REPLAY_TIMEOUT_MS);
+          let res: Response;
+          try {
+            res = await fetch(endpoint, { method: 'POST', headers, body, signal: controller.signal });
+          } catch (networkErr) {
+            // N-60 — the network failed, not the item. Spend no retry, and stop
+            // this pass: the next item would only fail the same way. The next
+            // 'online' event or enqueue tries again.
+            console.warn('[OfflineQueue] Network unavailable, keeping the queue for later:', networkErr);
+            break;
+          } finally {
+            clearTimeout(deadline);
+          }
           if (!res.ok) {
+            if (PERMANENT_HTTP_STATUSES.has(res.status)) {
+              // Retrying cannot make a malformed, oversized or orphaned upload
+              // succeed. Drop it now, and say so.
+              console.warn('[OfflineQueue] Upload refused for good, dropping:', item.id, res.status);
+              await this.dropItem(item);
+              continue;
+            }
             throw new Error(`Upload failed with HTTP ${res.status}`);
           }
           // FE-03: parse the response so a listener can reconcile the
@@ -281,6 +320,17 @@ export class OfflineQueueService {
   public subscribe(listener: OfflineQueueListener): () => void {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
+  }
+
+  public onItemDropped(listener: ItemDroppedListener): () => void {
+    this.itemDroppedListeners.add(listener);
+    return () => this.itemDroppedListeners.delete(listener);
+  }
+
+  /** Remove an item for good and tell whoever is listening. */
+  private async dropItem(item: QueuedUpload): Promise<void> {
+    await this.removeItem(item.id);
+    this.itemDroppedListeners.forEach((listener) => listener(item));
   }
 
   public onFlushSuccess(listener: FlushSuccessListener): () => void {

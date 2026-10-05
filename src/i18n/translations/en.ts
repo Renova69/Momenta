@@ -240,6 +240,8 @@ export const en: Record<string, string> = {
   'common.go_home': 'Go to Default Event',
   'common.create_new': 'Create New Wedding Event (Host Studio)',
   'common.offline_notice': 'Spotty connection: Photos will buffer locally & auto-upload when reconnected.',
+  'offline.photo_dropped': 'A photo taken offline could not be uploaded and was removed from this phone. Please take it again.',
+  'offline.audio_dropped': 'A voice message recorded offline could not be uploaded and was removed from this phone. Please record it again.',
   'common.syncing': 'Syncing buffered photos to venue wall...',
 
   // --- Extracted from components (see docs/I18N_LOCALIZATION_GUIDE.md) ---
