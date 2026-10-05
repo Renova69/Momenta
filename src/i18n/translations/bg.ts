@@ -236,6 +236,7 @@ export const bg: Record<string, string> = {
   'host.unfeature': 'Свали от екрана',
   'host.feature_tv': 'Покажи на екран',
   'host.overview': 'Общ преглед',
+  'host.slug_adjusted': 'Този адрес вече е зает, затова албумът ви е на /e/{{slug}}. Отпечатайте QR кодовете си от този адрес.',
   'host.canvas_studio': 'QR Табели за печат',
   'host.quests_mgr': 'Фото предизвикателства',
   'host.export_zip': 'Свали ZIP с висока резолюция',

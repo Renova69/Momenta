@@ -7,7 +7,7 @@
  * context instead of closing over the parent's scope.
  */
 
-import React, { useId } from 'react';
+import React, { useEffect, useId } from 'react';
 import { Settings, Shield, Trophy, Camera, Users, Lock } from 'lucide-react';
 import { i18n } from '../../../i18n';
 import { THEMES } from '../../../config/themes';
@@ -27,10 +27,21 @@ export const OverviewTab: React.FC = () => {
     guests, handleDeleteEvent, handleResetGuestSessions, hostNameDraft,
     isDeletingEvent, isResettingGuests, onOpenPricing, onUpdateEvent,
     pendingPhotos, photos, quests, setDeleteConfirmText, setEventDateText,
-    setEventTimeText, setHostNameDraft, setSlugDraft, setTitleDraft,
+    setEventTimeText, setHostNameDraft, setSlugDraft, flushSlugDraft, setTitleDraft,
     setVenueNameDraft, setWelcomeMessageDraft, slugDraft, titleDraft,
     venueNameDraft, welcomeMessageDraft,
   } = useHostDashboard();
+
+  // The address bar follows the field while the host types. If the server
+  // stored a different address (taken, or reserved — N-62), the field adopts
+  // it, and the address bar must follow too: a reload by the requested
+  // address would open somebody else's album.
+  useEffect(() => {
+    const route = router.getRoute();
+    if (route.view === 'host' && route.slug && slugDraft === event.slug && route.slug !== event.slug) {
+      router.navigate('host', event.slug, undefined, { replace: true });
+    }
+  }, [event.slug, slugDraft]);
 
   /** Every palette but this one is a Celebration Pass feature, server-side. */
   const DEFAULT_THEME_KEY = 'champagne_gold';
@@ -345,6 +356,10 @@ export const OverviewTab: React.FC = () => {
                 // pushed, unlike this typing-preview case needs.
                 setSlugDraft(customSlug);
                 router.navigate('host', customSlug, undefined, { replace: true });
+              }}
+              onBlur={flushSlugDraft}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') e.currentTarget.blur();
               }}
               className="w-full px-3 py-2 rounded-xl bg-noir-900 border border-cream-400/20 text-xs text-gold-300 font-mono focus:outline-none focus:border-gold-400"
             />

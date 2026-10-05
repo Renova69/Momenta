@@ -5,6 +5,7 @@ import { INITIAL_EVENT } from './defaultEvent';
 import { STORAGE_KEYS } from './storageKeys';
 import { normalizeEvent, RemoteEventPayload } from './eventNormalization';
 import { ServiceContext } from './storageServiceContext';
+import { i18n } from '../i18n';
 
 export function getEvent(): WeddingEvent {
   try {
@@ -37,20 +38,38 @@ export function getEvent(): WeddingEvent {
 
 export function updateEvent(ctx: ServiceContext, updates: Partial<WeddingEvent>, syncBackend: boolean = true): WeddingEvent {
   const current = getEvent();
+  // The address this album had before the edit — the one a rollback must
+  // look it up by, since the edit may have been refused (N-62).
+  const previousSlug = current.slug;
   const updated = { ...current, ...updates, updatedAt: new Date().toISOString() };
   localStorage.setItem(STORAGE_KEYS.EVENT(updated.id), JSON.stringify(updated));
   localStorage.setItem(STORAGE_KEYS.ACTIVE_EVENT_ID, updated.id);
   ctx.notify();
 
   if (syncBackend && updated.id) {
-    eventsApi.update(updated.id, updates).catch((err: unknown) => {
-      console.warn('[Storage] Event update was not saved to the server:', err);
-      const message = err instanceof Error ? (err instanceof Error ? err.message : String(err)) : String(err);
-      ctx.notifyError(message);
-      // Re-read authoritative state so the UI stops showing a change the
-      // server rejected (an expired session, or a tier-gated setting).
-      void refreshEventFromBackend(ctx);
-    });
+    eventsApi
+      .update(updated.id, updates)
+      .then((saved) => {
+        // N-62 — a taken or reserved address is stored as a variant. The
+        // answer used to be discarded, so the QR studio, projector and PDFs
+        // kept printing the address that was asked for: someone else's
+        // album, or nothing.
+        const storedSlug = (saved as Partial<WeddingEvent> | undefined)?.slug;
+        if ('slug' in updates && storedSlug && storedSlug !== updated.slug) {
+          ctx.updateEvent({ slug: storedSlug }, false);
+          ctx.notifyError(i18n.t('host.slug_adjusted', { slug: storedSlug }));
+        }
+      })
+      .catch((err: unknown) => {
+        console.warn('[Storage] Event update was not saved to the server:', err);
+        const message = err instanceof Error ? err.message : String(err);
+        ctx.notifyError(message);
+        // Re-read authoritative state so the UI stops showing a change the
+        // server rejected (an expired session, or a tier-gated setting) —
+        // by the address the album had before, since a refused rename
+        // left the optimistic one, which does not exist.
+        void refreshEventFromBackend(ctx, previousSlug);
+      });
   }
 
   return updated;
@@ -88,8 +107,8 @@ export async function refreshEventDetails(ctx: ServiceContext): Promise<void> {
 }
 
 /** Pull the event back from the server, discarding a rejected local edit. */
-export async function refreshEventFromBackend(ctx: ServiceContext): Promise<void> {
-  const slug = getEvent()?.slug;
+export async function refreshEventFromBackend(ctx: ServiceContext, slugOverride?: string): Promise<void> {
+  const slug = slugOverride || getEvent()?.slug;
   if (!slug) return;
   try {
     await loadEventBySlug(ctx, slug);

@@ -4,6 +4,7 @@ import React from 'react';
 import { HostDashboard } from '../../src/components/host/HostDashboard';
 import { WeddingEvent, QRCanvasConfig } from '../../src/types';
 import { i18n } from '../../src/i18n';
+import { router } from '../../src/router';
 
 /**
  * FE-05 — adjusting the ceremony date/time in the host dashboard used to
@@ -67,6 +68,47 @@ function renderDashboard(onUpdateEvent = vi.fn()) {
     ),
   };
 }
+
+/**
+ * N-62 — every pause while typing a new address committed it, and each commit
+ * is a permanent rename: typing "anna-and-boris" slowly renamed the album to
+ * "anna", "anna-and" and so on, and every intermediate address was printed
+ * on nothing but taken from the next host to want it. The address is now
+ * saved when the host leaves the field.
+ */
+describe('the album address field (N-62)', () => {
+  it('moves the address bar to the address the server stored', () => {
+    // The bar followed the field to the requested address; the server stored
+    // a variant. A reload by the requested one would open someone else's album.
+    vi.spyOn(router, 'getRoute').mockReturnValue({ view: 'host', slug: 'what-was-asked-for' });
+    const navigate = vi.spyOn(router, 'navigate').mockImplementation(() => undefined);
+
+    renderDashboard();
+
+    expect(navigate).toHaveBeenCalledWith('host', 'original-slug', undefined, { replace: true });
+  });
+
+  it('saves once, when the host leaves the field, not on every pause', () => {
+    vi.useFakeTimers();
+    try {
+      const { onUpdateEvent } = renderDashboard();
+      const slugInput = screen.getByDisplayValue('original-slug');
+
+      fireEvent.change(slugInput, { target: { value: 'anna' } });
+      act(() => vi.advanceTimersByTime(2000));
+      fireEvent.change(slugInput, { target: { value: 'anna-and-boris' } });
+      act(() => vi.advanceTimersByTime(2000));
+      expect(onUpdateEvent).not.toHaveBeenCalledWith(expect.objectContaining({ slug: expect.anything() }));
+
+      fireEvent.blur(slugInput);
+
+      const slugCalls = onUpdateEvent.mock.calls.filter(([u]) => 'slug' in u);
+      expect(slugCalls).toEqual([[{ slug: 'anna-and-boris' }]]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
 
 describe('HostDashboard date picker does not mutate the slug (FE-05)', () => {
   it('updates only eventDate when the ceremony date/time changes', () => {

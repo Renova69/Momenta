@@ -211,6 +211,7 @@ export const en: Record<string, string> = {
   'host.unfeature': 'Unfeature',
   'host.feature_tv': 'Feature on TV',
   'host.overview': 'Overview',
+  'host.slug_adjusted': 'That address was already taken, so your album is at /e/{{slug}}. Print your QR codes from this address.',
   'host.canvas_studio': 'QR Print Studio',
   'host.quests_mgr': 'Scavenger Quests',
   'host.export_zip': 'Download High-Res ZIP',

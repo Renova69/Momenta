@@ -134,8 +134,15 @@ export const HostDashboard: React.FC<HostDashboardProps> = ({
   const [titleDraft, setTitleDraft] = useDebouncedField(event.title, (newTitle) =>
     onUpdateEvent({ title: newTitle })
   );
-  const [slugDraft, setSlugDraft] = useDebouncedField(event.slug, (newSlug) =>
-    onUpdateEvent({ slug: newSlug })
+  // N-62 — saved when the host leaves the field, not on each pause: every
+  // commit renames the album for good, and an address given up mid-typing is
+  // reserved from everyone else for a year.
+  const [slugDraft, setSlugDraft, flushSlugDraft] = useDebouncedField(
+    event.slug,
+    (newSlug) => {
+      if (newSlug && newSlug !== event.slug) onUpdateEvent({ slug: newSlug });
+    },
+    null
   );
   const [venueNameDraft, setVenueNameDraft] = useDebouncedField(event.venueName, (newVenue) =>
     onUpdateEvent({ venueName: newVenue })
@@ -231,7 +238,7 @@ export const HostDashboard: React.FC<HostDashboardProps> = ({
     activeTab, setActiveTab,
     hostNameDraft, setHostNameDraft,
     titleDraft, setTitleDraft,
-    slugDraft, setSlugDraft,
+    slugDraft, setSlugDraft, flushSlugDraft,
     venueNameDraft, setVenueNameDraft,
     welcomeMessageDraft, setWelcomeMessageDraft,
     eventDateText, setEventDateText,

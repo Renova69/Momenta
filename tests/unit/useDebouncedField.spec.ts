@@ -34,6 +34,32 @@ describe('useDebouncedField', () => {
     expect(onCommit).not.toHaveBeenCalled();
   });
 
+  describe('with no delay: commit only when asked (N-62)', () => {
+    it('does not commit on a pause in typing, only on flush', () => {
+      const onCommit = vi.fn();
+      const { result } = renderHook(() => useDebouncedField<string>('', onCommit, null));
+
+      act(() => result.current[1]('an'));
+      act(() => vi.advanceTimersByTime(5000));
+      expect(onCommit).not.toHaveBeenCalled();
+
+      act(() => result.current[1]('anna'));
+      act(() => result.current[2]());
+
+      expect(onCommit).toHaveBeenCalledTimes(1);
+      expect(onCommit).toHaveBeenCalledWith('anna');
+    });
+
+    it('does nothing on flush when there is nothing new', () => {
+      const onCommit = vi.fn();
+      const { result } = renderHook(() => useDebouncedField<string>('anna', onCommit, null));
+
+      act(() => result.current[2]());
+
+      expect(onCommit).not.toHaveBeenCalled();
+    });
+  });
+
   it('commits exactly once after typing pauses, with the final value', () => {
     const onCommit = vi.fn();
     const { result } = renderHook(() => useDebouncedField<string>('', onCommit, 500));

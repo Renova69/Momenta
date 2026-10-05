@@ -67,6 +67,8 @@ export interface HostDashboardValue {
   setTitleDraft: (value: string) => void;
   slugDraft: string;
   setSlugDraft: (value: string) => void;
+  /** Save the address being typed. Called when the field loses focus (N-62). */
+  flushSlugDraft: () => void;
   venueNameDraft: string;
   setVenueNameDraft: (value: string) => void;
   welcomeMessageDraft: string;

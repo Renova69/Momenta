@@ -166,6 +166,44 @@ describe('updateEvent', () => {
     expect(notify).toHaveBeenCalled();
   });
 
+  // N-62 — the server may store a different address than the one asked for
+  // (taken, or reserved after a deletion). The answer used to be discarded,
+  // so the QR studio, the projector and every PDF kept the requested one.
+  it('adopts the address the server actually stored, and says so', async () => {
+    const { ctx, notifyError, updateEventSpy } = makeContext();
+    vi.spyOn(eventsApi, 'update').mockResolvedValue({ id: EVENT_ID, slug: 'anna-x7k21' } as never);
+
+    updateEvent(ctx, { slug: 'anna' });
+    await vi.waitFor(() => expect(updateEventSpy).toHaveBeenCalled());
+
+    expect(updateEventSpy).toHaveBeenCalledWith({ slug: 'anna-x7k21' }, false);
+    expect(notifyError).toHaveBeenCalledTimes(1);
+    expect(String(notifyError.mock.calls[0][0])).toContain('anna-x7k21');
+  });
+
+  it('says nothing when the server stored the address as asked', async () => {
+    const { ctx, notifyError, updateEventSpy } = makeContext();
+    const update = vi.spyOn(eventsApi, 'update').mockResolvedValue({ id: EVENT_ID, slug: 'anna' } as never);
+
+    updateEvent(ctx, { slug: 'anna' });
+    await vi.waitFor(() => expect(update).toHaveBeenCalled());
+    await Promise.resolve();
+
+    expect(updateEventSpy).not.toHaveBeenCalled();
+    expect(notifyError).not.toHaveBeenCalled();
+  });
+
+  it('rolls back a refused rename by asking for the album at its old address', async () => {
+    const { ctx } = makeContext();
+    vi.spyOn(eventsApi, 'update').mockRejectedValue(new Error('slug too short'));
+    const getBySlug = vi.spyOn(eventsApi, 'getBySlug').mockResolvedValue(null as never);
+
+    updateEvent(ctx, { slug: 'ab' });
+    await vi.waitFor(() => expect(getBySlug).toHaveBeenCalled());
+
+    expect(getBySlug).toHaveBeenCalledWith('ivan-and-maria');
+  });
+
   it('syncs to the server by default', () => {
     const { ctx } = makeContext();
     const update = vi.spyOn(eventsApi, 'update').mockResolvedValue({} as never);
