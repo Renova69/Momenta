@@ -5,7 +5,7 @@
 **Feature review:** 2026-09-21 (§3c). **Accessibility review:** 2026-09-21 (§3d).
 **Client mutation sweep:** 2026-09-21 (§8).
 **Performance pass:** 2026-09-22 to 23 (§3e).
-**Security review, partial:** 2026-09-25 to 26, recorded 2026-10-04 (§3f). **5 of 25 findings open.**
+**Security review, partial:** 2026-09-25 to 26, recorded 2026-10-04 (§3f). **4 of 25 findings open.**
 
 > **Read this first.** The audit below is preserved as written — each finding
 > still describes the code as it was on 2026-09-15, because a finding rewritten
@@ -797,7 +797,7 @@ drawn.
 
 ## 3f. The Security Review, Three Domains of Eight (2026-09-25 to 26)
 
-**Open: 5 of 25.** Fixed so far: N-34 to N-53.
+**Open: 4 of 25.** Fixed so far: N-34 to N-54.
 
 Eight reviewers were each given one domain and told to hunt for what earlier
 passes miss: races, transaction boundaries, one route missing a check its
@@ -848,7 +848,7 @@ range for a function it had correctly identified.
 | **N-51** | One click on the Free plan card forfeits a paid one-time pass. There is no confirmation, and the click fires confetti. | Low | `src/components/host/PricingPlansModal.tsx`, `server/routes/subscriptions.ts` | billing-5 | `efba479` |
 | **N-52** | Pro Planner's pooled storage cap is checked under a per-event lock. Concurrent uploads to different albums of one host all see the same total and all pass. The overshoot is limited to the uploads in flight at once. | Low | `server/lib/photoWrite.ts`, `server/middleware/tierGate.ts` | billing-8 | `b673e90` |
 | **N-53** | The pricing page sells custom palettes as a Deluxe Keepsake feature (`plan.deluxe.f4`), but they unlock at Celebration Pass. | Low | `src/i18n/translations/en.ts`, `src/i18n/translations/bg.ts` | billing-9 | `aebf7ed` |
-| **N-54** | After checkout, the banner says "Your plan is now active" before the webhook has granted the plan, and the tier is refetched at most once. For delayed payment methods such as SEPA, the banner stays wrong. | Low | `src/App.tsx` | billing-10 | Open |
+| **N-54** | After checkout, the banner says "Your plan is now active" before the webhook has granted the plan, and the tier is refetched at most once. For delayed payment methods such as SEPA, the banner stays wrong. | Low | `src/App.tsx` | billing-10 | `72da0d4` |
 | **N-55** | A quest retake moves the guest's tie-break time later, so the guest who reached the top score first can lose the prize to someone who finished after them. | Low | `server/routes/photos/upload.ts`, `server/lib/questLeaderboard.ts` | lifecycle-7 | Open |
 | **N-56** | A 0-point quest is stored as 10 points (`points \|\| 10`). Only a direct API call can send 0; the host UI clamps the input to 5–100. | Low | `server/routes/quests.ts` | lifecycle-8 | Open |
 | **N-57** | `POST /api/audio` still creates a new guest row on every unproven request, with no per-IP backstop limit. This is H8's residual; its scope did not include audio. | Low | `server/routes/audio.ts` | auth-6 | Open |
