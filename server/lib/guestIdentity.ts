@@ -1,6 +1,13 @@
 import { pool } from './db';
 import { isValidUuid } from './validation';
-import { verifyGuestToken } from './guestAuth';
+import { verifyGuestToken, RESERVED_DEVICE_FINGERPRINTS } from './guestAuth';
+
+/** The same cap the route schemas put on a fingerprint. */
+const MAX_FINGERPRINT_LENGTH = 200;
+
+function isUsableFingerprint(fingerprint: string): boolean {
+  return fingerprint.length <= MAX_FINGERPRINT_LENGTH && !RESERVED_DEVICE_FINGERPRINTS.has(fingerprint);
+}
 
 /**
  * Who is this request acting as?
@@ -113,8 +120,11 @@ export async function resolveGuestIdentity(options: ResolveGuestOptions): Promis
   }
 
   // 2/3. Fingerprint: attribute to this device's existing row, or create the
-  //      one row that device gets.
-  if (deviceFingerprint) {
+  //      one row that device gets. A reserved value ('photographer', the FTP
+  //      ingest row's key) or an oversized one identifies no guest: the route
+  //      schemas refuse both, but this is the one place every route shares,
+  //      and the audio route has no schema for its header.
+  if (deviceFingerprint && isUsableFingerprint(deviceFingerprint)) {
     const upsert = await pool.query<{ id: string; name: string; token_version: number; inserted: boolean }>(
       `INSERT INTO guests (event_id, name, device_fingerprint)
        VALUES ($1, $2, $3)

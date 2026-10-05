@@ -64,16 +64,24 @@ audioRouter.post('/', uploadIpLimiter, uploadLimiter, upload.single('audio'), re
       return res.status(404).json({ error: 'Event not found' });
     }
 
+    // Recordings count against the same storage allowance as photos.
+    const audioBytes = req.file.buffer.length;
+    const storageCheck = await checkPhotoUploadTierLimit(eventId, audioBytes);
+    if (!storageCheck.allowed) {
+      return res
+        .status(403)
+        .json({ error: storageCheck.reason, code: storageCheck.code || 'STORAGE_LIMIT_REACHED' });
+    }
+
     // N-57 — the H8 ladder, as comments use it (lib/guestIdentity.ts): a
     // verified token, else this device's existing row, else one row for this
     // device. This route used to create a new guest on every unproven request,
-    // and a caller offering neither is now asked to join instead. The device
-    // arrives as a header: multer has not parsed the body when the limiter
-    // reads it, so the client sends it there for both.
-    const deviceFingerprint =
-      (typeof req.body?.deviceFingerprint === 'string' && req.body.deviceFingerprint) ||
-      req.get('x-device-fingerprint') ||
-      undefined;
+    // and a caller offering neither is now asked to join instead. The device is
+    // read from the header only: that is what the rate limiter keys on (multer
+    // has not parsed the body when it runs), and identity must not come from a
+    // different value than the one being limited. Resolved after the plan's
+    // pre-check, so a message the plan refuses leaves no guest behind.
+    const deviceFingerprint = req.get('x-device-fingerprint') || undefined;
     const identity = await resolveGuestIdentity({
       eventId,
       guestId,
@@ -93,15 +101,6 @@ audioRouter.post('/', uploadIpLimiter, uploadLimiter, upload.single('audio'), re
       validGuestId,
     ]);
     const resolvedAvatar = avatarRow.rows[0]?.avatar_url ?? null;
-
-    // Recordings count against the same storage allowance as photos.
-    const audioBytes = req.file.buffer.length;
-    const storageCheck = await checkPhotoUploadTierLimit(eventId, audioBytes);
-    if (!storageCheck.allowed) {
-      return res
-        .status(403)
-        .json({ error: storageCheck.reason, code: storageCheck.code || 'STORAGE_LIMIT_REACHED' });
-    }
 
     // Save audio file to storage partitioned by eventId
     // Both derived from the bytes that were just validated, never from the

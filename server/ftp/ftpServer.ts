@@ -206,6 +206,10 @@ export function buildFtpServerOptions(tls: { key: Buffer; cert: Buffer } | false
     anonymous: false,
     tls,
     timeout: FTP_IDLE_TIMEOUT_MS,
+    // The library emits an event for STOR only. APPE and STOU write files that
+    // nothing ingests, unlinks or checks against a revoked key, so a session
+    // could fill the staging disk with them. Photographer clients use STOR.
+    blacklist: ['APPE', 'STOU'],
     greeting: ['WedMoments Pro Photographer Ingest', 'Upload JPEGs to the live screen'],
   };
 }

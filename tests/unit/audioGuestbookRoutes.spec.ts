@@ -286,6 +286,52 @@ describe('who a message is attributed to when nothing is proven (N-57)', () => {
     expect(await guestCount()).toBe(before + 1);
   });
 
+  // Found by the review of 656fed0. The photographer's ingest row is keyed on
+  // the reserved fingerprint 'photographer'; the guest and comment schemas
+  // refuse it, but this route took the header as given. A guest could post as
+  // the photographer, or — before the first FTP upload — create that row with
+  // a name of their choosing and walk away with a token for it.
+  it('will not let a guest act as the photographer through a reserved device', async () => {
+    const res = await postFrom('photographer', { eventId: host.eventId, guestName: 'Not The Photographer' });
+
+    expect(res.status).toBe(401);
+    const row = await query<{ n: number }>(
+      "SELECT COUNT(*)::int AS n FROM guests WHERE event_id = $1 AND name = 'Not The Photographer'",
+      [host.eventId]
+    );
+    expect(row.rows[0].n).toBe(0);
+  });
+
+  it('reads the device from the header the rate limiter keys on, not from the body', async () => {
+    const device = `audio-n57-header-${Date.now()}`;
+    const first = await (await postFrom(device, { eventId: host.eventId, guestName: 'Rada' })).json();
+
+    const second = await (
+      await postFrom(device, { eventId: host.eventId, guestName: 'Rada', deviceFingerprint: `other-${Date.now()}` })
+    ).json();
+
+    expect(second.guestId).toBe(first.guestId);
+  });
+
+  it('creates no guest for a message the plan refuses', async () => {
+    const full = await registerHost();
+    await query("UPDATE subscriptions SET tier = 'deluxe_keepsake' WHERE user_id = $1", [full.userId]);
+    await query('UPDATE events SET storage_bytes = 999999999999 WHERE id = $1', [full.eventId]);
+    const before = await query<{ n: number }>('SELECT COUNT(*)::int AS n FROM guests WHERE event_id = $1', [full.eventId]);
+
+    const { body, contentType } = multipartAudio(WEBM, { eventId: full.eventId, guestName: 'Late' });
+    const res = await fetch(`${BASE_URL}/api/audio`, {
+      method: 'POST',
+      headers: { 'Content-Type': contentType, 'x-device-fingerprint': `audio-full-${Date.now()}` },
+      body,
+    });
+
+    expect(res.status).toBe(403);
+    const after = await query<{ n: number }>('SELECT COUNT(*)::int AS n FROM guests WHERE event_id = $1', [full.eventId]);
+    expect(after.rows[0].n).toBe(before.rows[0].n);
+    await deleteEventFixture(full.eventId);
+  });
+
   it('does not hand a durable token to a device match it did not prove', async () => {
     const device = `audio-n57-token-${Date.now()}`;
     await postFrom(device, { eventId: host.eventId, guestName: 'Iva' });

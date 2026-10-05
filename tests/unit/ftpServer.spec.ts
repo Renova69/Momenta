@@ -283,6 +283,14 @@ describe('handleLogin (SEC-F2, SEC-F5 wired together)', () => {
 });
 
 describe('the FTP server idles out a silent session (N-39)', () => {
+  it('refuses APPE and STOU, which write files no handler ever sees', () => {
+    // Found by the review of 3f98b0c: the library emits an event only for
+    // STOR, so an append or unique-name store was never ingested, never
+    // unlinked, and never checked against a revoked key.
+    const options = buildFtpServerOptions(false);
+    expect(options.blacklist).toEqual(expect.arrayContaining(['APPE', 'STOU']));
+  });
+
   it('builds the server with an idle timeout, not the library default of none', () => {
     const options = buildFtpServerOptions(false);
     expect(options.timeout).toBeGreaterThan(0);
