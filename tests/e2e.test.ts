@@ -348,11 +348,16 @@ async function runE2ETests() {
     );
 
     // Post Audio Guestbook message on unlocked deluxe event
+    // As the real client sends it (src/api/audioApi.ts): the guest's token in
+    // the form and the device in a header. Without either the server asks the
+    // caller to join rather than minting a new guest (N-57).
     const audioRes = await fetch(`${BASE_URL}/api/audio`, {
       method: 'POST',
+      headers: { 'x-device-fingerprint': deviceFp },
       body: audioForm({
         eventId: testEvent.id,
         guestId,
+        guestToken,
         guestName: 'Sophie & James',
         durationSeconds: '18',
         note: 'From the best friends with so much love!',
