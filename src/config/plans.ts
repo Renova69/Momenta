@@ -63,7 +63,10 @@ export const PLANS: Record<PlanTier, PlanDetails> = {
       'plan.celebration.f4',
       'plan.celebration.f5',
       'plan.celebration.f6',
-      'plan.celebration.f7'
+      'plan.celebration.f7',
+      // N-53 — palettes unlock here (FEATURE_GATES.custom_themes), so this is
+      // the card that has to say so. They were listed under Deluxe Keepsake.
+      'plan.celebration.f8'
     ],
     maxPhotos: 'plan.celebration.limit_photos',
     storage: '10 GB',
@@ -80,7 +83,6 @@ export const PLANS: Record<PlanTier, PlanDetails> = {
       'plan.deluxe.f1',
       'plan.deluxe.f2',
       'plan.deluxe.f3',
-      'plan.deluxe.f4',
       'plan.deluxe.f5',
       'plan.deluxe.f6',
       'plan.deluxe.f7'
