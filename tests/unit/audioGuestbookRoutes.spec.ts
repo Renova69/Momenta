@@ -242,6 +242,60 @@ describe('who a message is attributed to', () => {
   }, 20_000);
 });
 
+/**
+ * N-57 — H8 stopped the comment and quest routes minting a new guest row on
+ * every unproven request; its scope did not include this one. A voice message
+ * with no token and no device created a guest each time, and nothing but the
+ * global API ceiling limited how often. The route now uses the same ladder as
+ * comments (lib/guestIdentity.ts): a verified token, else this device's row,
+ * else one row for this device — and a caller with neither is asked to join.
+ */
+describe('who a message is attributed to when nothing is proven (N-57)', () => {
+  function postFrom(fingerprint: string | null, fields: Record<string, string>): Promise<Response> {
+    const { body, contentType } = multipartAudio(WEBM, fields);
+    return fetch(`${BASE_URL}/api/audio`, {
+      method: 'POST',
+      headers: { 'Content-Type': contentType, ...(fingerprint ? { 'x-device-fingerprint': fingerprint } : {}) },
+      body,
+    });
+  }
+
+  async function guestCount(): Promise<number> {
+    const r = await query<{ n: number }>('SELECT COUNT(*)::int AS n FROM guests WHERE event_id = $1', [host.eventId]);
+    return r.rows[0].n;
+  }
+
+  it('asks a caller with no token and no device to join, rather than creating a guest', async () => {
+    const before = await guestCount();
+
+    const res = await postFrom(null, { eventId: host.eventId, guestName: 'Nobody' });
+
+    expect(res.status).toBe(401);
+    expect((await res.json()).code).toBe('GUEST_IDENTITY_REQUIRED');
+    expect(await guestCount()).toBe(before);
+  });
+
+  it('gives one device one guest, however many messages it sends', async () => {
+    const device = `audio-n57-${Date.now()}`;
+    const before = await guestCount();
+
+    const first = await (await postFrom(device, { eventId: host.eventId, guestName: 'Mila' })).json();
+    const second = await (await postFrom(device, { eventId: host.eventId, guestName: 'Mila' })).json();
+
+    expect(second.guestId).toBe(first.guestId);
+    expect(await guestCount()).toBe(before + 1);
+  });
+
+  it('does not hand a durable token to a device match it did not prove', async () => {
+    const device = `audio-n57-token-${Date.now()}`;
+    await postFrom(device, { eventId: host.eventId, guestName: 'Iva' });
+
+    const again = await (await postFrom(device, { eventId: host.eventId, guestName: 'Iva' })).json();
+
+    expect(again.guestToken).toBeUndefined();
+  });
+});
+
 describe('the message itself', () => {
   it('stores a note, and stores null rather than an empty one', async () => {
     const withNote = await (

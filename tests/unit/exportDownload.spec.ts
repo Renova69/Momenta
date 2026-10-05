@@ -149,7 +149,8 @@ describe('ZIP export download links', () => {
     });
     const uploadRes = await fetch(`${BASE_URL}/api/audio`, {
       method: 'POST',
-      headers: { 'Content-Type': contentType },
+      // A guest's phone always says which device it is (N-57).
+      headers: { 'Content-Type': contentType, 'x-device-fingerprint': `spec-device-${Math.random().toString(36).slice(2)}` },
       body,
     });
     expect(uploadRes.status).toBe(201);

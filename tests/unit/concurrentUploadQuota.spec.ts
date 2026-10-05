@@ -203,7 +203,8 @@ describe('Concurrent audio upload quota enforcement (DB-02)', () => {
         });
         return fetch(`${AUDIO_BASE_URL}/api/audio`, {
           method: 'POST',
-          headers: { 'Content-Type': contentType },
+          // A guest's phone always says which device it is (N-57).
+          headers: { 'Content-Type': contentType, 'x-device-fingerprint': `spec-device-${Math.random().toString(36).slice(2)}` },
           body,
         });
       })

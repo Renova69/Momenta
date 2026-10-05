@@ -5,9 +5,10 @@ import { CONFIG } from '../lib/config';
 import { saveBuffer, toAbsoluteUrl, storageAdapter } from '../lib/storage';
 import { checkPhotoUploadTierLimit, checkUploadAllowance, lockAndLoadUploadContext } from '../middleware/tierGate';
 import { isValidUuid, detectAudioFormat } from '../lib/validation';
-import { uploadLimiter } from '../middleware/rateLimit';
+import { uploadLimiter, uploadIpLimiter } from '../middleware/rateLimit';
 import { requireEventTier } from '../middleware/tierGate';
-import { issueGuestToken, verifyGuestToken } from '../lib/guestAuth';
+import { issueGuestToken } from '../lib/guestAuth';
+import { resolveGuestIdentity } from '../lib/guestIdentity';
 import { wsManager } from '../ws/wsServer';
 import { errorLabel } from '../lib/errors';
 import { optionalAuth } from '../middleware/auth';
@@ -34,8 +35,8 @@ const upload = multer({
 // 1. POST /api/audio (Save Audio Recording & Broadcast — Gated to deluxe_keepsake and pro_planner)
 // multer runs first so requireEventTier (which reads req.body.eventId) sees
 // the parsed multipart fields, exactly like the JSON body it used to read.
-audioRouter.post('/', uploadLimiter, upload.single('audio'), requireEventTier('deluxe_keepsake'), async (req, res) => {
-  const { eventId, guestId, guestName, guestAvatar, note, localId, guestToken } = req.body as Record<string, string | undefined>;
+audioRouter.post('/', uploadIpLimiter, uploadLimiter, upload.single('audio'), requireEventTier('deluxe_keepsake'), async (req, res) => {
+  const { eventId, guestId, guestName, note, localId, guestToken } = req.body as Record<string, string | undefined>;
   const durationSeconds = Number.parseInt(req.body?.durationSeconds, 10) || 0;
 
   try {
@@ -63,48 +64,35 @@ audioRouter.post('/', uploadLimiter, upload.single('audio'), requireEventTier('d
       return res.status(404).json({ error: 'Event not found' });
     }
 
-    // Ensure guest exists
-    let validGuestId = guestId;
-    let resolvedName = guestName || 'Guest';
-    let resolvedAvatar = guestAvatar || null;
-    let guestTokenVersion = 0;
-
-    if (!guestId || !isValidUuid(guestId)) {
-      const gInsert = await pool.query(
-        'INSERT INTO guests (event_id, name, avatar_url) VALUES ($1, $2, $3) RETURNING id, name, avatar_url',
-        [eventId, guestName || 'Guest', guestAvatar || null]
-      );
-      validGuestId = gInsert.rows[0].id;
-      resolvedName = gInsert.rows[0].name;
-      resolvedAvatar = gInsert.rows[0].avatar_url;
-    } else {
-      // Scoped by event_id (SEC-D3) and proven with a token (SEC-A2) — a
-      // guestId alone is public, so a mismatch is treated as unknown: mint a
-      // fresh guest rather than post to the guestbook as someone else.
-      // M10 - load the row first; verification needs its token_version, and
-      // this is the same query that was already here.
-      const scoped = await pool.query<{ id: string; name: string; avatar_url: string | null; token_version: number }>(
-        'SELECT id, name, avatar_url, token_version FROM guests WHERE id = $1 AND event_id = $2',
-        [guestId, eventId]
-      );
-      const guestCheck =
-        scoped.rows.length > 0 && verifyGuestToken(guestToken, guestId, eventId, scoped.rows[0].token_version)
-          ? scoped
-          : { rows: [] as { id: string; name: string; avatar_url: string | null; token_version: number }[] };
-      if (guestCheck.rows.length === 0) {
-        const gInsert = await pool.query(
-          'INSERT INTO guests (event_id, name, avatar_url) VALUES ($1, $2, $3) RETURNING id, name, avatar_url',
-          [eventId, guestName || 'Guest', guestAvatar || null]
-        );
-        validGuestId = gInsert.rows[0].id;
-        resolvedName = gInsert.rows[0].name;
-        resolvedAvatar = gInsert.rows[0].avatar_url;
-      } else {
-        resolvedName = guestCheck.rows[0].name;
-        resolvedAvatar = guestCheck.rows[0].avatar_url;
-        guestTokenVersion = Number(guestCheck.rows[0].token_version) || 0;
-      }
+    // N-57 — the H8 ladder, as comments use it (lib/guestIdentity.ts): a
+    // verified token, else this device's existing row, else one row for this
+    // device. This route used to create a new guest on every unproven request,
+    // and a caller offering neither is now asked to join instead. The device
+    // arrives as a header: multer has not parsed the body when the limiter
+    // reads it, so the client sends it there for both.
+    const deviceFingerprint =
+      (typeof req.body?.deviceFingerprint === 'string' && req.body.deviceFingerprint) ||
+      req.get('x-device-fingerprint') ||
+      undefined;
+    const identity = await resolveGuestIdentity({
+      eventId,
+      guestId,
+      guestToken,
+      deviceFingerprint,
+      fallbackName: guestName,
+    });
+    if (!identity) {
+      return res.status(401).json({
+        error: 'Join the wedding before leaving a message.',
+        code: 'GUEST_IDENTITY_REQUIRED',
+      });
     }
+    const validGuestId = identity.guestId;
+    const resolvedName = identity.name;
+    const avatarRow = await pool.query<{ avatar_url: string | null }>('SELECT avatar_url FROM guests WHERE id = $1', [
+      validGuestId,
+    ]);
+    const resolvedAvatar = avatarRow.rows[0]?.avatar_url ?? null;
 
     // Recordings count against the same storage allowance as photos.
     const audioBytes = req.file.buffer.length;
@@ -195,7 +183,12 @@ audioRouter.post('/', uploadLimiter, upload.single('audio'), requireEventTier('d
     } else {
       wsManager.broadcastToEvent(eventId, 'AUDIO_ADDED', newEntry);
     }
-    res.status(201).json({ ...newEntry, guestToken: issueGuestToken(validGuestId!, eventId, guestTokenVersion) });
+    // Only when identity was proven this request (SEC-03): a device match
+    // onto an existing row is attributed correctly but earns no credential.
+    res.status(201).json({
+      ...newEntry,
+      ...(identity.identityProven ? { guestToken: issueGuestToken(validGuestId, eventId, identity.tokenVersion) } : {}),
+    });
   } catch (err) {
     console.error('[Error in POST /api/audio]:', errorLabel(err));
     res.status(500).json({ error: 'Failed to save audio recording' });

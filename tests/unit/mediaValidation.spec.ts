@@ -199,7 +199,11 @@ describe('Media validation (SEC-M2, SEC-M3, SEC-M4)', () => {
       const { body, contentType } = buildMultipartAudio(garbage, baseFields());
       const res = await fetch(`${BASE_URL}/api/audio`, {
         method: 'POST',
-        headers: { 'Content-Type': contentType },
+        headers: {
+          'Content-Type': contentType,
+          // A guest's phone always says which device it is (N-57).
+          'x-device-fingerprint': `media-spec-${Math.random().toString(36).slice(2)}`,
+        },
         body,
       });
       expect(res.status).toBe(400);
@@ -210,7 +214,11 @@ describe('Media validation (SEC-M2, SEC-M3, SEC-M4)', () => {
       const { body, contentType } = buildMultipartAudio(webmHeader, baseFields());
       const res = await fetch(`${BASE_URL}/api/audio`, {
         method: 'POST',
-        headers: { 'Content-Type': contentType },
+        headers: {
+          'Content-Type': contentType,
+          // A guest's phone always says which device it is (N-57).
+          'x-device-fingerprint': `media-spec-${Math.random().toString(36).slice(2)}`,
+        },
         body,
       });
       expect(res.status).toBe(201);
@@ -235,7 +243,11 @@ describe('Media validation (SEC-M2, SEC-M3, SEC-M4)', () => {
 
       const res = await fetch(`${BASE_URL}/api/audio`, {
         method: 'POST',
-        headers: { 'Content-Type': contentType },
+        headers: {
+          'Content-Type': contentType,
+          // A guest's phone always says which device it is (N-57).
+          'x-device-fingerprint': `media-spec-${Math.random().toString(36).slice(2)}`,
+        },
         body,
       });
 
@@ -255,7 +267,11 @@ describe('Media validation (SEC-M2, SEC-M3, SEC-M4)', () => {
 
       const res = await fetch(`${BASE_URL}/api/audio`, {
         method: 'POST',
-        headers: { 'Content-Type': contentType },
+        headers: {
+          'Content-Type': contentType,
+          // A guest's phone always says which device it is (N-57).
+          'x-device-fingerprint': `media-spec-${Math.random().toString(36).slice(2)}`,
+        },
         body,
       });
 
@@ -273,7 +289,11 @@ describe('Media validation (SEC-M2, SEC-M3, SEC-M4)', () => {
 
       const res = await fetch(`${BASE_URL}/api/audio`, {
         method: 'POST',
-        headers: { 'Content-Type': contentType },
+        headers: {
+          'Content-Type': contentType,
+          // A guest's phone always says which device it is (N-57).
+          'x-device-fingerprint': `media-spec-${Math.random().toString(36).slice(2)}`,
+        },
         body,
       });
 

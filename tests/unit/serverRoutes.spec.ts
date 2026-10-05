@@ -359,7 +359,8 @@ describe('Express REST Routes Spec', () => {
     });
     const audioRes = await fetch(`${BASE_URL}/api/audio`, {
       method: 'POST',
-      headers: { 'Content-Type': audioContentType },
+      // A guest's phone always says which device it is (N-57).
+      headers: { 'Content-Type': audioContentType, 'x-device-fingerprint': `spec-device-${Math.random().toString(36).slice(2)}` },
       body: audioBody,
     });
     expect(audioRes.status).toBe(201);
