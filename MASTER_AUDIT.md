@@ -6,7 +6,7 @@
 **Client mutation sweep:** 2026-09-21 (§8).
 **Performance pass:** 2026-09-22 to 23 (§3e).
 **Security review, partial:** 2026-09-25 to 26, recorded 2026-10-04 (§3f). **All 25 findings fixed.**
-**Remaining five domains:** reviewed 2026-10-05 (§3g). **30 of 33 findings open.**
+**Remaining five domains:** reviewed 2026-10-05 (§3g). **29 of 33 findings open.**
 
 > **Read this first.** The audit below is preserved as written — each finding
 > still describes the code as it was on 2026-09-15, because a finding rewritten
@@ -900,7 +900,7 @@ trusting them.
 
 ## 3g. The Remaining Five Domains (2026-10-05)
 
-**Open: 30 of 33.** Fixed so far: N-59, N-60, N-61.
+**Open: 29 of 33.** Fixed so far: N-59, N-60, N-61, N-62.
 
 The rest of the review §3f began: media, infra, db, guest UI and host UI, one
 reviewer each, with the same brief — races, missing checks, inconsistent
@@ -921,7 +921,7 @@ until every client path that calls it has been read.
 | **N-59** | **An offline voice message is refused on replay and then deleted.** Since N-57, `POST /api/audio` needs a guest token or the `x-device-fingerprint` header; the offline queue's replay sends neither, gets 401, and drops the recording after five tries. | High | `src/services/offlineQueueService.ts` | Yes | `e8b29af` |
 | **N-60** | **A flapping venue Wi-Fi deletes queued photos.** A network error counts toward the five-retry limit exactly like a server refusal, and the item is then removed with only a console warning. | High | `src/services/offlineQueueService.ts` | Yes | `e8b29af` |
 | **N-61** | Queued uploads are never flushed when the app starts — only on an `online` event or the next enqueue — and a stalled request with no timeout blocks every later flush until reload. | High | `src/services/offlineQueueService.ts`, `src/services/storageService.ts` | Yes | `e8b29af` |
-| **N-62** | **The server renames an album's address and the dashboard never learns it.** A taken or reserved slug is stored as a variant, but `updateEvent` discards the PUT response, so the QR studio, projector and PDFs keep the requested address — someone else's album, or nothing. The slug field also commits every pause in typing as a separate permanent rename. | High | `src/services/eventService.ts`, `server/routes/events/crud.ts` | Yes | Open |
+| **N-62** | **The server renames an album's address and the dashboard never learns it.** A taken or reserved slug is stored as a variant, but `updateEvent` discards the PUT response, so the QR studio, projector and PDFs keep the requested address — someone else's album, or nothing. The slug field also commits every pause in typing as a separate permanent rename. | High | `src/services/eventService.ts`, `server/routes/events/crud.ts` | Yes | `972542b` |
 | **N-63** | The photographer upload route buffers up to 10 files of 50 MB in memory before it checks the ingest key, with only a device-keyed limiter whose key the caller chooses. A few parallel unauthenticated requests can exhaust the heap. | High | `server/routes/ingest.ts` | No | Open |
 | **N-64** | A retention notice is stamped once and never cleared when the deadline later moves. An album warned, then extended by a purchase, then lapsed again is deletable with no warning about the new deadline. Latent while `RETENTION_ENFORCED` is off. | High | `server/lib/retention.ts`, `server/lib/retentionNotice.ts` | No | Open |
 | **N-65** | The 40-megapixel decode cap added for guest phones also applies to photographer ingest: a 45–61 MP frame from a professional body is reported as "not an image" and, over FTP, deleted after the camera was told it arrived. | Medium-High | `server/lib/images.ts`, `server/lib/ingestPipeline.ts` | No | Open |
