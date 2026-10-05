@@ -55,6 +55,7 @@ import { authRouter } from '../../server/routes/auth';
 import { billingRouter } from '../../server/routes/billing';
 import { applyTierUpgrade } from '../../server/lib/subscriptionUpgrade';
 import { CONFIG } from '../../server/lib/config';
+import { pool } from '../../server/lib/db';
 
 const TEST_PORT = 6629;
 const BASE_URL = `http://localhost:${TEST_PORT}`;
@@ -160,6 +161,23 @@ describe('duplicate subscription guard', () => {
 
     expect(res.status).toBe(503);
     expect((await res.json()).code).toBe('BILLING_UNVERIFIABLE');
+  });
+});
+
+describe('when Stripe cannot be asked, for a one-time pass', () => {
+  it('still sells a pass, which starts no subscription to duplicate', async () => {
+    // Found by the review of ce8815e: the 503 for an unanswerable liveness
+    // check is about not opening a second subscription. A one-time pass opens
+    // none, so it must not be blocked by it.
+    const { token, userId } = await registerHost();
+    const subscriptionId = uniqueId('sub_unreachable_pass');
+    subscriptionStatuses.set(subscriptionId, UNREACHABLE);
+    await pool.query(
+      "UPDATE subscriptions SET stripe_subscription_id = $2 WHERE user_id = $1 AND status = 'active'",
+      [userId, subscriptionId]
+    );
+
+    expect((await startCheckout(token, 'celebration_pass')).status).toBe(200);
   });
 });
 

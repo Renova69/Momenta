@@ -42,7 +42,7 @@ async function loadExpired(): Promise<ExpiredGraceRow[]> {
        FROM subscriptions s
        JOIN users u ON u.id = s.user_id
       WHERE s.status = 'active'
-        AND s.tier <> 'free'
+        AND s.tier <> COALESCE(s.one_time_tier, 'free')
         AND s.past_due_grace_expiry IS NOT NULL
         AND s.past_due_grace_expiry < NOW()
       ORDER BY s.past_due_grace_expiry`
@@ -79,9 +79,14 @@ async function main(): Promise<void> {
   for (const row of expired) {
     try {
       // One account's failure must not abandon the rest of the sweep.
-      await suspendTierForNonPayment(row.user_id);
-      downgraded += 1;
-      console.log(`  suspended ${row.email}`);
+      // Re-checked at the moment of suspending: this list is already stale,
+      // and a renewal may have landed since it was made.
+      if (await suspendTierForNonPayment(row.user_id, undefined, { onlyIfGraceExpired: true })) {
+        downgraded += 1;
+        console.log(`  suspended ${row.email}`);
+      } else {
+        console.log(`  skipped ${row.email} — no longer past its grace deadline`);
+      }
     } catch (err) {
       console.error(`  FAILED to downgrade ${row.email}:`, errorLabel(err));
     }

@@ -139,13 +139,15 @@ billingRouter.post(
       // N-42 — both guards below read "could not ask" as "not live", which let
       // a second subscription start beside one Stripe could not see. Refuse
       // for now instead; checkout needs Stripe anyway.
-      if (liveness === 'unknown') {
+      if (liveness === 'unknown' && pricing.mode === 'subscription') {
         return res.status(503).json({
           error: 'We could not check your subscription with our payment provider. Please try again in a few minutes.',
           code: 'BILLING_UNVERIFIABLE',
         });
       }
-      const subscriptionLive = liveness === 'live';
+      // For a one-time pass, an unanswerable check counts as live: the stored
+      // plan is then treated as a real entitlement, never as a stale row.
+      const subscriptionLive = liveness !== 'ended';
 
       if (pricing.mode === 'subscription' && storedSubscriptionId) {
         if (subscriptionLive) {

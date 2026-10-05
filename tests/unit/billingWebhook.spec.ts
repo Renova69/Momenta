@@ -705,6 +705,57 @@ describe('events delivered out of order (N-44)', () => {
  * purchase, and when the subscription ended the account dropped to free: the
  * pass, already paid for, was gone with it.
  */
+/** Found by the review of e70c78f and 14c9987. */
+describe('suspension edge cases', () => {
+  it('the grace sweep does not suspend an account whose payment landed after it made its list', async () => {
+    // The sweep lists expired accounts, then suspends them one by one outside
+    // any lock. A renewal handled in between clears the grace deadline; the
+    // suspension must notice, or a paying customer sits on free for a month.
+    const userId = await registerHost();
+    const subscriptionId = uniqueId('sub_paid_meanwhile');
+    await seedExpiredGrace(userId, subscriptionId, 1);
+    await query(
+      "UPDATE subscriptions SET past_due_grace_expiry = NULL WHERE user_id = $1 AND status = 'active'",
+      [userId]
+    );
+
+    await suspendTierForNonPayment(userId, undefined, { onlyIfGraceExpired: true });
+
+    expect((await subscriptionRow(userId)).tier).toBe('pro_planner');
+  });
+
+  it('a new subscription starts clean of the old suspension', async () => {
+    // Suspended on subscription A, then a fresh checkout on B. B's own dunning
+    // must still open a grace window rather than being ignored as "already
+    // suspended".
+    const userId = await registerHost();
+    const old = uniqueId('sub_old_suspended');
+    await seedExpiredGrace(userId, old, 1);
+    await suspendTierForNonPayment(userId);
+
+    const fresh = uniqueId('sub_fresh');
+    await postEvent(
+      checkoutSessionEvent('checkout.session.completed', {
+        mode: 'subscription',
+        payment_status: 'paid',
+        amount_total: 4900,
+        customer: uniqueId('cus'),
+        subscription: fresh,
+        metadata: { userId, tier: 'pro_planner' },
+      })
+    );
+    await postEvent({
+      id: uniqueId('evt'),
+      type: 'customer.subscription.updated',
+      data: { object: { id: fresh, status: 'past_due', metadata: { userId } } },
+    });
+
+    const row = await subscriptionRow(userId);
+    expect(row.stripe_subscription_id).toBe(fresh);
+    expect(row.past_due_grace_expiry).not.toBeNull();
+  });
+});
+
 describe('a one-time pass held under a subscription (N-45)', () => {
   async function passThenPro(pass: 'celebration_pass' | 'deluxe_keepsake', subscriptionId: string) {
     const userId = await registerHost();

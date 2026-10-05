@@ -164,7 +164,16 @@ export async function applyTierUpgrade(
          WHEN $8::boolean THEN NULL
          ELSE COALESCE(EXCLUDED.stripe_subscription_id, subscriptions.stripe_subscription_id)
        END,
-       lapsed_tier = CASE WHEN $8::boolean THEN NULL ELSE subscriptions.lapsed_tier END,
+       -- A suspension belongs to the subscription it lapsed from: gone when
+       -- that subscription is cleared, and gone when a different one takes
+       -- its place. Otherwise the new subscription's own dunning would be
+       -- ignored as "already suspended".
+       lapsed_tier = CASE
+         WHEN $8::boolean THEN NULL
+         WHEN EXCLUDED.stripe_subscription_id IS NOT NULL
+          AND EXCLUDED.stripe_subscription_id IS DISTINCT FROM subscriptions.stripe_subscription_id THEN NULL
+         ELSE subscriptions.lapsed_tier
+       END,
        -- N-45: remember the best one-time pass bought, so a subscription bought
        -- on top of it can end without taking it away.
        one_time_tier = CASE
@@ -288,7 +297,19 @@ export async function applyTierDowngradeToFree(
  * back (restoreLapsedTier). One statement, so the sweep — which runs outside
  * any transaction — cannot leave the tier dropped and the record unwritten.
  */
-export async function suspendTierForNonPayment(userId: string, db?: Pool | PoolClient): Promise<boolean> {
+export async function suspendTierForNonPayment(
+  userId: string,
+  db?: Pool | PoolClient,
+  options: {
+    /**
+     * Suspend only if the grace deadline is still set and past. For the grace
+     * sweep, which works from a list made before it gets to each account and
+     * holds no lock: a renewal handled in between clears the deadline, and
+     * suspending then would leave a paying customer on free for a month.
+     */
+    onlyIfGraceExpired?: boolean;
+  } = {}
+): Promise<boolean> {
   const client = db ?? pool;
   const result = await client.query(
     // Down to the one-time pass the account holds, if any, not to free (N-45).
@@ -297,8 +318,9 @@ export async function suspendTierForNonPayment(userId: string, db?: Pool | PoolC
             tier = COALESCE(one_time_tier, 'free'),
             event_limit = ${eventLimitSql("COALESCE(one_time_tier, 'free')")},
             past_due_grace_expiry = NULL, updated_at = NOW()
-      WHERE user_id = $1 AND status = 'active' AND tier <> COALESCE(one_time_tier, 'free')`,
-    [userId]
+      WHERE user_id = $1 AND status = 'active' AND tier <> COALESCE(one_time_tier, 'free')
+        AND (NOT $2::boolean OR (past_due_grace_expiry IS NOT NULL AND past_due_grace_expiry < NOW()))`,
+    [userId, options.onlyIfGraceExpired === true]
   );
   if ((result.rowCount ?? 0) === 0) return false;
 

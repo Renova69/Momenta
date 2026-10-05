@@ -93,6 +93,12 @@ subscriptionsRouter.post('/upgrade', requireAuth, validateBody(UpgradeSchema), a
     // downgrade themselves, with no payment behind it. Purchases must never
     // lower one, so they leave this off.
     const result = await applyTierUpgrade(userId, tier, { allowLowerTier: true });
+    // Choosing Free gives up a one-time pass for good, as the confirmation the
+    // host clicked says. Left remembered, it would come back the next time a
+    // subscription ended (one_time_tier, N-45).
+    if (tier === 'free') {
+      await pool.query("UPDATE subscriptions SET one_time_tier = NULL WHERE user_id = $1 AND status = 'active'", [userId]);
+    }
     res.json(result);
   } catch (err) {
     console.error('[Subscriptions] upgrade error:', errorLabel(err));

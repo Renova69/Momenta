@@ -159,6 +159,27 @@ describe('downgrade guard (H7)', () => {
     expect(sub.rows[0].tier).toBe('pro_planner');
   });
 
+  it('forgets a one-time pass the host chose to give up', async () => {
+    // Found by the review of 14c9987: the confirmation the host clicks says
+    // the plan is lost and buying it again means paying again. A pass left in
+    // one_time_tier would come back the next time a subscription ended.
+    const host = await registerHost();
+    await query(
+      `UPDATE subscriptions SET tier = 'deluxe_keepsake', one_time_tier = 'deluxe_keepsake', stripe_subscription_id = NULL
+        WHERE user_id = $1 AND status = 'active'`,
+      [host.userId]
+    );
+
+    const res = await downgrade(host);
+
+    expect(res.status).toBe(200);
+    const row = await query<{ tier: string; one_time_tier: string | null }>(
+      "SELECT tier, one_time_tier FROM subscriptions WHERE user_id = $1 AND status = 'active'",
+      [host.userId]
+    );
+    expect(row.rows[0]).toEqual({ tier: 'free', one_time_tier: null });
+  });
+
   it('allows the downgrade once the subscription is no longer live at Stripe', async () => {
     const host = await registerHost();
     await givePaidPlan(host, `sub_dead_${Date.now()}`); // never added to LIVE_SUBSCRIPTIONS
