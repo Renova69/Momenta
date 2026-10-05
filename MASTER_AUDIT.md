@@ -5,7 +5,7 @@
 **Feature review:** 2026-09-21 (§3c). **Accessibility review:** 2026-09-21 (§3d).
 **Client mutation sweep:** 2026-09-21 (§8).
 **Performance pass:** 2026-09-22 to 23 (§3e).
-**Security review, partial:** 2026-09-25 to 26, recorded 2026-10-04 (§3f). **11 of 25 findings open.**
+**Security review, partial:** 2026-09-25 to 26, recorded 2026-10-04 (§3f). **10 of 25 findings open.**
 
 > **Read this first.** The audit below is preserved as written — each finding
 > still describes the code as it was on 2026-09-15, because a finding rewritten
@@ -797,7 +797,7 @@ drawn.
 
 ## 3f. The Security Review, Three Domains of Eight (2026-09-25 to 26)
 
-**Open: 11 of 25.** Fixed so far: N-34 to N-47.
+**Open: 10 of 25.** Fixed so far: N-34 to N-48.
 
 Eight reviewers were each given one domain and told to hunt for what earlier
 passes miss: races, transaction boundaries, one route missing a check its
@@ -842,7 +842,7 @@ range for a function it had correctly identified.
 | **N-45** | Upgrading from a one-time pass to Pro Planner and later cancelling loses the pass. The grant overwrites the single subscriptions row, nothing records the earlier purchase, and when the subscription ends the account drops to free. | Medium | `server/routes/billing.ts`, `server/lib/subscriptionUpgrade.ts` | billing-4 | `14c9987` |
 | **N-46** | After any downgrade, photos waiting for moderation are stranded. The moderation queue is the only screen that can approve a photo, and it locks below Celebration Pass. The pending photos still count against the free tier's cap. | Medium | `src/components/host/HostDashboard.tsx`, `server/middleware/tierGate.ts` | billing-6 | `17342ec` |
 | **N-47** | Deleting an album takes a snapshot of its media, deletes the files one by one, then deletes the rows, and nothing stops uploads, FTP ingests or promotions in between. A photo that arrives mid-purge loses its row but keeps its file. On R2 the file stays publicly reachable. Locally it stays under the served `/uploads`, because the directory removal ignores `ENOTEMPTY`. | Medium | `server/lib/retention.ts`, `server/routes/events/crud.ts`, `server/lib/storage.ts` | lifecycle-4 | `47aa6eb` |
-| **N-48** | The ZIP export takes a snapshot of every photo's path at the start and silently skips any photo whose file moves during the download (approved, withheld or revealed). The archive still finishes as if it were complete. | Medium | `server/routes/events/export.ts` | lifecycle-5 | Open |
+| **N-48** | The ZIP export takes a snapshot of every photo's path at the start and silently skips any photo whose file moves during the download (approved, withheld or revealed). The archive still finishes as if it were complete. | Medium | `server/routes/events/export.ts` | lifecycle-5 | `ea9c79f` |
 | **N-49** | On local storage, `storage:orphans` reads the event list before walking the directories and has no age guard. `--delete` can therefore remove an album created in the seconds between. The R2 branch and `storage-orphan-sweep` both avoid this. | Medium | `scripts/storage-orphans.ts` | lifecycle-6 | Open |
 | **N-50** | *Plausible.* Postgres matches event ids regardless of case, but storage paths keep the caller's casing, and the orphan sweeps and the export compare them case-sensitively. An upload with an uppercase event id would have its live photos classed as orphans. No first-party client sends one; a third-party tool or a hand-typed id would. | Medium | `server/routes/photos/upload.ts`, `server/routes/ingest.ts`, `scripts/storage-orphan-sweep.ts`, `scripts/storage-orphans.ts`, `server/lib/storage.ts` | lifecycle-3 | Open |
 | **N-51** | One click on the Free plan card forfeits a paid one-time pass. There is no confirmation, and the click fires confetti. | Low | `src/components/host/PricingPlansModal.tsx`, `server/routes/subscriptions.ts` | billing-5 | Open |
