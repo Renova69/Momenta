@@ -5,7 +5,7 @@
 **Feature review:** 2026-09-21 (§3c). **Accessibility review:** 2026-09-21 (§3d).
 **Client mutation sweep:** 2026-09-21 (§8).
 **Performance pass:** 2026-09-22 to 23 (§3e).
-**Security review, partial:** 2026-09-25 to 26, recorded 2026-10-04 (§3f). **14 of 25 findings open.**
+**Security review, partial:** 2026-09-25 to 26, recorded 2026-10-04 (§3f). **13 of 25 findings open.**
 
 > **Read this first.** The audit below is preserved as written — each finding
 > still describes the code as it was on 2026-09-15, because a finding rewritten
@@ -797,7 +797,7 @@ drawn.
 
 ## 3f. The Security Review, Three Domains of Eight (2026-09-25 to 26)
 
-**Open: 14 of 25.** Fixed so far: N-34 to N-44.
+**Open: 13 of 25.** Fixed so far: N-34 to N-45.
 
 Eight reviewers were each given one domain and told to hunt for what earlier
 passes miss: races, transaction boundaries, one route missing a check its
@@ -839,7 +839,7 @@ range for a function it had correctly identified.
 | **N-42** | The H7 guard fails open on any Stripe error, not only a missing subscription. A timeout, 429 or 5xx while the host clicks "downgrade to free" skips the guard. The tier drops to free while the subscription keeps billing, and renewals then refresh nothing. | Medium | `server/lib/stripe.ts`, `server/routes/subscriptions.ts` | billing-7 | `ce8815e` |
 | **N-43** | When any of a user's subscriptions ends, the account is downgraded, even if another subscription on file is still live. The `deleted` and `past_due` handlers never compare the event's subscription id with the stored one. Two subscriptions arise from N-35's cleared id, or from two checkouts opened in parallel. | Medium | `server/routes/billingWebhook.ts` | billing-2 | `01fbebb` |
 | **N-44** | Webhook handlers act on each event's snapshot. They never check `event.created` or re-read the subscription, and Stripe does not guarantee delivery order. A redelivered `past_due` after recovery stamps a new 7-day deadline on a paid-up account. A `checkout.session.completed` processed after `deleted` attaches Pro to a cancelled subscription permanently. | Medium | `server/routes/billingWebhook.ts` | billing-3 | `eb28e21` |
-| **N-45** | Upgrading from a one-time pass to Pro Planner and later cancelling loses the pass. The grant overwrites the single subscriptions row, nothing records the earlier purchase, and when the subscription ends the account drops to free. | Medium | `server/routes/billing.ts`, `server/lib/subscriptionUpgrade.ts` | billing-4 | Open |
+| **N-45** | Upgrading from a one-time pass to Pro Planner and later cancelling loses the pass. The grant overwrites the single subscriptions row, nothing records the earlier purchase, and when the subscription ends the account drops to free. | Medium | `server/routes/billing.ts`, `server/lib/subscriptionUpgrade.ts` | billing-4 | `14c9987` |
 | **N-46** | After any downgrade, photos waiting for moderation are stranded. The moderation queue is the only screen that can approve a photo, and it locks below Celebration Pass. The pending photos still count against the free tier's cap. | Medium | `src/components/host/HostDashboard.tsx`, `server/middleware/tierGate.ts` | billing-6 | Open |
 | **N-47** | Deleting an album takes a snapshot of its media, deletes the files one by one, then deletes the rows, and nothing stops uploads, FTP ingests or promotions in between. A photo that arrives mid-purge loses its row but keeps its file. On R2 the file stays publicly reachable. Locally it stays under the served `/uploads`, because the directory removal ignores `ENOTEMPTY`. | Medium | `server/lib/retention.ts`, `server/routes/events/crud.ts`, `server/lib/storage.ts` | lifecycle-4 | Open |
 | **N-48** | The ZIP export takes a snapshot of every photo's path at the start and silently skips any photo whose file moves during the download (approved, withheld or revealed). The archive still finishes as if it were complete. | Medium | `server/routes/events/export.ts` | lifecycle-5 | Open |
