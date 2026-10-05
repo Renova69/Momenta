@@ -110,9 +110,9 @@ async function isSubscriptionOnFile(db: PoolClient, userId: string, subscription
 async function activeSubscriptionRow(
   db: PoolClient,
   userId: string
-): Promise<{ tier: BackendPlanTier; past_due_grace_expiry: Date | null } | null> {
+): Promise<{ tier: BackendPlanTier; past_due_grace_expiry: Date | null; lapsed_tier: string | null } | null> {
   const result = await db.query(
-    "SELECT tier, past_due_grace_expiry FROM subscriptions WHERE user_id = $1 AND status = 'active' LIMIT 1",
+    "SELECT tier, past_due_grace_expiry, lapsed_tier FROM subscriptions WHERE user_id = $1 AND status = 'active' LIMIT 1",
     [userId]
   );
   return result.rows[0] ?? null;
@@ -305,18 +305,21 @@ async function handleInvoicePaid(db: PoolClient, invoice: Stripe.Invoice): Promi
   // Take the tier from our own record rather than the invoice: the invoice
   // says money arrived, it does not say which plan the account is on, and a
   // renewal never changes the plan anyway.
+  // N-35 — a payment on a subscription whose plan was suspended for
+  // non-payment is a late payment arriving after the grace window. Put the
+  // plan back. Asked first, because a suspended account is not necessarily on
+  // free: it may have fallen back to a one-time pass it holds (N-45).
+  const restored = await restoreLapsedTier(userId, subscriptionId, {
+    amountPaidCents: invoice.amount_paid ?? undefined,
+    db,
+  });
+  if (restored) {
+    console.info(`[Billing] payment on subscription ${subscriptionId} restored user ${userId}'s suspended plan`);
+    return;
+  }
+
   const current = await activeSubscriptionRow(db, userId);
   if (!isPaidTier(current?.tier)) {
-    // N-35 — a free account paying on its subscription is a late payment
-    // arriving after the plan was suspended for non-payment. Put it back.
-    const restored = await restoreLapsedTier(userId, subscriptionId, {
-      amountPaidCents: invoice.amount_paid ?? undefined,
-      db,
-    });
-    if (restored) {
-      console.info(`[Billing] payment on subscription ${subscriptionId} restored user ${userId}'s suspended plan`);
-      return;
-    }
     console.warn(
       `[Billing] renewal for subscription ${subscriptionId} but user ${userId} is on tier=${current?.tier} — nothing to refresh`
     );
@@ -403,6 +406,10 @@ async function handleSubscriptionChange(
 
   const current = await activeSubscriptionRow(db, userId);
   if (!isPaidTier(current?.tier)) return;
+  // Already suspended for non-payment, perhaps down to a one-time pass it
+  // holds (N-45). Only a recovery or the end of the subscription changes that;
+  // a further retry failure must not open a grace window on the pass itself.
+  if (current.lapsed_tier) return;
 
   if (status === 'past_due') {
     const existingDeadline = current.past_due_grace_expiry ? new Date(current.past_due_grace_expiry) : null;

@@ -699,6 +699,102 @@ describe('events delivered out of order (N-44)', () => {
   });
 });
 
+/**
+ * N-45 — a host on a one-time pass may buy Pro Planner on top of it. The
+ * grant overwrote the one subscriptions row, nothing recorded the earlier
+ * purchase, and when the subscription ended the account dropped to free: the
+ * pass, already paid for, was gone with it.
+ */
+describe('a one-time pass held under a subscription (N-45)', () => {
+  async function passThenPro(pass: 'celebration_pass' | 'deluxe_keepsake', subscriptionId: string) {
+    const userId = await registerHost();
+    await applyTierUpgrade(userId, pass, { billingType: 'one_time', amountPaidCents: 8900 });
+    await applyTierUpgrade(userId, 'pro_planner', { billingType: 'monthly', stripeSubscriptionId: subscriptionId });
+    return userId;
+  }
+
+  it('falls back to the pass when the subscription ends, not to free', async () => {
+    const subscriptionId = uniqueId('sub_on_top_of_pass');
+    const userId = await passThenPro('deluxe_keepsake', subscriptionId);
+    expect((await subscriptionRow(userId)).tier).toBe('pro_planner');
+
+    await postEvent({
+      id: uniqueId('evt'),
+      type: 'customer.subscription.deleted',
+      data: { object: { id: subscriptionId, status: 'canceled', metadata: { userId } } },
+    });
+
+    const row = await subscriptionRow(userId);
+    expect(row.tier).toBe('deluxe_keepsake');
+    expect(row.stripe_subscription_id).toBeNull();
+  });
+
+  it('falls back to the pass while suspended, and a late payment still restores Pro', async () => {
+    const subscriptionId = uniqueId('sub_suspended_over_pass');
+    const userId = await passThenPro('celebration_pass', subscriptionId);
+    await query(
+      "UPDATE subscriptions SET past_due_grace_expiry = NOW() - INTERVAL '1 day' WHERE user_id = $1 AND status = 'active'",
+      [userId]
+    );
+
+    await postEvent({
+      id: uniqueId('evt'),
+      type: 'customer.subscription.updated',
+      data: { object: { id: subscriptionId, status: 'past_due', metadata: { userId } } },
+    });
+    expect((await subscriptionRow(userId)).tier).toBe('celebration_pass');
+
+    await postEvent({
+      id: uniqueId('evt'),
+      type: 'invoice.paid',
+      data: {
+        object: {
+          id: uniqueId('in'),
+          billing_reason: 'subscription_cycle',
+          amount_paid: 4900,
+          parent: { type: 'subscription_details', subscription_details: { subscription: subscriptionId, metadata: {} } },
+        },
+      },
+    });
+    expect((await subscriptionRow(userId)).tier).toBe('pro_planner');
+  });
+
+  it('a further past_due on a plan already suspended over a pass starts nothing new', async () => {
+    // Suspended down to the pass, the account is on a paid tier again. A later
+    // retry failure must not open a grace window on the pass itself.
+    const subscriptionId = uniqueId('sub_suspended_then_pastdue');
+    const userId = await passThenPro('deluxe_keepsake', subscriptionId);
+    await suspendTierForNonPayment(userId);
+
+    await postEvent({
+      id: uniqueId('evt'),
+      type: 'customer.subscription.updated',
+      data: { object: { id: subscriptionId, status: 'past_due', metadata: { userId } } },
+    });
+
+    const row = await subscriptionRow(userId);
+    expect(row.tier).toBe('deluxe_keepsake');
+    expect(row.past_due_grace_expiry).toBeNull();
+  });
+
+  it('does not count a subscription plan as a pass to fall back to', async () => {
+    // Pro Planner is sold monthly. A row that once held it on the pre-Stripe
+    // self-serve path (billing_type one_time) must not become a "pass".
+    const userId = await registerHost();
+    await applyTierUpgrade(userId, 'pro_planner', { billingType: 'one_time' });
+    const subscriptionId = uniqueId('sub_after_selfserve_pro');
+    await applyTierUpgrade(userId, 'pro_planner', { billingType: 'monthly', stripeSubscriptionId: subscriptionId });
+
+    await postEvent({
+      id: uniqueId('evt'),
+      type: 'customer.subscription.deleted',
+      data: { object: { id: subscriptionId, status: 'canceled', metadata: { userId } } },
+    });
+
+    expect((await subscriptionRow(userId)).tier).toBe('free');
+  });
+});
+
 describe('invoice.paid — monthly renewal', () => {
   it('re-applies the tier on a renewal so retention deadlines keep moving', async () => {
     const userId = await registerHost();

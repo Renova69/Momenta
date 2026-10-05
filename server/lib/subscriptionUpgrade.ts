@@ -4,7 +4,7 @@ import { errorLabel } from './errors';
 import { BackendPlanTier } from '../middleware/tierGate';
 import { TIER_WEIGHTS } from '../../shared/planCaps';
 import { refreshExpiryDates } from './retention';
-import { isPaidTier } from './stripePlans';
+import { isPaidTier, PAID_TIER_PRICING } from './stripePlans';
 
 // Pro Planner pools its allowance across up to 10 concurrent weddings; every
 // other tier is single-event. Mirrors the comment on the same number in
@@ -24,9 +24,29 @@ const EVENT_LIMIT_FOR_TIER: Record<BackendPlanTier, number> = {
  * building the expression from `TIER_WEIGHTS` keeps it from drifting away
  * from the gate that enforces the same order.
  */
-const STORED_TIER_RANK = `CASE subscriptions.tier ${Object.entries(TIER_WEIGHTS)
-  .map(([name, weight]) => `WHEN '${name}' THEN ${weight}`)
-  .join(' ')} ELSE 0 END`;
+function tierRankSql(column: string): string {
+  return `CASE ${column} ${Object.entries(TIER_WEIGHTS)
+    .map(([name, weight]) => `WHEN '${name}' THEN ${weight}`)
+    .join(' ')} ELSE 0 END`;
+}
+
+const STORED_TIER_RANK = tierRankSql('subscriptions.tier');
+
+/** The event limit of whichever tier `column` names, as SQL. */
+function eventLimitSql(column: string): string {
+  return `CASE ${column} ${Object.entries(EVENT_LIMIT_FOR_TIER)
+    .map(([name, limit]) => `WHEN '${name}' THEN ${limit}`)
+    .join(' ')} ELSE ${EVENT_LIMIT_FOR_TIER.free} END`;
+}
+
+/**
+ * The tiers sold as one-time passes. Only these are remembered in
+ * `one_time_tier` (N-45): Pro Planner is sold monthly, so a row that once held
+ * it with billing_type one_time (the pre-Stripe self-serve path) bought no pass.
+ */
+const ONE_TIME_TIERS = Object.entries(PAID_TIER_PRICING)
+  .filter(([, pricing]) => pricing.mode === 'payment')
+  .map(([tier]) => tier);
 
 export interface TierUpgradeResult {
   id: string;
@@ -128,9 +148,9 @@ export async function applyTierUpgrade(
   const result = await db.query(
     `INSERT INTO subscriptions (
        user_id, tier, status, billing_type, amount_paid_cents, currency, event_limit,
-       stripe_customer_id, stripe_subscription_id, past_due_grace_expiry
+       stripe_customer_id, stripe_subscription_id, past_due_grace_expiry, one_time_tier
      )
-     VALUES ($1, $2, 'active', $3, $4, 'EUR', $5, $6, $7, $10)
+     VALUES ($1, $2, 'active', $3, $4, 'EUR', $5, $6, $7, $10, $13)
      ON CONFLICT (user_id) WHERE status = 'active'
      DO UPDATE SET
        tier = CASE WHEN $12::boolean OR $11::int >= (${STORED_TIER_RANK})
@@ -145,6 +165,13 @@ export async function applyTierUpgrade(
          ELSE COALESCE(EXCLUDED.stripe_subscription_id, subscriptions.stripe_subscription_id)
        END,
        lapsed_tier = CASE WHEN $8::boolean THEN NULL ELSE subscriptions.lapsed_tier END,
+       -- N-45: remember the best one-time pass bought, so a subscription bought
+       -- on top of it can end without taking it away.
+       one_time_tier = CASE
+         WHEN EXCLUDED.one_time_tier IS NOT NULL
+          AND (${tierRankSql('EXCLUDED.one_time_tier')}) > (${tierRankSql('subscriptions.one_time_tier')})
+         THEN EXCLUDED.one_time_tier ELSE subscriptions.one_time_tier
+       END,
        past_due_grace_expiry = CASE
          WHEN $9::boolean THEN EXCLUDED.past_due_grace_expiry
          ELSE subscriptions.past_due_grace_expiry
@@ -167,6 +194,7 @@ export async function applyTierUpgrade(
       options.pastDueGraceExpiry ?? null,
       tierRank,
       options.allowLowerTier === true,
+      billingType === 'one_time' && ONE_TIME_TIERS.includes(tier) ? tier : null,
     ]
   );
 
@@ -214,12 +242,24 @@ async function refreshExpiriesAfterTierChange(
  * id behind would make it a false match for a later webhook lookup. The
  * customer id is deliberately kept, so a returning customer re-uses their
  * existing Stripe customer record rather than creating a duplicate.
+ *
+ * N-45 — "free" unless the account holds a one-time pass under the
+ * subscription that ended. That pass was paid for separately and outlives it.
+ * Read then written, so a caller racing another write for this account must
+ * hold the webhook's per-customer lock, which is the only caller.
  */
 export async function applyTierDowngradeToFree(
   userId: string,
   db?: Pool | PoolClient
 ): Promise<void> {
-  await applyTierUpgrade(userId, 'free', {
+  const { rows } = await (db ?? pool).query(
+    "SELECT one_time_tier FROM subscriptions WHERE user_id = $1 AND status = 'active' LIMIT 1",
+    [userId]
+  );
+  const heldPass = rows[0]?.one_time_tier as string | undefined;
+  const fallbackTier: BackendPlanTier = isPaidTier(heldPass) ? heldPass : 'free';
+
+  await applyTierUpgrade(userId, fallbackTier, {
     billingType: 'one_time',
     amountPaidCents: 0,
     clearStripeSubscriptionId: true,
@@ -243,19 +283,22 @@ export async function applyTierDowngradeToFree(
  * still retrying the card and the subscription is still live there, so the
  * stored subscription id stays on file: it is what a later payment is matched
  * against, and what stops checkout opening a second subscription beside this
- * one. The tier drops to free so the plan stops being used without being paid
- * for, and the tier it held is kept in `lapsed_tier` so a recovery can put it
+ * one. The tier drops to free, or to a one-time pass the account still holds
+ * (N-45), so the plan stops being used without being paid for, and the tier it held is kept in `lapsed_tier` so a recovery can put it
  * back (restoreLapsedTier). One statement, so the sweep — which runs outside
  * any transaction — cannot leave the tier dropped and the record unwritten.
  */
 export async function suspendTierForNonPayment(userId: string, db?: Pool | PoolClient): Promise<boolean> {
   const client = db ?? pool;
   const result = await client.query(
+    // Down to the one-time pass the account holds, if any, not to free (N-45).
     `UPDATE subscriptions
-        SET lapsed_tier = tier, tier = 'free', event_limit = $2,
+        SET lapsed_tier = tier,
+            tier = COALESCE(one_time_tier, 'free'),
+            event_limit = ${eventLimitSql("COALESCE(one_time_tier, 'free')")},
             past_due_grace_expiry = NULL, updated_at = NOW()
-      WHERE user_id = $1 AND status = 'active' AND tier <> 'free'`,
-    [userId, EVENT_LIMIT_FOR_TIER.free]
+      WHERE user_id = $1 AND status = 'active' AND tier <> COALESCE(one_time_tier, 'free')`,
+    [userId]
   );
   if ((result.rowCount ?? 0) === 0) return false;
 
@@ -279,7 +322,7 @@ export async function restoreLapsedTier(
 ): Promise<boolean> {
   const { rows } = await options.db.query(
     `SELECT lapsed_tier FROM subscriptions
-      WHERE user_id = $1 AND status = 'active' AND tier = 'free'
+      WHERE user_id = $1 AND status = 'active'
         AND lapsed_tier IS NOT NULL AND stripe_subscription_id = $2`,
     [userId, subscriptionId]
   );
