@@ -217,6 +217,14 @@ describe('what the export archive contains', () => {
     expect(archive.toString('latin1')).not.toContain('stray-audio.webm');
   });
 
+  it('still counts a row it refused to read, by position alone', () => {
+    // Found by the review of ea9c79f: a row outside this album's folder was
+    // refused and dropped without a word, the silent partial archive N-48
+    // set out to end. It is listed now — by its place in the archive, never
+    // by the name it carries, which may be another album's.
+    expect(archive.toString('latin1')).toMatch(/photos\/photo-3 \(/);
+  });
+
   it('files photos under a photos/ prefix, numbered', () => {
     expect(archive.toString('latin1')).toMatch(/photos\/photo-\d+-/);
   });

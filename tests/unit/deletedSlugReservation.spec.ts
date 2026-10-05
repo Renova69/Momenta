@@ -121,6 +121,21 @@ describe('the address of a deleted album (N-58)', () => {
     expect((await res.json()).slug).toBe(slug);
   });
 
+  it('does not rename an album that saves its own current address', async () => {
+    // Found by the review of f19f8ca. Two albums could share an address
+    // before N-58: one host deleted it, another took it. An edit form that
+    // sends the album's own slug back must not now move that live album to a
+    // variant and break its printed cards.
+    const holder = await registerHost();
+    const slug = await renameTo(holder, `taken-before-${Date.now().toString(36)}`);
+    await query(
+      'INSERT INTO event_deletions (event_id, slug, host_user_id) VALUES (gen_random_uuid(), $1, NULL)',
+      [slug]
+    );
+
+    expect(await renameTo(holder, slug)).toBe(slug);
+  });
+
   it('is free again once the reservation has lapsed', async () => {
     const { slug } = await deletedAddress();
     await query("UPDATE event_deletions SET deleted_at = NOW() - INTERVAL '400 days' WHERE slug = $1", [slug]);

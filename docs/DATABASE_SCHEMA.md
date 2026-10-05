@@ -143,7 +143,7 @@ Stores wedding/event settings and feature toggles.
 - `is_public` (BOOLEAN, NOT NULL, default `false`): Whether the album appears
   on the public showcase feed. A privacy control, deliberately **not** tier-gated —
   publishing and withdrawing your own wedding is never a paid feature.
-- `deleting_at` (TIMESTAMPTZ, Nullable — migration 032): set by `DELETE /api/events/:id`, under the album's upload lock, before its media is purged. `getUploadContext` treats an album with this set as gone, so every upload and FTP ingest refuses it and deletes the files it saved, and the reveal promotion skips it. Cleared again if the purge fails, because the album is still there. Before it, a photo written mid-purge lost its row and kept its file (MASTER_AUDIT N-47).
+- `deleting_at` (TIMESTAMPTZ, Nullable — migration 032): set by `DELETE /api/events/:id`, under the album's upload lock, before its media is purged. `getUploadContext` treats an album with this set as gone, so every upload and FTP ingest refuses it and deletes the files it saved, and the reveal promotion skips it. Cleared again if the purge or the row delete fails, because the album is still there; a mark more than an hour old is treated as a deletion that crashed and no longer blocks uploads. Before it, a photo written mid-purge lost its row and kept its file (MASTER_AUDIT N-47).
 - `retention_notified_at` (TIMESTAMPTZ, Nullable): When the host was warned
   that the album is due for deletion, stamped only after a confirmed send that
   did not bounce. **The retention sweep will not delete an album whose value

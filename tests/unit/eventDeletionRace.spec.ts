@@ -104,6 +104,18 @@ describe('an album being deleted (N-47)', () => {
     expect(purgeHook.seenDeletingAt).toBeDefined();
   });
 
+  it('takes uploads again once a mark has been left behind for hours', async () => {
+    // Found by the review of 47aa6eb: a crash between the mark and the purge
+    // finishing left the album refusing every upload, with nothing to clear
+    // it but the host trying to delete it again.
+    const host = await registerHost();
+    await query("UPDATE events SET deleting_at = NOW() - INTERVAL '2 hours' WHERE id = $1", [host.eventId]);
+
+    const outcome = await ingestPhoto(host.eventId, await jpeg(), 'after-crash.jpg', 'image/jpeg', { baseUrl: '' });
+
+    expect(outcome.ok).toBe(true);
+  });
+
   it('accepts no new photo once marked', async () => {
     const host = await registerHost();
     await query('UPDATE events SET deleting_at = NOW() WHERE id = $1', [host.eventId]);

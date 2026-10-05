@@ -242,7 +242,7 @@ eventsRouter.get(
         // uploads" — a row's storage_path is untrusted user input at rest, so
         // this is the last line of defense against exporting another event's
         // files (SEC-A1).
-        const eventDir = path.resolve(CONFIG.UPLOADS_DIR, 'events', id) + path.sep;
+        const eventDir = path.resolve(CONFIG.UPLOADS_DIR, 'events', id.toLowerCase()) + path.sep;
         if (resolved.startsWith(eventDir) && fs.existsSync(resolved)) {
           await appendAndWait(resolved, archiveName);
           return 'appended';
@@ -273,6 +273,10 @@ eventsRouter.get(
         }
       }
       if (outcome === 'missing' && !aborted) missing.push(archiveName);
+      // Refused: not stored under this album's folder. Counted, so the archive
+      // does not finish as if whole — but by position only: the name it
+      // carries may be another album's (SEC-04).
+      if (outcome === 'refused' && !aborted) missing.push(`photos/photo-${i + 1} (not stored in this album)`);
     }
 
     for (let i = 0; i < audioQuery.rows.length && !aborted; i++) {
@@ -282,7 +286,9 @@ eventsRouter.get(
       const storagePath = url && url.includes('/uploads/') ? url.substring(url.indexOf('/uploads/')) : url;
       const filename = (storagePath || '').split('/').pop() || `audio-${i + 1}.webm`;
       const archiveName = `audio/audio-${i + 1}-${filename}`;
-      if ((await appendFromStorage(storagePath, archiveName)) === 'missing' && !aborted) missing.push(archiveName);
+      const outcome = await appendFromStorage(storagePath, archiveName);
+      if (outcome === 'missing' && !aborted) missing.push(archiveName);
+      if (outcome === 'refused' && !aborted) missing.push(`audio/audio-${i + 1} (not stored in this album)`);
     }
 
     if (!aborted && missing.length > 0) {

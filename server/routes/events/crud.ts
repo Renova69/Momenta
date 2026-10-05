@@ -467,7 +467,11 @@ eventsRouter.put('/:id', requireAuth, requireUuidParams('id'), validateBody(Upda
     let updated: any;
     // N-58 — an address another host deleted recently is taken, not free.
     const requestedSlug = String(updateRecord.slug ?? '');
-    if (slugValueIndex >= 0 && (await isSlugReservedForOthers(requestedSlug, req.user!.userId))) {
+    // Not when the album is keeping the address it already has: two albums
+    // could share one before N-58, and an edit form sending the slug back must
+    // not move a live album to a variant and break its printed cards.
+    const keepsOwnSlug = requestedSlug === existing.rows[0].slug;
+    if (slugValueIndex >= 0 && !keepsOwnSlug && (await isSlugReservedForOthers(requestedSlug, req.user!.userId))) {
       values[slugValueIndex] = slugVariant(requestedSlug, 0);
     }
     for (let attempt = 0; attempt < MAX_SLUG_ATTEMPTS; attempt++) {
@@ -647,12 +651,16 @@ eventsRouter.delete(
       }
 
       // 1. Storage first — see the note above about the cascade.
+      // If the purge or the row delete fails, the album is still here and must
+      // take uploads again. A crash leaves the mark behind; getUploadContext
+      // stops honouring one that old (DELETION_STALE_AFTER).
+      const unmark = () =>
+        pool.query('UPDATE events SET deleting_at = NULL WHERE id = $1', [id]).catch(() => undefined);
       let purge: Awaited<ReturnType<typeof purgeEventMedia>>;
       try {
         purge = await purgeEventMedia(id);
       } catch (err) {
-        // The album is still here, so it must take uploads again.
-        await pool.query('UPDATE events SET deleting_at = NULL WHERE id = $1', [id]).catch(() => undefined);
+        await unmark();
         throw err;
       }
       const bytesFreed = purge.freedBytes;
@@ -668,7 +676,12 @@ eventsRouter.delete(
       }
 
       // 2. Then the row, which cascades guests, quests, comments and the rest.
-      await pool.query('DELETE FROM events WHERE id = $1', [id]);
+      try {
+        await pool.query('DELETE FROM events WHERE id = $1', [id]);
+      } catch (err) {
+        await unmark();
+        throw err;
+      }
 
       // 3. A record that this happened, holding none of what was deleted.
       await pool

@@ -178,8 +178,10 @@ export async function getUploadContext(
       WHERE e.id = $1
         -- N-47: an album being deleted takes nothing new. Callers re-read
         -- this under the upload lock, so an upload already in flight when
-        -- deletion began is refused too, and cleans up what it saved.
-        AND e.deleting_at IS NULL
+        -- deletion began is refused too, and cleans up what it saved. A mark
+        -- an hour old is a deletion that crashed, not one under way: the
+        -- album is still here, and its guests must not be locked out of it.
+        AND (e.deleting_at IS NULL OR e.deleting_at < NOW() - INTERVAL '1 hour')
       LIMIT 1`,
     [eventId, deviceFingerprint ?? null]
   );

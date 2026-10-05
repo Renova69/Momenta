@@ -138,7 +138,8 @@ const ELIGIBLE_SQL = `
      AND (is_locked = false OR $2 = false)
      -- N-47: promoting writes a new public copy, which a purge already
      -- under way for this album would never see.
-     AND NOT EXISTS (SELECT 1 FROM events e WHERE e.id = photos.event_id AND e.deleting_at IS NOT NULL)`;
+     AND NOT EXISTS (SELECT 1 FROM events e WHERE e.id = photos.event_id
+                       AND e.deleting_at IS NOT NULL AND e.deleting_at >= NOW() - INTERVAL '1 hour')`;
 
 /** Run `worker` over `items`, at most `limit` at a time, in order. */
 async function mapWithConcurrency<T>(
