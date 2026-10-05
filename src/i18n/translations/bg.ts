@@ -204,6 +204,11 @@ export const bg: Record<string, string> = {
   'pricing.current_plan': 'Активен план',
   'pricing.upgrading': 'Обработка...',
   'pricing.upgrade_failed': 'Промяната на плана не бе успешна. Опитайте отново.',
+  'pricing.confirm_free_title': 'Да се откажете от {{plan}} и да преминете към безплатния план?',
+  'pricing.confirm_free_body':
+    'Губите всичко, което този план включва: хранилището, функциите и срока, за който се пази албумът ви. Нищо не се възстановява, а повторната покупка означава ново плащане.',
+  'pricing.confirm_free_keep': 'Запази {{plan}}',
+  'pricing.confirm_free_switch': 'Премини към безплатния',
   'billing.checkout_success': 'Плащането е успешно! Вашият план е активиран.',
   'billing.checkout_cancelled': 'Плащането бе отказано. Планът ви не бе променен.',
 

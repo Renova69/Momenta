@@ -181,6 +181,11 @@ export const en: Record<string, string> = {
   'pricing.current_plan': 'Active Plan',
   'pricing.upgrading': 'Processing...',
   'pricing.upgrade_failed': 'Could not change your plan. Please try again.',
+  'pricing.confirm_free_title': 'Give up {{plan}} and switch to Free?',
+  'pricing.confirm_free_body':
+    'You lose everything this plan includes: its storage, its features and how long your album is kept. Nothing is refunded, and buying it again means paying again.',
+  'pricing.confirm_free_keep': 'Keep {{plan}}',
+  'pricing.confirm_free_switch': 'Switch to Free',
   'billing.checkout_success': 'Payment successful! Your plan is now active.',
   'billing.checkout_cancelled': 'Checkout was cancelled. Your plan was not changed.',
   'host.title': 'Host & Planner Studio',

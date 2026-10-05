@@ -199,14 +199,65 @@ describe('PricingPlansModal', () => {
       <PricingPlansModal isOpen onClose={vi.fn()} currentPlanTier="celebration_pass" onUpgradePlan={onUpgradePlan} />
     );
 
+    // Through the confirmation N-51 added: a paid plan is not given up on one click.
+    fireEvent.click(choosePlanButton('free'));
     await act(async () => {
-      fireEvent.click(choosePlanButton('free'));
+      fireEvent.click(screen.getByRole('button', { name: i18n.t('pricing.confirm_free_switch') }));
       await Promise.resolve();
       await Promise.resolve();
     });
 
     expect(fetchSpy).not.toHaveBeenCalled();
     expect(onUpgradePlan).toHaveBeenCalledWith('free');
+  });
+
+  // N-51 — a host on a one-time pass gave it up with one unconfirmed click on
+  // the Free card, and the modal fired confetti for it. The pass was paid for
+  // once, is not refunded, and does not come back.
+  describe('giving up a paid plan (N-51)', () => {
+    const passName = () => i18n.t(PLANS.deluxe_keepsake.name);
+
+    it('asks first, naming the plan, and changes nothing until the host confirms', () => {
+      const onUpgradePlan = vi.fn().mockResolvedValue(undefined);
+      render(
+        <PricingPlansModal isOpen onClose={vi.fn()} currentPlanTier="deluxe_keepsake" onUpgradePlan={onUpgradePlan} />
+      );
+
+      fireEvent.click(choosePlanButton('free'));
+
+      expect(onUpgradePlan).not.toHaveBeenCalled();
+      expect(screen.getByText(i18n.t('pricing.confirm_free_title', { plan: passName() }))).toBeInTheDocument();
+    });
+
+    it('keeps the plan when the host backs out', () => {
+      const onUpgradePlan = vi.fn().mockResolvedValue(undefined);
+      render(
+        <PricingPlansModal isOpen onClose={vi.fn()} currentPlanTier="deluxe_keepsake" onUpgradePlan={onUpgradePlan} />
+      );
+
+      fireEvent.click(choosePlanButton('free'));
+      fireEvent.click(screen.getByRole('button', { name: i18n.t('pricing.confirm_free_keep', { plan: passName() }) }));
+
+      expect(onUpgradePlan).not.toHaveBeenCalled();
+      expect(screen.queryByText(i18n.t('pricing.confirm_free_title', { plan: passName() }))).not.toBeInTheDocument();
+    });
+
+    it('switches once confirmed, without celebrating it', async () => {
+      const onUpgradePlan = vi.fn().mockResolvedValue(undefined);
+      render(
+        <PricingPlansModal isOpen onClose={vi.fn()} currentPlanTier="deluxe_keepsake" onUpgradePlan={onUpgradePlan} />
+      );
+
+      fireEvent.click(choosePlanButton('free'));
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: i18n.t('pricing.confirm_free_switch') }));
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      expect(onUpgradePlan).toHaveBeenCalledWith('free');
+      expect(confetti).not.toHaveBeenCalled();
+    });
   });
 
   it('calls onClose when the close button is clicked', () => {

@@ -36,6 +36,8 @@ export const PricingPlansModal: React.FC<PricingPlansModalProps> = ({
   const [, setSelectedTier] = useState<PlanTier>(currentPlanTier || 'celebration_pass');
   const [pendingTier, setPendingTier] = useState<PlanTier | null>(null);
   const [upgradeError, setUpgradeError] = useState<string | null>(null);
+  // N-51 — giving up a paid plan is asked about first, never done on one click.
+  const [confirmingFree, setConfirmingFree] = useState(false);
   const titleId = useId();
   const { dialogRef, dialogProps } = useDialog({ onClose, labelledBy: titleId, enabled: isOpen });
 
@@ -44,6 +46,11 @@ export const PricingPlansModal: React.FC<PricingPlansModalProps> = ({
   const runSelfServeUpgrade = async (tier: PlanTier) => {
     await onUpgradePlan(tier);
     setPendingTier(null);
+    // Losing a plan is not a celebration (N-51).
+    if (tier === 'free') {
+      onClose();
+      return;
+    }
     confetti({
       particleCount: 100,
       spread: 70,
@@ -55,9 +62,18 @@ export const PricingPlansModal: React.FC<PricingPlansModalProps> = ({
     }, 800);
   };
 
-  const handleSelectPlan = async (tier: PlanTier) => {
-    setSelectedTier(tier);
+  const handleSelectPlan = async (tier: PlanTier, confirmed = false) => {
     setUpgradeError(null);
+
+    // N-51 — a one-time pass was paid for once, is not refunded, and does not
+    // come back. Name what is about to be lost and wait for a yes.
+    if (tier === 'free' && currentPlanTier !== 'free' && !confirmed) {
+      setConfirmingFree(true);
+      return;
+    }
+    setConfirmingFree(false);
+
+    setSelectedTier(tier);
     setPendingTier(tier);
 
     // Downgrading to free needs no payment step — but it does need the
@@ -152,6 +168,31 @@ export const PricingPlansModal: React.FC<PricingPlansModalProps> = ({
             <p className="mt-3 text-xs font-semibold text-red-400" role="alert">
               {upgradeError}
             </p>
+          )}
+          {confirmingFree && (
+            <div
+              role="alert"
+              className="mt-5 mx-auto max-w-xl rounded-2xl border border-red-400/40 bg-red-500/10 p-4 text-left"
+            >
+              <p className="text-sm font-semibold text-cream-100">
+                {i18n.t('pricing.confirm_free_title', { plan: i18n.t(PLANS[currentPlanTier].name) })}
+              </p>
+              <p className="mt-1 text-xs text-cream-300">{i18n.t('pricing.confirm_free_body')}</p>
+              <div className="mt-4 flex flex-col-reverse sm:flex-row gap-2 sm:justify-end">
+                <button
+                  onClick={() => setConfirmingFree(false)}
+                  className="px-4 py-2 rounded-xl text-xs font-bold bg-gold-400 text-noir-900 hover:brightness-110"
+                >
+                  {i18n.t('pricing.confirm_free_keep', { plan: i18n.t(PLANS[currentPlanTier].name) })}
+                </button>
+                <button
+                  onClick={() => handleSelectPlan('free', true)}
+                  className="px-4 py-2 rounded-xl text-xs font-bold border border-red-400/50 text-red-300 hover:bg-red-500/15"
+                >
+                  {i18n.t('pricing.confirm_free_switch')}
+                </button>
+              </div>
+            </div>
           )}
         </div>
 
