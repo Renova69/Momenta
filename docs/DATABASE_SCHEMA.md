@@ -143,6 +143,7 @@ Stores wedding/event settings and feature toggles.
 - `is_public` (BOOLEAN, NOT NULL, default `false`): Whether the album appears
   on the public showcase feed. A privacy control, deliberately **not** tier-gated —
   publishing and withdrawing your own wedding is never a paid feature.
+- `deleting_at` (TIMESTAMPTZ, Nullable — migration 032): set by `DELETE /api/events/:id`, under the album's upload lock, before its media is purged. `getUploadContext` treats an album with this set as gone, so every upload and FTP ingest refuses it and deletes the files it saved, and the reveal promotion skips it. Cleared again if the purge fails, because the album is still there. Before it, a photo written mid-purge lost its row and kept its file (MASTER_AUDIT N-47).
 - `retention_notified_at` (TIMESTAMPTZ, Nullable): When the host was warned
   that the album is due for deletion, stamped only after a confirmed send that
   did not bounce. **The retention sweep will not delete an album whose value
@@ -354,6 +355,7 @@ the strength of mail nobody received.
 | 029 | `029_subscription_lapsed_tier.sql` | `subscriptions.lapsed_tier` — a plan suspended for non-payment, rather than ended, so a payment that recovers after the grace window restores it (N-35). |
 | 030 | `030_demo_accounts_off_showcase.sql` | `users.is_demo` — the public demo logins can no longer put an album on the landing page; the seeded demo wedding is unpublished (N-40). |
 | 031 | `031_subscription_one_time_tier.sql` | `subscriptions.one_time_tier` — a one-time pass outlives a subscription bought on top of it, which now falls back to the pass instead of to free (N-45). Backfilled from rows holding a pass. |
+| 032 | `032_event_deleting_at.sql` | `events.deleting_at` — an album being deleted accepts no new media, so nothing written mid-purge outlives it (N-47). |
 
 Full detail on the security/architecture-motivated migrations (009-019) is in
 `OPEN_ITEMS.md`, which is kept current as the working audit log for this kind

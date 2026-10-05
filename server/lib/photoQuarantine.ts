@@ -135,7 +135,10 @@ const ELIGIBLE_SQL = `
    WHERE event_id = $1
      AND is_quarantined
      AND status IN ('approved', 'featured')
-     AND (is_locked = false OR $2 = false)`;
+     AND (is_locked = false OR $2 = false)
+     -- N-47: promoting writes a new public copy, which a purge already
+     -- under way for this album would never see.
+     AND NOT EXISTS (SELECT 1 FROM events e WHERE e.id = photos.event_id AND e.deleting_at IS NOT NULL)`;
 
 /** Run `worker` over `items`, at most `limit` at a time, in order. */
 async function mapWithConcurrency<T>(

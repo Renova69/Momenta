@@ -176,6 +176,10 @@ export async function getUploadContext(
        LEFT JOIN subscriptions s
          ON s.user_id = e.host_user_id AND s.status = 'active'
       WHERE e.id = $1
+        -- N-47: an album being deleted takes nothing new. Callers re-read
+        -- this under the upload lock, so an upload already in flight when
+        -- deletion began is refused too, and cleans up what it saved.
+        AND e.deleting_at IS NULL
       LIMIT 1`,
     [eventId, deviceFingerprint ?? null]
   );

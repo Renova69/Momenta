@@ -2,7 +2,7 @@ import { Router } from 'express';
 import multer from 'multer';
 import { pool } from '../lib/db';
 import { CONFIG } from '../lib/config';
-import { saveBuffer, toAbsoluteUrl } from '../lib/storage';
+import { saveBuffer, toAbsoluteUrl, storageAdapter } from '../lib/storage';
 import { checkPhotoUploadTierLimit, getUploadContext, checkUploadAllowance, acquireEventUploadLock } from '../middleware/tierGate';
 import { isValidUuid, detectAudioFormat } from '../lib/validation';
 import { uploadLimiter } from '../middleware/rateLimit';
@@ -129,6 +129,12 @@ audioRouter.post('/', uploadLimiter, upload.single('audio'), requireEventTier('d
       eventId
     );
     const absoluteAudioUrl = toAbsoluteUrl(saved.storagePath);
+    // A refusal below comes after the file is saved; without this it stayed
+    // in storage with no row naming it.
+    const discardSavedRecording = () =>
+      storageAdapter.delete(saved.storagePath).catch((err: unknown) => {
+        console.warn(`[Audio] could not discard refused recording ${saved.storagePath}:`, errorLabel(err));
+      });
 
     // Re-check the quota and insert atomically (DB-02, mirrors SEC-D1's fix
     // for photos) — the check above ran against a plain SELECT with no lock,
@@ -144,12 +150,16 @@ audioRouter.post('/', uploadLimiter, upload.single('audio'), requireEventTier('d
 
       const freshContext = await getUploadContext(eventId, undefined, lockClient);
       if (!freshContext) {
+        // Gone, or being deleted (N-47): the recording saved above belongs
+        // to nothing now.
         await lockClient.query('ROLLBACK');
+        await discardSavedRecording();
         return res.status(404).json({ error: 'Event not found' });
       }
       const finalCheck = checkUploadAllowance(freshContext, audioBytes);
       if (!finalCheck.allowed) {
         await lockClient.query('ROLLBACK');
+        await discardSavedRecording();
         return res
           .status(403)
           .json({ error: finalCheck.reason, code: finalCheck.code || 'STORAGE_LIMIT_REACHED' });

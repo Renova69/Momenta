@@ -13,7 +13,7 @@ import { requireUuidParams } from '../../middleware/uuid';
 import { wsManager } from '../../ws/wsServer';
 import { cleanSlug } from '../../lib/storage';
 import { requireAuth } from '../../middleware/auth';
-import { getEffectiveTierForEvent, getEffectiveTierForUser, meetsTier, acquireUserEventCreationLock } from '../../middleware/tierGate';
+import { getEffectiveTierForEvent, getEffectiveTierForUser, meetsTier, acquireUserEventCreationLock, acquireEventUploadLock } from '../../middleware/tierGate';
 import { computeExpiry, purgeEventMedia } from '../../lib/retention';
 import { errorLabel, isUniqueViolation } from '../../lib/errors';
 import {
@@ -591,8 +591,33 @@ eventsRouter.delete(
       );
       const photosDeleted = photoCountRes.rows[0]?.n ?? 0;
 
+      // 0. N-47 — stop new media first. The purge works from a snapshot, and
+      // a photo written after it would lose its row and keep its file.
+      // Stamped under the album's upload lock, so an upload that holds the
+      // lock now commits before the snapshot and one that takes it later
+      // sees the stamp and refuses (getUploadContext).
+      const markClient = await pool.connect();
+      try {
+        await markClient.query('BEGIN');
+        await acquireEventUploadLock(markClient, id);
+        await markClient.query('UPDATE events SET deleting_at = NOW() WHERE id = $1', [id]);
+        await markClient.query('COMMIT');
+      } catch (err) {
+        await markClient.query('ROLLBACK').catch(() => undefined);
+        throw err;
+      } finally {
+        markClient.release();
+      }
+
       // 1. Storage first — see the note above about the cascade.
-      const purge = await purgeEventMedia(id);
+      let purge: Awaited<ReturnType<typeof purgeEventMedia>>;
+      try {
+        purge = await purgeEventMedia(id);
+      } catch (err) {
+        // The album is still here, so it must take uploads again.
+        await pool.query('UPDATE events SET deleting_at = NULL WHERE id = $1', [id]).catch(() => undefined);
+        throw err;
+      }
       const bytesFreed = purge.freedBytes;
       if (purge.failedPaths.length > 0) {
         // The rows naming these are about to be deleted, so after this only
