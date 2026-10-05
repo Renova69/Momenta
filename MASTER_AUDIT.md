@@ -862,6 +862,29 @@ cross-checks the Price); the redirect allow-list; the no-lowering upsert from
 N-15; the per-event photo-count lock; and a server-side gate on every
 `FEATURE_GATES` item except `live_tv`, which is presentation-only by design.
 
+**Review of these fixes (2026-10-05).** Four reviewers read the 52 fix
+commits by area — billing, media lifecycle, auth and ingest security, client —
+and every finding was checked against the code before anything changed. The
+review found one regression the fixes introduced and a dozen smaller gaps;
+all of them are fixed:
+
+| Commit | What the review found |
+|---|---|
+| `e67ea06` | **Regression from N-54:** the post-checkout poll went through `loadEventBySlug`, so the app showed its full-screen spinner every 3 s and moved the host to the guest feed. Also: the delayed banner promised something polling did not do; blocked `sessionStorage` made any paid plan count as arrived. The plan bought now travels on the return URL. |
+| `8928f3f` | The downgrade confirmation survived closing the modal; focus stayed behind it; the lapsed-moderation notice told the host to switch off something already off. |
+| `dc24dc1` | **Security:** the audio route let a guest claim the reserved `photographer` device and, before the first FTP upload, a token for the photographer's row. The device is now read from the header the limiter uses, after the plan's pre-check; FTP refuses `APPE`/`STOU`. |
+| `94e7707` | The grace sweep could suspend an account that paid after it made its list; a lapse record outlived a new subscription; choosing Free kept the remembered pass; checkout refused one-time passes when Stripe was unreachable. |
+| `7a5f17c` | An album saving its own address could be renamed by a reservation; a crash left the deletion mark blocking uploads; the export dropped rows outside the album's folder without saying so; the export's disk fallback ignored id case. |
+
+**Left as they are, deliberately:** `amount_paid_cents` written as 0 by some
+monthly writes (write-only audit data, M-5); a socket held by another server
+instance keeps host privileges until its next room join, and an open socket
+outlives its JWT's expiry (both pre-date this work; one instance today); a
+revoked FTP key still lands the one file in flight before the session closes,
+which is then deleted; a demo visitor logging out ends other demo visitors'
+sockets as it already ended their HTTP sessions; the N-34 floor gives a
+downgrade at most the deadline the album already had, not a fresh 30 days.
+
 **A workspace incident during the run.** On 2026-09-25 `OPEN_ITEMS.md`,
 `MASTER_AUDIT.md` and `FIX_PLAN.md` were each cut to their first 50 lines
 within 4 ms of each other, while every reviewer was read-only. The likely
