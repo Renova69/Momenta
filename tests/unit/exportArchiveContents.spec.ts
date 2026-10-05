@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import { createServer } from 'http';
 import express from 'express';
 import fs from 'fs';
@@ -60,6 +60,22 @@ async function downloadArchive(host: Host): Promise<Buffer> {
   );
   expect(res.status).toBe(200);
   return Buffer.from(await res.arrayBuffer());
+}
+
+/**
+ * The names of the entries in a zip, read from its local file headers.
+ *
+ * Searching the raw bytes for a name is not enough once the archive carries a
+ * MISSING-FILES.txt (N-48): that file's own text names what it lists.
+ */
+function entryNames(zip: Buffer): string[] {
+  const names: string[] = [];
+  const signature = Buffer.from([0x50, 0x4b, 0x03, 0x04]);
+  for (let at = zip.indexOf(signature); at >= 0; at = zip.indexOf(signature, at + 4)) {
+    const nameLength = zip.readUInt16LE(at + 26);
+    names.push(zip.subarray(at + 30, at + 30 + nameLength).toString('utf8'));
+  }
+  return names;
 }
 
 /** Write a real file into an event's storage and return its stored path. */
@@ -186,9 +202,19 @@ describe('what the export archive contains', () => {
 
   it('skips a row whose file is gone without failing the whole export', () => {
     // One missing file must not cost the host the other three hundred.
-    const text = archive.toString('latin1');
-    expect(text).not.toContain('deleted-from-disk.jpg');
-    expect(text).toContain('legacy-only.jpg');
+    const names = entryNames(archive);
+    expect(names.some((n) => n.includes('deleted-from-disk.jpg'))).toBe(false);
+    expect(names.some((n) => n.includes('legacy-only.jpg'))).toBe(true);
+  });
+
+  it('says which files it could not include, instead of finishing as if complete (N-48)', () => {
+    expect(entryNames(archive)).toContain('MISSING-FILES.txt');
+    expect(archive.toString('latin1')).toMatch(/photos\/photo-\d+-deleted-from-disk\.jpg/);
+  });
+
+  it('does not name a file from another album even in that list', () => {
+    expect(archive.toString('latin1')).not.toContain('someone-elses-wedding.jpg');
+    expect(archive.toString('latin1')).not.toContain('stray-audio.webm');
   });
 
   it('files photos under a photos/ prefix, numbered', () => {
@@ -205,6 +231,47 @@ describe('what the export archive contains', () => {
   it('leaves out an audio URL that points outside this album', () => {
     expect(archive.toString('latin1')).not.toContain('stray-audio.webm');
   });
+});
+
+/**
+ * N-48 — the export takes every photo's path at the start and then streams
+ * them one by one, which can take minutes. A photo approved, withheld or
+ * revealed meanwhile has moved between the quarantine and public trees, so
+ * its old path no longer exists, and the export used to skip it without a
+ * word. It now asks for the photo's current path before giving up.
+ */
+describe('a photo whose file moves during the download (N-48)', () => {
+  it('follows it to where it is now', async () => {
+    const host = await registerHost();
+    await query("UPDATE subscriptions SET tier = 'deluxe_keepsake' WHERE user_id = $1", [host.userId]);
+    const guest = await addGuest(host.eventId);
+    const movedTo = await saveFile(host.eventId, 'moved-photo.jpg');
+    const before = movedTo.replace('moved-photo', 'moved-photo-before-promotion');
+    const { rows } = await pool.query<{ id: string }>(
+      `INSERT INTO photos (event_id, guest_id, storage_path, full_url) VALUES ($1, $2, $3, $3) RETURNING id`,
+      [host.eventId, guest, before]
+    );
+
+    // The move lands just as the export reaches this photo.
+    const realGetStream = storageAdapter.getStream.bind(storageAdapter);
+    const spy = vi.spyOn(storageAdapter, 'getStream').mockImplementation(async (storagePath: string) => {
+      if (storagePath === before) {
+        await pool.query('UPDATE photos SET storage_path = $1 WHERE id = $2', [movedTo, rows[0].id]);
+        return null;
+      }
+      return realGetStream(storagePath);
+    });
+
+    try {
+      const zip = await downloadArchive(host);
+      const names = entryNames(zip);
+      expect(names.filter((n) => n.startsWith('photos/'))).toHaveLength(1);
+      expect(names).not.toContain('MISSING-FILES.txt');
+    } finally {
+      spy.mockRestore();
+      await deleteEventFixture(host.eventId);
+    }
+  }, 20_000);
 });
 
 describe('an album with nothing in it', () => {

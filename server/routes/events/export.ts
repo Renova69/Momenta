@@ -135,7 +135,7 @@ eventsRouter.get(
     // Prefer the untouched original; fall back to the display copy for photos
     // captured before originals were retained (migration 007).
     const photosQuery = await pool.query(
-      `SELECT COALESCE(original_storage_path, storage_path) AS storage_path,
+      `SELECT id, COALESCE(original_storage_path, storage_path) AS storage_path,
               original_storage_path IS NOT NULL AS has_original
          FROM photos WHERE event_id = $1 ORDER BY created_at ASC`,
       [id]
@@ -182,7 +182,7 @@ eventsRouter.get(
     // Without this the loop below could open every photo's storage stream
     // (R2 connections or fs handles) back-to-back while archiver was still
     // working through the first one — MED-01's backpressure gap.
-    const appendAndWait = (source: NodeJS.ReadableStream | string, name: string): Promise<void> =>
+    const appendAndWait = (source: NodeJS.ReadableStream | Buffer | string, name: string): Promise<void> =>
       new Promise((resolve, reject) => {
         const onEntry = (entryData: { name: string }) => {
           if (entryData.name === name) {
@@ -207,23 +207,32 @@ eventsRouter.get(
         }
       });
 
+    // Entries that could not be read, named in MISSING-FILES.txt at the end
+    // (N-48). Without it a partial archive finished exactly like a whole one.
+    const missing: string[] = [];
+
     // Append a single file to the archive, first trying the storage adapter stream
-    // (local or R2) and falling back to a verified on-disk path.
-    const appendFromStorage = async (storagePath: string, archiveName: string) => {
-      if (!storagePath || aborted) return;
+    // (local or R2) and falling back to a verified on-disk path. `refused`
+    // means the path is not this album's, which is never listed as missing:
+    // naming another album's file to this host is the leak SEC-04 closed.
+    const appendFromStorage = async (
+      storagePath: string,
+      archiveName: string
+    ): Promise<'appended' | 'missing' | 'refused'> => {
+      if (!storagePath || aborted) return 'missing';
 
       // SEC-04 — validated before the adapter ever gets a chance to stream
       // it, not just in the fallback branch below (see storagePathBelongsToEvent).
       if (!storagePathBelongsToEvent(storagePath, id)) {
         console.warn(`[Events] export-zip skipped a path outside its own event: ${storagePath}`);
-        return;
+        return 'refused';
       }
 
       const stream = await storageAdapter.getStream(storagePath);
-      if (aborted) return;
+      if (aborted) return 'missing';
       if (stream) {
         await appendAndWait(stream, archiveName);
-        return;
+        return 'appended';
       }
 
       const diskPath = storageAdapter.getAbsolutePath(storagePath);
@@ -236,14 +245,34 @@ eventsRouter.get(
         const eventDir = path.resolve(CONFIG.UPLOADS_DIR, 'events', id) + path.sep;
         if (resolved.startsWith(eventDir) && fs.existsSync(resolved)) {
           await appendAndWait(resolved, archiveName);
+          return 'appended';
         }
       }
+      return 'missing';
     };
 
     for (let i = 0; i < photosQuery.rows.length && !aborted; i++) {
       const p = photosQuery.rows[i];
       const filename = p.storage_path.split('/').pop() || `photo-${i + 1}.jpg`;
-      await appendFromStorage(p.storage_path, `photos/photo-${i + 1}-${filename}`);
+      const archiveName = `photos/photo-${i + 1}-${filename}`;
+      let outcome = await appendFromStorage(p.storage_path, archiveName);
+
+      // N-48 — the paths above were read when the export began, and it can
+      // run for minutes. Approving, withholding or revealing a photo moves
+      // its file between the quarantine and public trees, so a miss is first
+      // a question: where is this photo now?
+      if (outcome === 'missing' && !aborted) {
+        const now = await pool.query(
+          'SELECT COALESCE(original_storage_path, storage_path) AS storage_path FROM photos WHERE id = $1',
+          [p.id]
+        );
+        if (now.rows.length === 0) continue; // deleted meanwhile: nothing missing
+        const currentPath = now.rows[0].storage_path as string | null;
+        if (currentPath && currentPath !== p.storage_path) {
+          outcome = await appendFromStorage(currentPath, archiveName);
+        }
+      }
+      if (outcome === 'missing' && !aborted) missing.push(archiveName);
     }
 
     for (let i = 0; i < audioQuery.rows.length && !aborted; i++) {
@@ -252,7 +281,21 @@ eventsRouter.get(
       // internal storage path so the adapter can resolve it. R2 URLs pass through as-is.
       const storagePath = url && url.includes('/uploads/') ? url.substring(url.indexOf('/uploads/')) : url;
       const filename = (storagePath || '').split('/').pop() || `audio-${i + 1}.webm`;
-      await appendFromStorage(storagePath, `audio/audio-${i + 1}-${filename}`);
+      const archiveName = `audio/audio-${i + 1}-${filename}`;
+      if ((await appendFromStorage(storagePath, archiveName)) === 'missing' && !aborted) missing.push(archiveName);
+    }
+
+    if (!aborted && missing.length > 0) {
+      console.warn(`[Events] export-zip for ${id} could not include ${missing.length} file(s): ${missing.join(', ')}`);
+      // A Buffer, not a string: appendAndWait reads a string as a file path.
+      const manifest = [
+        'These files could not be read from storage and are not in this archive.',
+        'Тези файлове не можаха да бъдат прочетени от хранилището и не са в този архив.',
+        '',
+        ...missing,
+        '',
+      ].join('\n');
+      await appendAndWait(Buffer.from(manifest, 'utf8'), 'MISSING-FILES.txt');
     }
 
     if (!aborted) {
