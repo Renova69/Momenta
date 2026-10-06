@@ -73,6 +73,10 @@ photosRouter.get('/', optionalAuth, validateQuery(ListPhotosQuerySchema), async 
     // Non-hosts can only view approved or featured photos
     if (!isHost) {
       query += ` AND p.status IN ('approved', 'featured')`;
+      // N-72 — the promotion above can fail for one photo, or be running on
+      // another request that holds the album's lock. Until all of a photo's
+      // files are public, a guest would only get links into quarantine.
+      query += ` AND NOT p.is_quarantined`;
       // While disposable mode is active and not yet revealed, hide locked photos.
       if (disposableLocked) {
         query += ` AND p.is_locked = false`;
