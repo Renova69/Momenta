@@ -25,6 +25,51 @@ export function buildPreviewUrl(photoId: string, hostUserId: string, variant: Pr
 
 type MovedFile = { publicUrl: string; storagePath: string };
 
+/** The statuses under which a photo's files belong on the public path. */
+const PUBLIC_STATUSES = ['approved', 'featured'];
+
+/**
+ * Run one move of a photo's files under a lock held for that photo alone.
+ *
+ * N-71 — an approval's promotion and a rejection's withhold each read the
+ * row once, at the start, and never coordinated. A rejection made while the
+ * promotion was still moving files saw "still quarantined" and did nothing,
+ * and the promotion then made the rejected photo public. Under the lock each
+ * move reads the status as it stands, after any move already under way has
+ * written its row.
+ *
+ * Session-level, on a connection of its own, because the moves are storage
+ * I/O that a transaction should not be held open across. A connection whose
+ * unlock fails is closed rather than returned to the pool, so it cannot take
+ * the lock back into the pool with it.
+ */
+async function withPhotoMoveLock(
+  db: Pool | PoolClient,
+  photoId: string,
+  move: (client: PoolClient) => Promise<void>
+): Promise<void> {
+  const ownConnection = db instanceof Pool;
+  const client = ownConnection ? await db.connect() : db;
+  const key = `photo_move_${photoId}`;
+  let unlocked = true;
+  try {
+    await client.query('SELECT pg_advisory_lock(hashtextextended($1, 0))', [key]);
+    unlocked = false;
+    try {
+      await move(client);
+    } finally {
+      await client
+        .query('SELECT pg_advisory_unlock(hashtextextended($1, 0))', [key])
+        .then(() => {
+          unlocked = true;
+        })
+        .catch(() => undefined);
+    }
+  } finally {
+    if (ownConnection) client.release(!unlocked);
+  }
+}
+
 interface PhotoFiles {
   storage_path: string | null;
   original_storage_path: string | null;
@@ -96,54 +141,63 @@ export async function withholdPhotoToQuarantine(
   photoId: string,
   db: Pool | PoolClient = pool
 ): Promise<void> {
-  const { rows } = await db.query(
-    'SELECT storage_path, original_storage_path, thumbnail_url, is_quarantined FROM photos WHERE id = $1',
-    [photoId]
-  );
-  if (rows.length === 0 || rows[0].is_quarantined) return;
+  await withPhotoMoveLock(db, photoId, async (client) => {
+    const { rows } = await client.query(
+      'SELECT status, storage_path, original_storage_path, thumbnail_url, is_quarantined FROM photos WHERE id = $1',
+      [photoId]
+    );
+    if (rows.length === 0 || rows[0].is_quarantined) return;
+    // Approved again since this withhold was asked for (N-71).
+    if (PUBLIC_STATUSES.includes(rows[0].status)) return;
 
-  await moveCopies(
-    db,
-    photoId,
-    rows[0],
-    (p) => storageAdapter.demoteToQuarantine(p),
-    (moved) => moved.publicUrl,
-    true
-  );
+    await moveCopies(
+      client,
+      photoId,
+      rows[0],
+      (p) => storageAdapter.demoteToQuarantine(p),
+      (moved) => moved.publicUrl,
+      true
+    );
+  });
 }
 
 /**
  * Move a single photo's quarantined copies (display/original/thumbnail) to
  * their public paths and update the row to match. A no-op for a photo whose
- * copies are already public — safe to call unconditionally.
+ * copies are already public, or whose status is not public — safe to call
+ * unconditionally.
  */
 export async function promotePhotoFromQuarantine(
   photoId: string,
   db: Pool | PoolClient = pool
 ): Promise<void> {
-  const { rows } = await db.query(
-    'SELECT storage_path, original_storage_path, thumbnail_url FROM photos WHERE id = $1',
-    [photoId]
-  );
-  if (rows.length === 0) return;
-  const row = rows[0];
+  await withPhotoMoveLock(db, photoId, async (client) => {
+    const { rows } = await client.query(
+      'SELECT status, storage_path, original_storage_path, thumbnail_url FROM photos WHERE id = $1',
+      [photoId]
+    );
+    if (rows.length === 0) return;
+    const row = rows[0];
+    // Rejected, or sent back to pending, since this promotion was asked for (N-71).
+    if (!PUBLIC_STATUSES.includes(row.status)) return;
 
-  if (
-    !isQuarantined(row.storage_path) &&
-    !isQuarantined(row.original_storage_path) &&
-    !isQuarantined(toStoragePath(row.thumbnail_url))
-  ) {
-    return;
-  }
+    if (
+      !isQuarantined(row.storage_path) &&
+      !isQuarantined(row.original_storage_path) &&
+      !isQuarantined(toStoragePath(row.thumbnail_url))
+    ) {
+      return;
+    }
 
-  await moveCopies(
-    db,
-    photoId,
-    row,
-    (p) => storageAdapter.promoteFromQuarantine(p),
-    (moved) => toAbsoluteUrl(moved.storagePath),
-    false
-  );
+    await moveCopies(
+      client,
+      photoId,
+      row,
+      (p) => storageAdapter.promoteFromQuarantine(p),
+      (moved) => toAbsoluteUrl(moved.storagePath),
+      false
+    );
+  });
 }
 
 /**

@@ -394,6 +394,8 @@ describe('Photo quarantine (MED-03/SEC-M5)', () => {
       expect(before.rows[0].storage_path).toContain('/quarantine/');
 
       await leaveHalfPromoted(photoId);
+      // Approved, as it would be: a pending photo is never promoted (N-71).
+      await query("UPDATE photos SET status = 'approved' WHERE id = $1", [photoId]);
 
       const { promotePhotoFromQuarantine } = await import('../../server/lib/photoQuarantine');
       await promotePhotoFromQuarantine(photoId);

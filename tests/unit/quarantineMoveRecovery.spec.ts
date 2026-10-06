@@ -237,6 +237,8 @@ describe('a photo whose files moved only in part (N-70)', () => {
   it('records the copies that were withheld when one withholding fails, and finishes on retry', async () => {
     const photoId = await quarantinedPhoto();
     await promotePhotoFromQuarantine(photoId);
+    // The host takes the approval back; the route writes the status first.
+    await query("UPDATE photos SET status = 'rejected' WHERE id = $1", [photoId]);
     const blip = failMovesOf('demoteToQuarantine', '/original-');
 
     await expect(withholdPhotoToQuarantine(photoId)).rejects.toThrow('storage blip');
