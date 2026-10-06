@@ -353,6 +353,51 @@ describe('downgrade guard (H7)', () => {
       );
     });
 
+    // N-64 — a retention warning is about one deadline. It was stamped once
+    // and never cleared, so an album warned, then extended by a purchase,
+    // then lapsed again counted as warned about a deadline nobody had told
+    // the host about — and was deletable at once.
+    it('forgets a warning once the deadline it was about has moved', async () => {
+      const host = await registerHost();
+      await query(
+        `UPDATE events SET event_date = NOW() - INTERVAL '3 months', created_at = NOW() - INTERVAL '4 months',
+                           expires_at = NOW() - INTERVAL '3 months' + INTERVAL '7 days',
+                           retention_notified_at = NOW() - INTERVAL '20 days'
+          WHERE id = $1`,
+        [host.eventId]
+      );
+      await query("UPDATE subscriptions SET tier = 'deluxe_keepsake' WHERE user_id = $1 AND status = 'active'", [
+        host.userId,
+      ]);
+
+      await refreshExpiryDates(host.userId);
+
+      const row = await query<{ retention_notified_at: string | null }>(
+        'SELECT retention_notified_at FROM events WHERE id = $1',
+        [host.eventId]
+      );
+      expect(row.rows[0].retention_notified_at).toBeNull();
+    });
+
+    it('keeps a warning while the deadline it was about stands', async () => {
+      const host = await registerHost();
+      await query(
+        `UPDATE events SET event_date = NOW() - INTERVAL '3 months', created_at = NOW() - INTERVAL '4 months',
+                           expires_at = NOW() - INTERVAL '3 months' + INTERVAL '7 days',
+                           retention_notified_at = NOW() - INTERVAL '20 days'
+          WHERE id = $1`,
+        [host.eventId]
+      );
+
+      await refreshExpiryDates(host.userId);
+
+      const row = await query<{ retention_notified_at: string | null }>(
+        'SELECT retention_notified_at FROM events WHERE id = $1',
+        [host.eventId]
+      );
+      expect(row.rows[0].retention_notified_at).not.toBeNull();
+    });
+
     it('leaves an indefinite retention indefinite', async () => {
       const host = await registerHost();
       await query("UPDATE subscriptions SET tier = 'pro_planner' WHERE user_id = $1 AND status = 'active'", [

@@ -193,8 +193,22 @@ export async function refreshExpiryDates(
     expiries.push(new Date(Math.max(expiry.getTime(), cappedFloor)).toISOString());
   }
 
+  // N-64 — a retention warning is about one deadline. When the deadline moves
+  // — a purchase extends it, a lapse shortens it, indefinite becomes dated —
+  // the warning no longer describes it, so it is forgotten and a fresh one is
+  // due. It was stamped once and never cleared: an album warned, extended,
+  // then lapsed again counted as warned about a deadline nobody had told the
+  // host about. A second of slack absorbs the difference between microsecond
+  // rows and millisecond values from here, which is not a move.
   await db.query(
-    `UPDATE events SET expires_at = v.expiry
+    `UPDATE events SET
+            retention_notified_at = CASE
+              WHEN (v.expiry IS NULL) <> (events.expires_at IS NULL)
+                OR abs(extract(epoch FROM (v.expiry - events.expires_at))) > 1
+              THEN NULL
+              ELSE events.retention_notified_at
+            END,
+            expires_at = v.expiry
        FROM (SELECT unnest($1::uuid[]) AS id, unnest($2::timestamptz[]) AS expiry) v
       WHERE events.id = v.id`,
     [ids, expiries]
