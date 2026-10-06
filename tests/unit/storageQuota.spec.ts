@@ -149,14 +149,15 @@ describe('Storage accounting, quotas and retention', () => {
       [eventId]
     );
     const quotaGuestId = guest.rows[0].id;
-    const filler = Array.from({ length: PLAN_LIMITS.free.maxPhotos ?? 50 }, (_, i) => i);
-    for (const i of filler) {
-      await query(
-        `INSERT INTO photos (event_id, guest_id, storage_path, full_url, status, storage_bytes)
-         VALUES ($1, $2, $3, $4, 'rejected', 0)`,
-        [eventId, quotaGuestId, `/uploads/events/${eventId}/rejected-${i}.jpg`, `http://x/rejected-${i}.jpg`]
-      );
-    }
+    // One statement, not one per row: each commit is a disk flush, and on a
+    // Docker Desktop volume that is about 200 ms, so fifty separate inserts
+    // took ten of this test's twenty seconds and timed out on a busy machine.
+    await query(
+      `INSERT INTO photos (event_id, guest_id, storage_path, full_url, status, storage_bytes)
+       SELECT $1, $2, $4 || i || '.jpg', 'http://x/rejected-' || i || '.jpg', 'rejected', 0
+         FROM generate_series(0, $3::int - 1) AS i`,
+      [eventId, quotaGuestId, PLAN_LIMITS.free.maxPhotos ?? 50, `/uploads/events/${eventId}/rejected-`]
+    );
 
     const context = await getUploadContext(eventId, undefined);
     expect(context).not.toBeNull();

@@ -44,6 +44,18 @@ export default defineConfig({
       // 5 leaves headroom for up to 20 workers.
       DB_POOL_MAX: '5',
 
+      // Test sessions do not wait for each commit to reach the disk.
+      //
+      // On a Docker Desktop volume that flush takes about 200 ms, so a spec
+      // that writes fifty rows one by one spent ten seconds just committing
+      // them, and specs near the timeout failed whenever the machine was busy.
+      // Visibility and locking are unchanged: a committed row is seen at once
+      // by every other session either way. Only a database crash could lose
+      // the last few commits, which a test run can afford. node-postgres
+      // reads PGOPTIONS, so this reaches every pool the workers open, and
+      // nothing outside the test run.
+      PGOPTIONS: '-c synchronous_commit=off',
+
       // Unit tests always use local disk, never real Cloudflare R2 — pinned
       // here rather than per-spec so it cannot be forgotten in a new file.
       //
