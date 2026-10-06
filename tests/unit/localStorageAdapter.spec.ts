@@ -195,21 +195,19 @@ describe('promoting out of quarantine', () => {
 
   it('refuses a traversal path without copying anything into the public root', async () => {
     // Which of the two guards fires here is worth being precise about. The
-    // refusal comes from resolving the source: getAbsolutePath confirms the
-    // quarantined file sits inside the quarantine root, and `..` fails that,
-    // so this throws "file missing" before the target is computed at all.
+    // target is checked first: since N-70 a missing source is accepted when
+    // the target already exists (an earlier attempt moved it), so the target
+    // has to be confirmed inside the uploads root before anything looks for
+    // it there. `..` fails that, and the source is never resolved.
     //
-    // The startsWith(uploadsRoot) check further down is defence in depth that
-    // this arithmetic cannot actually reach: both checks apply the same
-    // relative segment to their own root, so the net depth change is
-    // identical and either both stay inside or both escape. Removing it does
-    // not change the outcome of any input — which is the honest reason this
-    // test asserts the refusal and the absence of a copy, and not that
-    // particular line.
+    // getAbsolutePath's own containment check on the source would refuse the
+    // same input: both apply the same relative segment to their own root, so
+    // either both stay inside or both escape. This test asserts the refusal
+    // and the absence of a copy.
     fs.writeFileSync(path.join(root, 'escaped.jpg'), 'bytes');
 
     await expect(adapter.promoteFromQuarantine('/quarantine/../escaped.jpg')).rejects.toThrow(
-      /missing/i
+      /outside the uploads root/i
     );
 
     expect(fs.existsSync(path.join(uploadsDir, 'escaped.jpg'))).toBe(false);

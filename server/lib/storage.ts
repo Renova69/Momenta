@@ -1,6 +1,13 @@
 import fs from 'fs';
 import path from 'path';
-import { S3Client, PutObjectCommand, DeleteObjectCommand, GetObjectCommand, CopyObjectCommand } from '@aws-sdk/client-s3';
+import {
+  S3Client,
+  PutObjectCommand,
+  DeleteObjectCommand,
+  GetObjectCommand,
+  CopyObjectCommand,
+  HeadObjectCommand,
+} from '@aws-sdk/client-s3';
 import { Readable } from 'stream';
 import { CONFIG } from './config';
 
@@ -133,16 +140,19 @@ export class LocalStorageAdapter implements StorageAdapter {
       return { publicUrl: storagePath, storagePath };
     }
 
-    const sourcePath = this.getAbsolutePath(storagePath);
-    if (!sourcePath || !fs.existsSync(sourcePath)) {
-      throw new Error(`[LocalStorage] Cannot withhold — file missing: ${storagePath}`);
-    }
-
     const relative = storagePath.replace('/uploads/', '');
+    const quarantinePath = `/quarantine/${relative}`;
     const targetPath = path.resolve(this.quarantineDir, relative);
     const quarantineRoot = path.resolve(this.quarantineDir);
     if (!targetPath.startsWith(quarantineRoot + path.sep)) {
       throw new Error(`[LocalStorage] Refusing to withhold outside the quarantine root: ${storagePath}`);
+    }
+
+    const sourcePath = this.getAbsolutePath(storagePath);
+    if (!sourcePath) {
+      // N-70 — an earlier attempt moved it and the row was never updated.
+      if (fs.existsSync(targetPath)) return { publicUrl: quarantinePath, storagePath: quarantinePath };
+      throw new Error(`[LocalStorage] Cannot withhold — file missing: ${storagePath}`);
     }
 
     await fs.promises.mkdir(path.dirname(targetPath), { recursive: true });
@@ -154,7 +164,6 @@ export class LocalStorageAdapter implements StorageAdapter {
       );
     });
 
-    const quarantinePath = `/quarantine/${relative}`;
     console.log(`[LocalStorage] Withheld into quarantine: ${storagePath} -> ${quarantinePath}`);
     return { publicUrl: quarantinePath, storagePath: quarantinePath };
   }
@@ -166,16 +175,19 @@ export class LocalStorageAdapter implements StorageAdapter {
       return { publicUrl: storagePath, storagePath };
     }
 
-    const sourcePath = this.getAbsolutePath(storagePath);
-    if (!sourcePath) {
-      throw new Error(`[LocalStorage] Cannot promote — quarantined file missing: ${storagePath}`);
-    }
-
     const relative = storagePath.replace('/quarantine/', '');
+    const publicPath = `/uploads/${relative}`;
     const targetPath = path.resolve(this.uploadsDir, relative);
     const uploadsRoot = path.resolve(this.uploadsDir);
     if (!targetPath.startsWith(uploadsRoot + path.sep)) {
       throw new Error(`[LocalStorage] Refusing to promote outside the uploads root: ${storagePath}`);
+    }
+
+    const sourcePath = this.getAbsolutePath(storagePath);
+    if (!sourcePath) {
+      // N-70 — an earlier attempt moved it and the row was never updated.
+      if (fs.existsSync(targetPath)) return { publicUrl: publicPath, storagePath: publicPath };
+      throw new Error(`[LocalStorage] Cannot promote — quarantined file missing: ${storagePath}`);
     }
 
     await fs.promises.mkdir(path.dirname(targetPath), { recursive: true });
@@ -184,7 +196,6 @@ export class LocalStorageAdapter implements StorageAdapter {
       console.warn(`[LocalStorage] Promoted ${storagePath} but could not remove the quarantine copy:`, err instanceof Error ? err.message : err);
     });
 
-    const publicPath = `/uploads/${relative}`;
     console.log(`[LocalStorage] Promoted from quarantine: ${storagePath} -> ${publicPath}`);
     return { publicUrl: publicPath, storagePath: publicPath };
   }
@@ -213,6 +224,13 @@ export class LocalStorageAdapter implements StorageAdapter {
       }
     }
   }
+}
+
+/** Whether an R2/S3 error means the key does not exist, as opposed to an outage. */
+function isNotFound(err: unknown): boolean {
+  const name = err instanceof Error ? err.name : '';
+  const httpStatus = (err as { $metadata?: { httpStatusCode?: number } })?.$metadata?.httpStatusCode;
+  return name === 'NoSuchKey' || name === 'NotFound' || httpStatus === 404;
 }
 
 // 2. Cloudflare R2 Storage Adapter (S3-Compatible)
@@ -337,9 +355,7 @@ export class R2StorageAdapter implements StorageAdapter {
       // silently dropped the photo with nothing telling the host why the
       // download came back short. Only a genuine not-found resolves to
       // null; anything else propagates so the caller finds out.
-      const name = err instanceof Error ? err.name : '';
-      const httpStatus = (err as { $metadata?: { httpStatusCode?: number } })?.$metadata?.httpStatusCode;
-      if (name === 'NoSuchKey' || name === 'NotFound' || httpStatus === 404) {
+      if (isNotFound(err)) {
         return null;
       }
       console.error(`[R2Storage] Failed to fetch stream for ${storagePath}:`, (err instanceof Error ? err.message : String(err)));
@@ -354,15 +370,7 @@ export class R2StorageAdapter implements StorageAdapter {
     }
 
     const targetKey = `quarantine/${key}`;
-
-    await this.s3.send(
-      new CopyObjectCommand({
-        Bucket: this.bucketName,
-        CopySource: `${this.bucketName}/${key}`,
-        Key: targetKey,
-      })
-    );
-    await this.s3.send(new DeleteObjectCommand({ Bucket: this.bucketName, Key: key }));
+    await this.moveObject(key, targetKey);
 
     const url = this.publicBaseUrl
       ? `${this.publicBaseUrl}/${targetKey}`
@@ -370,6 +378,39 @@ export class R2StorageAdapter implements StorageAdapter {
 
     console.log(`[R2Storage] Withheld into quarantine: ${key} -> ${targetKey}`);
     return { publicUrl: url, storagePath: url };
+  }
+
+  /**
+   * Copy an object to its new key, then delete the old one.
+   *
+   * N-70 — a source that is gone, with the target in place, means an earlier
+   * attempt got this far and the row naming the old key was never updated.
+   * That move is done; failing it again made every retry fail the same way.
+   */
+  private async moveObject(sourceKey: string, targetKey: string): Promise<void> {
+    try {
+      await this.s3.send(
+        new CopyObjectCommand({
+          Bucket: this.bucketName,
+          CopySource: `${this.bucketName}/${sourceKey}`,
+          Key: targetKey,
+        })
+      );
+    } catch (err) {
+      if (isNotFound(err) && (await this.objectExists(targetKey))) return;
+      throw err;
+    }
+    await this.s3.send(new DeleteObjectCommand({ Bucket: this.bucketName, Key: sourceKey }));
+  }
+
+  private async objectExists(key: string): Promise<boolean> {
+    try {
+      await this.s3.send(new HeadObjectCommand({ Bucket: this.bucketName, Key: key }));
+      return true;
+    } catch (err) {
+      if (isNotFound(err)) return false;
+      throw err;
+    }
   }
 
   public async promoteFromQuarantine(storagePath: string): Promise<{ publicUrl: string; storagePath: string }> {
@@ -381,15 +422,7 @@ export class R2StorageAdapter implements StorageAdapter {
     }
 
     const targetKey = key.replace(/^quarantine\//, '');
-
-    await this.s3.send(
-      new CopyObjectCommand({
-        Bucket: this.bucketName,
-        CopySource: `${this.bucketName}/${key}`,
-        Key: targetKey,
-      })
-    );
-    await this.s3.send(new DeleteObjectCommand({ Bucket: this.bucketName, Key: key }));
+    await this.moveObject(key, targetKey);
 
     const publicUrl = this.publicBaseUrl
       ? `${this.publicBaseUrl}/${targetKey}`

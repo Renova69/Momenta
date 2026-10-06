@@ -23,11 +23,65 @@ export function buildPreviewUrl(photoId: string, hostUserId: string, variant: Pr
   return `${CONFIG.PUBLIC_BASE_URL}/api/photos/${photoId}/preview?variant=${variant}&token=${encodeURIComponent(token)}`;
 }
 
+type MovedFile = { publicUrl: string; storagePath: string };
+
+interface PhotoFiles {
+  storage_path: string | null;
+  original_storage_path: string | null;
+  thumbnail_url: string | null;
+}
+
 /**
- * Move a single photo's quarantined copies (display/original/thumbnail) to
- * their public paths and update the row to match. A no-op for a photo whose
- * copies are already public — safe to call unconditionally.
+ * Move a photo's three copies, and record in its row every move that landed.
+ *
+ * N-70 — the row used to be written only if all three moves succeeded. One
+ * failed move left the row naming a file that had already moved, and every
+ * retry then failed on that missing source, for good. Now the row always
+ * names where each file is, `is_quarantined` changes only once all three
+ * have moved, and a failure is raised after the row is written, so the
+ * caller logs it and the next attempt moves only what is left.
  */
+async function moveCopies(
+  db: Pool | PoolClient,
+  photoId: string,
+  row: PhotoFiles,
+  move: (storagePath: string) => Promise<MovedFile>,
+  toUrl: (moved: MovedFile) => string,
+  quarantined: boolean
+): Promise<void> {
+  const thumbPath = toStoragePath(row.thumbnail_url);
+  const settled = await Promise.allSettled([
+    row.storage_path ? move(row.storage_path) : Promise.resolve(null),
+    row.original_storage_path ? move(row.original_storage_path) : Promise.resolve(null),
+    thumbPath ? move(thumbPath) : Promise.resolve(null),
+  ]);
+  const [display, original, thumb] = settled.map((r) => (r.status === 'fulfilled' ? r.value : null));
+  const failure = settled.find((r): r is PromiseRejectedResult => r.status === 'rejected');
+
+  await db.query(
+    `UPDATE photos SET
+       storage_path = COALESCE($2, storage_path),
+       full_url = COALESCE($3, full_url),
+       original_storage_path = COALESCE($4, original_storage_path),
+       original_url = COALESCE($5, original_url),
+       thumbnail_url = COALESCE($6, thumbnail_url),
+       is_quarantined = CASE WHEN $7 THEN $8 ELSE is_quarantined END
+     WHERE id = $1`,
+    [
+      photoId,
+      display?.storagePath ?? null,
+      display ? toUrl(display) : null,
+      original?.storagePath ?? null,
+      original ? toUrl(original) : null,
+      thumb ? toUrl(thumb) : null,
+      !failure,
+      quarantined,
+    ]
+  );
+
+  if (failure) throw failure.reason;
+}
+
 /**
  * Put a photo back behind quarantine, for a host who takes back an approval.
  *
@@ -47,35 +101,22 @@ export async function withholdPhotoToQuarantine(
     [photoId]
   );
   if (rows.length === 0 || rows[0].is_quarantined) return;
-  const row = rows[0];
-  const thumbPath = toStoragePath(row.thumbnail_url);
 
-  const [display, original, thumb] = await Promise.all([
-    row.storage_path ? storageAdapter.demoteToQuarantine(row.storage_path) : null,
-    row.original_storage_path ? storageAdapter.demoteToQuarantine(row.original_storage_path) : null,
-    thumbPath ? storageAdapter.demoteToQuarantine(thumbPath) : null,
-  ]);
-
-  await db.query(
-    `UPDATE photos SET
-       storage_path = COALESCE($2, storage_path),
-       full_url = COALESCE($3, full_url),
-       original_storage_path = COALESCE($4, original_storage_path),
-       original_url = COALESCE($5, original_url),
-       thumbnail_url = COALESCE($6, thumbnail_url),
-       is_quarantined = true
-     WHERE id = $1`,
-    [
-      photoId,
-      display?.storagePath ?? null,
-      display?.publicUrl ?? null,
-      original?.storagePath ?? null,
-      original?.publicUrl ?? null,
-      thumb?.publicUrl ?? null,
-    ]
+  await moveCopies(
+    db,
+    photoId,
+    rows[0],
+    (p) => storageAdapter.demoteToQuarantine(p),
+    (moved) => moved.publicUrl,
+    true
   );
 }
 
+/**
+ * Move a single photo's quarantined copies (display/original/thumbnail) to
+ * their public paths and update the row to match. A no-op for a photo whose
+ * copies are already public — safe to call unconditionally.
+ */
 export async function promotePhotoFromQuarantine(
   photoId: string,
   db: Pool | PoolClient = pool
@@ -86,35 +127,22 @@ export async function promotePhotoFromQuarantine(
   );
   if (rows.length === 0) return;
   const row = rows[0];
-  const thumbPath = toStoragePath(row.thumbnail_url);
 
-  if (!isQuarantined(row.storage_path) && !isQuarantined(row.original_storage_path) && !isQuarantined(thumbPath)) {
+  if (
+    !isQuarantined(row.storage_path) &&
+    !isQuarantined(row.original_storage_path) &&
+    !isQuarantined(toStoragePath(row.thumbnail_url))
+  ) {
     return;
   }
 
-  const [display, original, thumb] = await Promise.all([
-    row.storage_path ? storageAdapter.promoteFromQuarantine(row.storage_path) : null,
-    row.original_storage_path ? storageAdapter.promoteFromQuarantine(row.original_storage_path) : null,
-    thumbPath ? storageAdapter.promoteFromQuarantine(thumbPath) : null,
-  ]);
-
-  await db.query(
-    `UPDATE photos SET
-       storage_path = COALESCE($2, storage_path),
-       full_url = COALESCE($3, full_url),
-       original_storage_path = COALESCE($4, original_storage_path),
-       original_url = COALESCE($5, original_url),
-       thumbnail_url = COALESCE($6, thumbnail_url),
-       is_quarantined = false
-     WHERE id = $1`,
-    [
-      photoId,
-      display?.storagePath ?? null,
-      display ? toAbsoluteUrl(display.storagePath) : null,
-      original?.storagePath ?? null,
-      original ? toAbsoluteUrl(original.storagePath) : null,
-      thumb ? toAbsoluteUrl(thumb.storagePath) : null,
-    ]
+  await moveCopies(
+    db,
+    photoId,
+    row,
+    (p) => storageAdapter.promoteFromQuarantine(p),
+    (moved) => toAbsoluteUrl(moved.storagePath),
+    false
   );
 }
 
