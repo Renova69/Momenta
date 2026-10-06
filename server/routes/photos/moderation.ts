@@ -11,13 +11,38 @@ import { pool } from '../../lib/db';
 import { requireUuidParams } from '../../middleware/uuid';
 import { wsManager } from '../../ws/wsServer';
 import { errorLabel } from '../../lib/errors';
-import { storageAdapter, toStoragePath } from '../../lib/storage';
+import { storageAdapter, toStoragePath, isQuarantined } from '../../lib/storage';
 import { requireAuth } from '../../middleware/auth';
 import { validateBody } from '../../middleware/validate';
 import { promotePhotoFromQuarantine, withholdPhotoToQuarantine } from '../../lib/photoQuarantine';
 import {
   StatusPhotoSchema,
+  loadGuestPhotoDto,
 } from './shared';
+
+const PUBLIC_STATUSES = ['approved', 'featured'];
+
+/**
+ * Send guests a photo the host has just made public (N-67).
+ *
+ * A guest was never sent a photo while it was pending, so the status update
+ * that approval broadcasts had nothing to apply to: the photo reached their
+ * screen, and the projector wall, only on a reload. Hosts are left out, as
+ * they have held the photo since it arrived.
+ */
+async function announceToGuests(eventId: string, photoId: string): Promise<void> {
+  const photo = await loadGuestPhotoDto(photoId);
+  if (!photo) return;
+  if (photo.isLocked) {
+    // Before the reveal guests learn that a photo exists, not what it shows,
+    // the same as a locked upload's broadcast.
+    wsManager.broadcastToEventGuests(eventId, 'PHOTO_ADDED', { ...photo, fullUrl: '', thumbnailUrl: '' });
+    return;
+  }
+  // Promotion failed and was logged: a guest cannot load these URLs.
+  if (isQuarantined(String(photo.storagePath)) || isQuarantined(String(photo.thumbnailUrl))) return;
+  wsManager.broadcastToEventGuests(eventId, 'PHOTO_ADDED', photo);
+}
 
 /**
  * Declared under the name the handlers below were already written with, and
@@ -34,7 +59,7 @@ photosRouter.post('/:id/status', requireAuth, requireUuidParams('id'), validateB
 
   try {
     const checkQuery = await pool.query(
-      `SELECT e.host_user_id, p.is_locked, e.reveal_at
+      `SELECT e.host_user_id, p.is_locked, e.reveal_at, p.status AS previous_status
          FROM photos p JOIN events e ON e.id = p.event_id WHERE p.id = $1`,
       [id]
     );
@@ -71,7 +96,16 @@ photosRouter.post('/:id/status', requireAuth, requireUuidParams('id'), validateB
     }
 
     if (result.rows.length > 0) {
-      wsManager.broadcastToEvent(result.rows[0].event_id, 'PHOTO_STATUS_UPDATED', { photoId: id, status });
+      const eventId = result.rows[0].event_id;
+      const becamePublic = PUBLIC_STATUSES.includes(status) && !PUBLIC_STATUSES.includes(checkQuery.rows[0].previous_status);
+      if (becamePublic) {
+        // The status has changed either way; a broadcast that fails costs a
+        // guest a live update, not the host their approval.
+        await announceToGuests(eventId, String(id)).catch((err) => {
+          console.error('[Photos] Could not announce an approved photo:', errorLabel(err));
+        });
+      }
+      wsManager.broadcastToEvent(eventId, 'PHOTO_STATUS_UPDATED', { photoId: id, status });
     }
     res.json({ success: true, photoId: id, status });
   } catch (err) {

@@ -408,16 +408,23 @@ describe('insertPhotoUnderQuota', () => {
 describe('broadcastPhotoAdded', () => {
   let toHosts: ReturnType<typeof vi.spyOn>;
   let toEvent: ReturnType<typeof vi.spyOn>;
+  let toGuests: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
     toHosts = vi.spyOn(wsManager, 'broadcastToEventHosts').mockImplementation(() => undefined);
     toEvent = vi.spyOn(wsManager, 'broadcastToEvent').mockImplementation(() => undefined);
+    toGuests = vi.spyOn(wsManager, 'broadcastToEventGuests').mockImplementation(() => undefined);
   });
 
   const base = {
     eventId: EVENT,
     photoId: 'photo-1',
-    photo: { id: 'photo-1', fullUrl: 'https://cdn/real.jpg', thumbnailUrl: 'https://cdn/thumb.jpg' },
+    photo: {
+      id: 'photo-1',
+      fullUrl: 'https://cdn/real.jpg',
+      thumbnailUrl: 'https://cdn/thumb.jpg',
+      originalUrl: 'https://cdn/original.jpg',
+    },
     hostUserId: 'host-1',
     hasOriginal: true,
   };
@@ -430,6 +437,7 @@ describe('broadcastPhotoAdded', () => {
 
     expect(toHosts).toHaveBeenCalledTimes(1);
     expect(toEvent).not.toHaveBeenCalled();
+    expect(toGuests).not.toHaveBeenCalled();
   });
 
   it('replaces a quarantined photo’s real URLs with host-scoped preview links', async () => {
@@ -468,12 +476,23 @@ describe('broadcastPhotoAdded', () => {
     expect(toHosts.mock.calls[0][2]).toMatchObject({ fullUrl: 'https://cdn/real.jpg' });
   });
 
-  it('sends an approved photo to the whole room', async () => {
+  it('sends an approved photo to the hosts and the guests', async () => {
     broadcastPhotoAdded({ ...base, status: 'approved', needsQuarantine: false });
 
-    expect(toEvent).toHaveBeenCalledTimes(1);
-    expect(toHosts).not.toHaveBeenCalled();
-    expect(toEvent.mock.calls[0][2]).toMatchObject({ fullUrl: 'https://cdn/real.jpg' });
+    expect(toHosts).toHaveBeenCalledTimes(1);
+    expect(toGuests).toHaveBeenCalledTimes(1);
+    expect(toHosts.mock.calls[0][2]).toMatchObject({ fullUrl: 'https://cdn/real.jpg' });
+    expect(toGuests.mock.calls[0][2]).toMatchObject({ fullUrl: 'https://cdn/real.jpg' });
+  });
+
+  it('sends the camera original to the hosts only (N-92)', async () => {
+    // The untouched file carries the camera's EXIF, GPS included; the REST
+    // feed gives it to the host only (MED-02), and so must the socket.
+    broadcastPhotoAdded({ ...base, status: 'approved', needsQuarantine: false });
+
+    expect(toHosts.mock.calls[0][2]).toMatchObject({ originalUrl: 'https://cdn/original.jpg' });
+    expect((toGuests.mock.calls[0][2] as Record<string, unknown>).originalUrl).toBeNull();
+    expect(toEvent).not.toHaveBeenCalled();
   });
 
   it('strips the image URLs while a disposable album is still locked', async () => {
@@ -486,7 +505,7 @@ describe('broadcastPhotoAdded', () => {
       lockedUntil: new Date(Date.now() + 3600_000),
     });
 
-    expect(toEvent.mock.calls[0][2]).toMatchObject({ fullUrl: '', thumbnailUrl: '' });
+    expect(toGuests.mock.calls[0][2]).toMatchObject({ fullUrl: '', thumbnailUrl: '' });
   });
 
   it('sends the real URLs once the reveal moment has passed', async () => {
@@ -497,7 +516,7 @@ describe('broadcastPhotoAdded', () => {
       lockedUntil: new Date(Date.now() - 1000),
     });
 
-    expect(toEvent.mock.calls[0][2]).toMatchObject({ fullUrl: 'https://cdn/real.jpg' });
+    expect(toGuests.mock.calls[0][2]).toMatchObject({ fullUrl: 'https://cdn/real.jpg' });
   });
 
   it('sends the real URLs when the album is not disposable at all', async () => {
@@ -508,7 +527,7 @@ describe('broadcastPhotoAdded', () => {
       lockedUntil: null,
     });
 
-    expect(toEvent.mock.calls[0][2]).toMatchObject({ fullUrl: 'https://cdn/real.jpg' });
+    expect(toGuests.mock.calls[0][2]).toMatchObject({ fullUrl: 'https://cdn/real.jpg' });
   });
 });
 

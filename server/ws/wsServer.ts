@@ -359,7 +359,7 @@ export class WsEventManager {
   }
 
   public broadcastToEvent(eventId: string, type: string, payload: BroadcastPayload) {
-    this.send(eventId, type, payload, false);
+    this.send(eventId, type, payload, 'everyone');
   }
 
   /**
@@ -398,7 +398,7 @@ export class WsEventManager {
     this.reactionQueues.delete(eventId);
     if (!queue || queue.length === 0) return;
 
-    this.send(eventId, 'REACTIONS_BATCH', { reactions: queue }, false);
+    this.send(eventId, 'REACTIONS_BATCH', { reactions: queue }, 'everyone');
   }
 
   /**
@@ -409,10 +409,18 @@ export class WsEventManager {
    * contact details) has to go down this channel instead.
    */
   public broadcastToEventHosts(eventId: string, type: string, payload: BroadcastPayload) {
-    this.send(eventId, type, payload, true);
+    this.send(eventId, type, payload, 'hosts');
   }
 
-  private send(eventId: string, type: string, payload: BroadcastPayload, hostsOnly: boolean) {
+  /**
+   * Broadcast to everyone in the room except its verified hosts: for a
+   * guest-shaped copy of something the hosts are sent in full, or already hold.
+   */
+  public broadcastToEventGuests(eventId: string, type: string, payload: BroadcastPayload) {
+    this.send(eventId, type, payload, 'guests');
+  }
+
+  private send(eventId: string, type: string, payload: BroadcastPayload, audience: 'everyone' | 'hosts' | 'guests') {
     if (!this.wss || !eventId) return;
     const clients = this.eventRooms.get(eventId);
     if (!clients || clients.size === 0) return;
@@ -421,7 +429,9 @@ export class WsEventManager {
 
     clients.forEach((client) => {
       if (client.readyState !== WebSocket.OPEN) return;
-      if (hostsOnly && !this.clientMeta.get(client)?.isHost) return;
+      const isHost = !!this.clientMeta.get(client)?.isHost;
+      if (audience === 'hosts' && !isHost) return;
+      if (audience === 'guests' && isHost) return;
       // A backlog past the cap means the client isn't draining fast enough
       // to keep up — terminating rather than piling on is what stops
       // unbounded growth; the client's own reconnect logic picks it back up.

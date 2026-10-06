@@ -121,6 +121,63 @@ export const ListPhotosQuerySchema = z.object({
 // - removed outright rather than built out into real accounting for a path
 // nothing uses.
 
+/**
+ * The photo as the feed sends it: columns, joins and the names the client
+ * reads. Shared by the feed and the approval broadcast (N-67), so a photo
+ * that arrives live has the same shape as one loaded from the feed.
+ *
+ * `lockedNowSql` is a SQL boolean: whether the album is before its reveal now.
+ */
+export function photoDtoQuery(lockedNowSql: string): string {
+  return `
+      SELECT
+        p.id,
+        p.event_id as "eventId",
+        p.guest_id as "guestId",
+        g.name as "guestName",
+        g.avatar_url as "guestAvatar",
+        g.table_number as "guestTable",
+        p.quest_id as "questId",
+        sq.title as "questTitle",
+        p.storage_path as "storagePath",
+        p.thumbnail_url as "thumbnailUrl",
+        p.full_url as "fullUrl",
+        p.original_url as "originalUrl",
+        p.caption,
+        p.status,
+        -- Locked *now*, not "was uploaded under a lock". The column records
+        -- the upload; whether it is still withheld depends on the event's
+        -- reveal time, which has usually passed by the time anyone reads
+        -- this. Reporting the raw column left every photo in a disposable
+        -- album flagged as locked for ever, so the reveal — the whole point
+        -- of the feature — never arrived on screen.
+        (p.is_locked AND ${lockedNowSql}) as "isLocked",
+        p.filter_applied as "filterApplied",
+        p.likes_count as "likesCount",
+        p.comments_count as "commentsCount",
+        p.created_at as "createdAt",
+        p.source,
+        p.priority,
+        p.photographer_name as "photographerName"
+      FROM photos p
+      JOIN guests g ON g.id = p.guest_id
+      LEFT JOIN scavenger_quests sq ON sq.id = p.quest_id`;
+}
+
+/**
+ * One photo as a guest's feed would list it, aggregates included and
+ * `originalUrl` withheld (MED-02). Null if the photo is gone.
+ */
+export async function loadGuestPhotoDto(photoId: string): Promise<(PhotoAggregateRow & Record<string, unknown>) | null> {
+  const lockedNow =
+    'EXISTS (SELECT 1 FROM events e WHERE e.id = p.event_id AND e.is_disposable_mode AND e.reveal_at > NOW())';
+  const { rows } = await pool.query(`${photoDtoQuery(lockedNow)}
+      WHERE p.id = $1`, [photoId]);
+  if (rows.length === 0) return null;
+  await attachPhotoAggregates(rows);
+  return { ...rows[0], originalUrl: null };
+}
+
 export interface PhotoAggregateRow {
   id: string;
   comments?: unknown[];

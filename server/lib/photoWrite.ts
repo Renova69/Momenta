@@ -222,6 +222,11 @@ export async function insertPhotoUnderQuota<T>(args: {
  *   broadcast so guests cannot see the photo before the reveal. Only the guest
  *   path sets this; photographer frames are never disposable-locked.
  *
+ * - **Everything else:** guests get it without `originalUrl`. That is the
+ *   untouched camera file, EXIF and GPS included, and the REST feed gives it
+ *   to the host only (MED-02). The room broadcast carried it to every guest
+ *   (N-92), so hosts and guests are now sent separate copies.
+ *
  * Enforced here rather than left to the read path, because the REST list
  * filters non-hosts to approved/featured and a broadcast that does not apply
  * the same rule puts an unapproved photo straight into every guest's feed.
@@ -257,7 +262,8 @@ export function broadcastPhotoAdded(args: {
   const revealTime = args.lockedUntil ? args.lockedUntil.getTime() : null;
   const broadcastPhoto =
     revealTime && revealTime > Date.now() ? { ...photo, fullUrl: '', thumbnailUrl: '' } : photo;
-  wsManager.broadcastToEvent(eventId, 'PHOTO_ADDED', broadcastPhoto);
+  wsManager.broadcastToEventHosts(eventId, 'PHOTO_ADDED', broadcastPhoto);
+  wsManager.broadcastToEventGuests(eventId, 'PHOTO_ADDED', { ...broadcastPhoto, originalUrl: null });
 }
 
 /** Re-exported so callers do not need a second import for URL building. */
