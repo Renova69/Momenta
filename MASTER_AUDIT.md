@@ -6,7 +6,7 @@
 **Client mutation sweep:** 2026-09-21 (§8).
 **Performance pass:** 2026-09-22 to 23 (§3e).
 **Security review, partial:** 2026-09-25 to 26, recorded 2026-10-04 (§3f). **All 25 findings fixed.**
-**Remaining five domains:** reviewed 2026-10-05 (§3g). **25 of 33 findings open.**
+**Remaining five domains:** reviewed 2026-10-05 (§3g). **24 of 34 findings open.**
 
 > **Read this first.** The audit below is preserved as written — each finding
 > still describes the code as it was on 2026-09-15, because a finding rewritten
@@ -900,7 +900,7 @@ trusting them.
 
 ## 3g. The Remaining Five Domains (2026-10-05)
 
-**Open: 25 of 33.** Fixed so far: N-59, N-60, N-61, N-62, N-63, N-64, N-65, N-66.
+**Open: 24 of 34.** Fixed so far: N-59, N-60, N-61, N-62, N-63, N-64, N-65, N-66, N-67, N-92.
 
 The rest of the review §3f began: media, infra, db, guest UI and host UI, one
 reviewer each, with the same brief — races, missing checks, inconsistent
@@ -926,7 +926,7 @@ until every client path that calls it has been read.
 | **N-64** | A retention notice is stamped once and never cleared when the deadline later moves. An album warned, then extended by a purchase, then lapsed again is deletable with no warning about the new deadline. Latent while `RETENTION_ENFORCED` is off. | High | `server/lib/retention.ts`, `server/lib/retentionNotice.ts` | Yes | `cbb0d89` |
 | **N-65** | The 40-megapixel decode cap added for guest phones also applies to photographer ingest: a 45–61 MP frame from a professional body is reported as "not an image" and, over FTP, deleted after the camera was told it arrived. | Medium-High | `server/lib/images.ts`, `server/lib/ingestPipeline.ts` | Yes | `22a288d` |
 | **N-66** | Graceful shutdown never reaches the WebSocket close or `pool.end()` while any socket is open — `server.close()` waits for upgraded sockets — so every deploy ends at the 8-second hard exit. H-3, incomplete. | Medium | `server/index.ts` | Yes | `e2f8e5e` |
-| **N-67** | A photo approved from the moderation queue never appears in guests' feeds live: approval broadcasts only `{photoId, status}`, and guests never held the photo. | Medium | `server/routes/photos/moderation.ts`, `src/services/realtimeMessages.ts` | Yes | Open |
+| **N-67** | A photo approved from the moderation queue never appears in guests' feeds live: approval broadcasts only `{photoId, status}`, and guests never held the photo. | Medium | `server/routes/photos/moderation.ts`, `src/services/realtimeMessages.ts` | Yes | `aa620e6` |
 | **N-68** | Nothing re-syncs after a WebSocket reconnect, so photos added, approved or deleted during a drop never reach the guest or the projector wall until a reload; reconnect backoff has no jitter. | Medium | `src/services/realtimeSocket.ts` | Yes | Open |
 | **N-69** | `docker-compose.yml` does not persist the quarantine directory: pending and reveal-locked originals live in the container's writable layer and are lost on any recreate (local storage). | Medium | `docker-compose.yml` | Yes | Open |
 | **N-70** | Promote and withhold move three files in one `Promise.all` and update the row only if all succeed; a partial failure leaves a source missing that every retry then fails on, permanently. | Medium | `server/lib/photoQuarantine.ts` | No | Open |
@@ -951,6 +951,7 @@ until every client path that calls it has been read.
 | **N-89** | `storage-recount` reseeds totals without a lock, so an upload committing during it is undercounted. | Low | `scripts/storage-recount.ts` | No | Open |
 | **N-90** | A new album defaults to the date `2026-09-18`, already past, and clearing the date field throws. | Low | `src/components/host/HostEventsList.tsx` | No | Open |
 | **N-91** | The projector wall indexes into a list that new photos shift, so the slide changes mid-display and new photos wait a whole cycle; QR studio save failures are swallowed. | Low | `src/components/projector/LiveProjectorScreen.tsx`, `src/services/qrCanvasService.ts` | No | Open |
+| **N-92** | The live `PHOTO_ADDED` broadcast went to the whole room with `originalUrl`: the untouched camera file, EXIF and GPS included, which the REST feed gives to the host only (MED-02). Found while fixing N-67. | High | `server/lib/photoWrite.ts`, `server/ws/wsServer.ts` | Yes | `aa620e6` |
 
 ---
 
