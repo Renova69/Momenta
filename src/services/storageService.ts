@@ -55,6 +55,12 @@ class WedStorageService {
   private readonly realtimeSocket = new RealtimeSocket(ENV.WS_URL, {
     getActiveEventId: () => this.getEvent().id,
     onMessage: (data) => this.handleRealtimeEvent(data as RealtimeMessage),
+    // N-68 — photos, approvals and deletions broadcast while the socket was
+    // down never arrive. Reload what a page load would.
+    onReconnect: () => {
+      void this.syncFromBackend();
+      void this.refreshEventDetails();
+    },
   });
 
   private readonly ctx: ServiceContext = {

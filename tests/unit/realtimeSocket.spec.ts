@@ -162,6 +162,11 @@ describe('RealtimeSocket messages', () => {
 });
 
 describe('RealtimeSocket reconnection (H-8)', () => {
+  // No jitter, so the backoff itself can be read off exactly.
+  beforeEach(() => {
+    vi.spyOn(Math, 'random').mockReturnValue(0);
+  });
+
   it('backs off exponentially: 1s, 2s, 4s', () => {
     const socket = new RealtimeSocket(HOST, { getActiveEventId: () => 'e1', onMessage: vi.fn() });
     socket.connect();
@@ -287,5 +292,83 @@ describe('RealtimeSocket.joinEventRoom', () => {
     const socket = new RealtimeSocket(HOST, { getActiveEventId: () => '', onMessage: vi.fn() });
     expect(() => socket.joinEventRoom('e2')).not.toThrow();
     expect(FakeWebSocket.instances).toHaveLength(0);
+  });
+});
+
+/**
+ * N-68 — every guest's socket drops together when the server restarts or the
+ * venue Wi-Fi blinks. Anything broadcast while a socket was down was lost:
+ * photos added, approved or deleted reached neither the guest nor the
+ * projector wall until a reload. And with no jitter, every client came back
+ * at the same instant, on every step of the backoff.
+ */
+describe('RealtimeSocket resync after a reconnect (N-68)', () => {
+  it('does not resync on the first connect, which the app loads for itself', () => {
+    const onReconnect = vi.fn();
+    const socket = new RealtimeSocket(HOST, { getActiveEventId: () => 'e1', onMessage: vi.fn(), onReconnect });
+
+    socket.connect();
+    FakeWebSocket.instances[0].open();
+
+    expect(onReconnect).not.toHaveBeenCalled();
+  });
+
+  it('resyncs once the socket is back, after it has rejoined the room', () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0);
+    let sentWhenResynced: unknown[] = [];
+    const onReconnect = vi.fn(() => {
+      sentWhenResynced = FakeWebSocket.instances[1].messages;
+    });
+    const socket = new RealtimeSocket(HOST, { getActiveEventId: () => 'e1', onMessage: vi.fn(), onReconnect });
+
+    socket.connect();
+    FakeWebSocket.instances[0].open();
+    FakeWebSocket.instances[0].close();
+    vi.advanceTimersByTime(1000);
+    FakeWebSocket.instances[1].open();
+
+    expect(onReconnect).toHaveBeenCalledTimes(1);
+    // Joined first, so nothing sent between the reload and the join is lost.
+    expect(sentWhenResynced).toContainEqual({ type: 'JOIN_EVENT_ROOM', eventId: 'e1' });
+  });
+
+  it('does not resync on an attempt that never opened', () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0);
+    const onReconnect = vi.fn();
+    const socket = new RealtimeSocket(HOST, { getActiveEventId: () => 'e1', onMessage: vi.fn(), onReconnect });
+
+    socket.connect();
+    FakeWebSocket.instances[0].open();
+    FakeWebSocket.instances[0].close();
+    vi.advanceTimersByTime(1000);
+    FakeWebSocket.instances[1].close();
+
+    expect(onReconnect).not.toHaveBeenCalled();
+  });
+});
+
+describe('RealtimeSocket reconnect jitter (N-68)', () => {
+  it('spreads a reconnect across the second half of its backoff', () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0.999);
+    const socket = new RealtimeSocket(HOST, { getActiveEventId: () => 'e1', onMessage: vi.fn() });
+
+    socket.connect();
+    FakeWebSocket.instances[0].close();
+
+    vi.advanceTimersByTime(499);
+    expect(FakeWebSocket.instances).toHaveLength(1);
+    vi.advanceTimersByTime(2);
+    expect(FakeWebSocket.instances).toHaveLength(2);
+  });
+
+  it('never waits longer than the backoff itself', () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0);
+    const socket = new RealtimeSocket(HOST, { getActiveEventId: () => 'e1', onMessage: vi.fn() });
+
+    socket.connect();
+    FakeWebSocket.instances[0].close();
+    vi.advanceTimersByTime(1000);
+
+    expect(FakeWebSocket.instances).toHaveLength(2);
   });
 });

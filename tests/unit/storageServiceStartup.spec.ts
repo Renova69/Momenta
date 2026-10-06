@@ -26,3 +26,31 @@ describe('when the app starts (N-61)', () => {
     expect(flush).toHaveBeenCalled();
   });
 });
+
+describe('when the live connection comes back (N-68)', () => {
+  it('reloads the album and its details, since what was sent meanwhile is lost', async () => {
+    vi.resetModules();
+    let handlers: { onReconnect?: () => void } | undefined;
+    vi.doMock('../../src/services/realtimeSocket', () => ({
+      RealtimeSocket: class {
+        constructor(_host: string, h: { onReconnect?: () => void }) {
+          handlers = h;
+        }
+        connect() {}
+        joinEventRoom() {}
+      },
+    }));
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue({ ok: false, status: 503, json: async () => ({}) } as Response);
+    const { offlineQueue } = await import('../../src/services/offlineQueueService');
+    vi.spyOn(offlineQueue, 'flushQueue').mockResolvedValue(undefined);
+    const { storageService } = await import('../../src/services/storageService');
+    const sync = vi.spyOn(storageService, 'syncFromBackend').mockResolvedValue(undefined);
+    const refresh = vi.spyOn(storageService, 'refreshEventDetails').mockResolvedValue(undefined);
+
+    handlers?.onReconnect?.();
+
+    expect(sync).toHaveBeenCalledTimes(1);
+    expect(refresh).toHaveBeenCalledTimes(1);
+    vi.doUnmock('../../src/services/realtimeSocket');
+  });
+});
