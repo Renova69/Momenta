@@ -6,7 +6,7 @@
 **Client mutation sweep:** 2026-09-21 (§8).
 **Performance pass:** 2026-09-22 to 23 (§3e).
 **Security review, partial:** 2026-09-25 to 26, recorded 2026-10-04 (§3f). **All 25 findings fixed.**
-**Remaining five domains:** reviewed 2026-10-05 (§3g). **24 of 34 findings open.**
+**Remaining five domains:** reviewed 2026-10-05 (§3g). **23 of 34 findings open.**
 
 > **Read this first.** The audit below is preserved as written — each finding
 > still describes the code as it was on 2026-09-15, because a finding rewritten
@@ -900,7 +900,7 @@ trusting them.
 
 ## 3g. The Remaining Five Domains (2026-10-05)
 
-**Open: 24 of 34.** Fixed so far: N-59, N-60, N-61, N-62, N-63, N-64, N-65, N-66, N-67, N-92.
+**Open: 23 of 34.** Fixed so far: N-59, N-60, N-61, N-62, N-63, N-64, N-65, N-66, N-67, N-68, N-92.
 
 The rest of the review §3f began: media, infra, db, guest UI and host UI, one
 reviewer each, with the same brief — races, missing checks, inconsistent
@@ -927,7 +927,7 @@ until every client path that calls it has been read.
 | **N-65** | The 40-megapixel decode cap added for guest phones also applies to photographer ingest: a 45–61 MP frame from a professional body is reported as "not an image" and, over FTP, deleted after the camera was told it arrived. | Medium-High | `server/lib/images.ts`, `server/lib/ingestPipeline.ts` | Yes | `22a288d` |
 | **N-66** | Graceful shutdown never reaches the WebSocket close or `pool.end()` while any socket is open — `server.close()` waits for upgraded sockets — so every deploy ends at the 8-second hard exit. H-3, incomplete. | Medium | `server/index.ts` | Yes | `e2f8e5e` |
 | **N-67** | A photo approved from the moderation queue never appears in guests' feeds live: approval broadcasts only `{photoId, status}`, and guests never held the photo. | Medium | `server/routes/photos/moderation.ts`, `src/services/realtimeMessages.ts` | Yes | `aa620e6` |
-| **N-68** | Nothing re-syncs after a WebSocket reconnect, so photos added, approved or deleted during a drop never reach the guest or the projector wall until a reload; reconnect backoff has no jitter. | Medium | `src/services/realtimeSocket.ts` | Yes | Open |
+| **N-68** | Nothing re-syncs after a WebSocket reconnect, so photos added, approved or deleted during a drop never reach the guest or the projector wall until a reload; reconnect backoff has no jitter. | Medium | `src/services/realtimeSocket.ts` | Yes | `bfa49bc` |
 | **N-69** | `docker-compose.yml` does not persist the quarantine directory: pending and reveal-locked originals live in the container's writable layer and are lost on any recreate (local storage). | Medium | `docker-compose.yml` | Yes | Open |
 | **N-70** | Promote and withhold move three files in one `Promise.all` and update the row only if all succeed; a partial failure leaves a source missing that every retry then fails on, permanently. | Medium | `server/lib/photoQuarantine.ts` | No | Open |
 | **N-71** | A rejection that races an in-flight promotion can leave a photo marked rejected with its files public. | Medium | `server/lib/photoQuarantine.ts`, `server/routes/photos/moderation.ts` | No | Open |
