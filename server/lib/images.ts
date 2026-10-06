@@ -30,6 +30,19 @@ sharp.concurrency(1);
 // Matches the same cap used for print rasterization in pdfPrintService.ts.
 const MAX_INPUT_PIXELS = 40_000_000;
 
+/**
+ * The cap for photographer ingest (N-65). The guest cap above refused every
+ * frame from a 45-61 MP professional body as "not an image". Ingest is
+ * key-authenticated, so it can afford a cap sized for the largest bodies sold
+ * — a Fujifilm GFX100 frame is 11648 x 8736, about 102 MP.
+ */
+export const PRO_MAX_INPUT_PIXELS = 105_000_000;
+
+/** Whether sharp refused an input for exceeding its pixel cap, as opposed to being unreadable. */
+export function isPixelLimitError(err: unknown): boolean {
+  return err instanceof Error && /pixel limit/i.test(err.message);
+}
+
 export const DISPLAY_MAX_EDGE = 1600;
 export const THUMBNAIL_MAX_EDGE = 400;
 
@@ -50,12 +63,18 @@ export interface PhotoDerivatives {
  * upscaling them into a larger file, and rotate() applies the EXIF orientation
  * so phone photos are not served sideways.
  */
-export async function buildDerivatives(original: Buffer): Promise<PhotoDerivatives> {
+export async function buildDerivatives(
+  original: Buffer,
+  options: { maxInputPixels?: number } = {}
+): Promise<PhotoDerivatives> {
   // `failOn: 'truncated'`, not 'none'. A capture cut short by a phone leaving
   // the venue's wifi decodes happily and yields a half-grey image, which then
   // sits in the album as the guest's photo of the first dance. The check this
   // pipeline exists to perform is precisely that the bytes are a whole image.
-  const pipeline = sharp(original, { failOn: 'truncated', limitInputPixels: MAX_INPUT_PIXELS }).rotate();
+  const pipeline = sharp(original, {
+    failOn: 'truncated',
+    limitInputPixels: options.maxInputPixels ?? MAX_INPUT_PIXELS,
+  }).rotate();
   const metadata = await pipeline.metadata();
 
   // MED-07 — display and thumbnail used to each open their own fresh

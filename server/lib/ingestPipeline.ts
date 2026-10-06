@@ -2,7 +2,7 @@ import path from 'path';
 import { pool } from './db';
 import { toAbsoluteUrl } from './storage';
 import { isImageMagicBytes } from './validation';
-import { buildDerivatives } from './images';
+import { buildDerivatives, isPixelLimitError, PRO_MAX_INPUT_PIXELS } from './images';
 import { checkPhotoUploadTierLimit } from '../middleware/tierGate';
 import {
   savePhotoVariants,
@@ -44,6 +44,7 @@ export interface IngestBufferOptions {
 
 export type IngestRejection =
   | { ok: false; reason: 'not_an_image' }
+  | { ok: false; reason: 'too_large' }
   | { ok: false; reason: 'tier_limit'; message: string };
 
 export type IngestOutcome = { ok: true; photo: IngestedPhoto } | IngestRejection;
@@ -108,13 +109,14 @@ export async function ingestPhoto(
   // to decode, and that is a rejected upload, not a server error.
   let derivatives;
   try {
-    derivatives = await buildDerivatives(buffer);
+    // The professional cap, not the guest one (N-65).
+    derivatives = await buildDerivatives(buffer, { maxInputPixels: PRO_MAX_INPUT_PIXELS });
   } catch (err) {
     console.warn(
       `[Ingest] ${originalname} could not be decoded:`,
       err instanceof Error ? err.message : err
     );
-    return { ok: false, reason: 'not_an_image' };
+    return { ok: false, reason: isPixelLimitError(err) ? 'too_large' : 'not_an_image' };
   }
 
   // Filenames keep the `pro-<ts>-<rand>` convention this path has always used;

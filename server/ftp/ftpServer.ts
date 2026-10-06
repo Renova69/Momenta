@@ -154,6 +154,8 @@ export async function handleStoredFile(eventId: string, err: Error | null, serve
       console.log(`[FTP] Ingested ${base} -> ${outcome.photo.id}`);
     } else if (outcome.reason === 'tier_limit') {
       console.warn(`[FTP] Rejected ${base}: ${outcome.message}`);
+    } else if (outcome.reason === 'too_large') {
+      console.warn(`[FTP] Rejected ${base}: more pixels than this server accepts`);
     } else {
       console.warn(`[FTP] Skipped non-image file ${base}`);
     }

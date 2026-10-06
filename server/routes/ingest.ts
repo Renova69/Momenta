@@ -213,7 +213,10 @@ ingestRouter.post(
         rejected.push({ file: file.originalname, reason: outcome.message });
         break;
       }
-      rejected.push({ file: file.originalname, reason: 'Not a supported image file' });
+      rejected.push({
+        file: file.originalname,
+        reason: outcome.reason === 'too_large' ? 'Image has more pixels than this server accepts' : 'Not a supported image file',
+      });
     }
 
     if (created.length === 0 && rejected.length > 0) {
