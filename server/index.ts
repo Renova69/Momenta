@@ -21,6 +21,7 @@ import { startFtpServer, stopFtpServer } from './ftp/ftpServer';
 import { apiLimiter } from './middleware/rateLimit';
 import { runMigrations } from './lib/migrate';
 import { healthHandler } from './lib/health';
+import { drainHttpServer } from './lib/httpDrain';
 
 const app = express();
 const server = createServer(app);
@@ -203,24 +204,18 @@ async function shutdown(signal: string): Promise<void> {
   hardExit.unref();
 
   try {
-    // 1. Stop accepting new work. Existing requests keep running; the callback
-    //    fires once the last one has finished.
-    await new Promise<void>((resolve) => {
-      server.close(() => resolve());
-      // Nothing forces idle keep-alive sockets to close, and a browser holding
-      // one would stall server.close() for its full timeout.
-      server.closeIdleConnections?.();
-    });
+    // 1. Stop accepting new work. Existing requests keep running; the promise
+    //    resolves once the last one has finished. The realtime sockets are
+    //    closed as part of this step: they are upgraded HTTP connections, so
+    //    the drain cannot finish while one is open (N-66). Their clients
+    //    reconnect on their own, to whichever instance is serving next.
+    await drainHttpServer(server, () => wsManager.shutdown());
     console.log('[WedMoments Core Server] HTTP server closed; in-flight requests finished.');
 
-    // 2. Guests watching a feed get a close frame rather than a reset, so the
-    //    client reconnect logic sees a clean disconnect.
-    wsManager.shutdown();
-
-    // 3. The FTP listener holds its own socket and its own in-flight transfers.
+    // 2. The FTP listener holds its own socket and its own in-flight transfers.
     stopFtpServer();
 
-    // 4. Release database connections last: steps 1-3 can still be using them.
+    // 3. Release database connections last: steps 1-2 can still be using them.
     await pool.end();
     console.log('[WedMoments Core Server] Connections drained. Goodbye.');
 

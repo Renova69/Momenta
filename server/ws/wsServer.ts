@@ -442,9 +442,10 @@ export class WsEventManager {
   /**
    * Graceful teardown (DB-15) — closing the underlying WebSocketServer fires
    * its own 'close' handler above, which clears the heartbeat interval and
-   * any pending reaction-flush timers. A plain process exit reaps all of
-   * this regardless, so this only matters for a restart that doesn't exit
-   * the process (a test harness, a hot-reload dev loop).
+   * any pending reaction-flush timers.
+   *
+   * Shutdown also depends on it: each client is an upgraded HTTP connection,
+   * and the HTTP server's drain cannot finish while one is open (N-66).
    */
   public shutdown(): void {
     // wss.close() only stops accepting new connections - existing clients
