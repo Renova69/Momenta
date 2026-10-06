@@ -3,7 +3,7 @@ import { pool } from './db';
 import { storageAdapter, toStoragePath } from './storage';
 import { limitsFor } from './planLimits';
 import { errorLabel } from './errors';
-import { BackendPlanTier } from '../middleware/tierGate';
+import { BackendPlanTier, acquireEventUploadLock } from '../middleware/tierGate';
 
 /**
  * Album retention.
@@ -217,6 +217,38 @@ export async function refreshExpiryDates(
   return rows.length;
 }
 
+/**
+ * How often a purge renews its deletion mark (N-73). Uploads stop honouring a
+ * mark an hour old, taking it for a deletion that crashed, and the purge of a
+ * very large album can run longer than that.
+ */
+const DELETION_MARK_RENEW_MS = 5 * 60 * 1000;
+
+/**
+ * Mark an album as being deleted, so uploads are refused until the mark is
+ * taken off (N-47). Stamped under the album's upload lock: an upload holding
+ * the lock now commits first, and one taking it later sees the mark.
+ */
+export async function markEventDeleting(eventId: string): Promise<void> {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await acquireEventUploadLock(client, eventId);
+    await client.query('UPDATE events SET deleting_at = NOW() WHERE id = $1', [eventId]);
+    await client.query('COMMIT');
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => undefined);
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+/** Let an album take uploads again: its purge failed, or it outlives its media. */
+export async function clearDeletionMark(eventId: string): Promise<void> {
+  await pool.query('UPDATE events SET deleting_at = NULL WHERE id = $1', [eventId]);
+}
+
 async function loadCandidates(
   cutoff: string,
   eventIds?: string[]
@@ -277,7 +309,19 @@ export async function purgeEventMedia(eventId: string): Promise<PurgeResult> {
   let freed = 0;
   const failedPaths: string[] = [];
 
+  // N-73 — keep the caller's deletion mark fresh for as long as this runs. An
+  // album nobody marked stays unmarked: only an existing mark is renewed.
+  let renewedAt = Date.now();
+  const renewMark = async (): Promise<void> => {
+    if (Date.now() - renewedAt < DELETION_MARK_RENEW_MS) return;
+    renewedAt = Date.now();
+    await pool
+      .query('UPDATE events SET deleting_at = NOW() WHERE id = $1 AND deleting_at IS NOT NULL', [eventId])
+      .catch((err) => console.warn(`[retention] could not renew the deletion mark for ${eventId}:`, errorLabel(err)));
+  };
+
   const deleteObject = async (path: string): Promise<void> => {
+    await renewMark();
     try {
       await storageAdapter.delete(path);
     } catch (err) {
@@ -415,7 +459,23 @@ export async function sweepExpiredAlbums(
   if (!enforce) return result;
 
   for (const candidate of eligible) {
+    // N-73 — uploads are refused while the album is purged, as when a host
+    // deletes it. Without the mark, a photo landing mid-purge lost its row
+    // and kept its file.
     try {
+      await markEventDeleting(candidate.eventId);
+    } catch (err) {
+      console.error(`[retention] could not mark ${candidate.slug} for deletion, skipped:`, err);
+      continue;
+    }
+    try {
+      // N-74 — the list was read before the albums ahead of this one were
+      // purged, which can take hours. Its host may have extended it since.
+      const [current] = await loadCandidates(graceCutoff, [candidate.eventId]);
+      if (!current || !isNotified(current)) {
+        console.log(`[retention] ${candidate.slug} is no longer deletable, skipped`);
+        continue;
+      }
       const purge = await purgeEventMedia(candidate.eventId);
       result.deleted.push(candidate.eventId);
       result.freedBytes += purge.freedBytes;
@@ -428,6 +488,11 @@ export async function sweepExpiredAlbums(
       );
     } catch (err) {
       console.error(`[retention] failed to purge ${candidate.slug}:`, err);
+    } finally {
+      // The album itself stays; only its media went.
+      await clearDeletionMark(candidate.eventId).catch((err) =>
+        console.error(`[retention] could not clear the deletion mark for ${candidate.slug}:`, err)
+      );
     }
   }
 

@@ -13,8 +13,8 @@ import { requireUuidParams } from '../../middleware/uuid';
 import { wsManager } from '../../ws/wsServer';
 import { cleanSlug } from '../../lib/storage';
 import { requireAuth } from '../../middleware/auth';
-import { getEffectiveTierForEvent, getEffectiveTierForUser, meetsTier, acquireUserEventCreationLock, acquireEventUploadLock } from '../../middleware/tierGate';
-import { computeExpiry, purgeEventMedia } from '../../lib/retention';
+import { getEffectiveTierForEvent, getEffectiveTierForUser, meetsTier, acquireUserEventCreationLock } from '../../middleware/tierGate';
+import { computeExpiry, purgeEventMedia, markEventDeleting, clearDeletionMark } from '../../lib/retention';
 import { errorLabel, isUniqueViolation } from '../../lib/errors';
 import {
   UpdateEventSchema,
@@ -637,25 +637,13 @@ eventsRouter.delete(
       // Stamped under the album's upload lock, so an upload that holds the
       // lock now commits before the snapshot and one that takes it later
       // sees the stamp and refuses (getUploadContext).
-      const markClient = await pool.connect();
-      try {
-        await markClient.query('BEGIN');
-        await acquireEventUploadLock(markClient, id);
-        await markClient.query('UPDATE events SET deleting_at = NOW() WHERE id = $1', [id]);
-        await markClient.query('COMMIT');
-      } catch (err) {
-        await markClient.query('ROLLBACK').catch(() => undefined);
-        throw err;
-      } finally {
-        markClient.release();
-      }
+      await markEventDeleting(id);
 
       // 1. Storage first — see the note above about the cascade.
       // If the purge or the row delete fails, the album is still here and must
       // take uploads again. A crash leaves the mark behind; getUploadContext
       // stops honouring one that old (DELETION_STALE_AFTER).
-      const unmark = () =>
-        pool.query('UPDATE events SET deleting_at = NULL WHERE id = $1', [id]).catch(() => undefined);
+      const unmark = () => clearDeletionMark(id).catch(() => undefined);
       let purge: Awaited<ReturnType<typeof purgeEventMedia>>;
       try {
         purge = await purgeEventMedia(id);
