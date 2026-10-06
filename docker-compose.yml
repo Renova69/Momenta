@@ -58,6 +58,10 @@ services:
       # The app reads STORAGE_PROVIDER (not STORAGE_DRIVER).
       STORAGE_PROVIDER: ${STORAGE_PROVIDER:-local}
       UPLOADS_DIR: /app/uploads
+      # Photos awaiting moderation, and photos locked until a disposable
+      # album's reveal, are kept here under local storage, not in UPLOADS_DIR,
+      # which is served to anyone. It needs its own volume (N-69).
+      QUARANTINE_DIR: /app/uploads-quarantine
       # Same-origin by default (SPA + API + WS are served from the same port). Set
       # CORS_ORIGIN to a comma-separated allow-list only if you split the origin.
       CORS_ORIGIN: ${CORS_ORIGIN:-}
@@ -92,6 +96,7 @@ services:
       - "${APP_PORT:-6501}:6501"
     volumes:
       - uploads_data:/app/uploads
+      - quarantine_data:/app/uploads-quarantine
     networks:
       - wedmoments-network
 
@@ -128,6 +133,10 @@ services:
       # uses R2, it would find nothing to purge and silently report zero.
       STORAGE_PROVIDER: ${STORAGE_PROVIDER:-local}
       UPLOADS_DIR: /app/uploads
+      # Photos awaiting moderation, and photos locked until a disposable
+      # album's reveal, are kept here under local storage, not in UPLOADS_DIR,
+      # which is served to anyone. It needs its own volume (N-69).
+      QUARANTINE_DIR: /app/uploads-quarantine
       R2_ACCOUNT_ID: ${R2_ACCOUNT_ID:-}
       R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID:-}
       R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY:-}
@@ -164,6 +173,8 @@ services:
       MAINTENANCE_LOG_RETENTION_DAYS: ${MAINTENANCE_LOG_RETENTION_DAYS:-90}
     volumes:
       - uploads_data:/app/uploads
+      # The retention sweep deletes an album's quarantined files as well.
+      - quarantine_data:/app/uploads-quarantine
       # Named volume, so the reports outlive `docker compose down` and an
       # image rebuild. That is the entire point of keeping them.
       - maintenance_logs:/app/logs
@@ -186,6 +197,10 @@ volumes:
     name: wedmoments_maintenance_logs
   uploads_data:
     name: wedmoments_uploads_data
+  # Without this, pending and reveal-locked photos lived in the container's
+  # writable layer and were lost on every recreate (N-69).
+  quarantine_data:
+    name: wedmoments_quarantine_data
 
 networks:
   wedmoments-network:
