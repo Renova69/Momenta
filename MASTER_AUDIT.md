@@ -6,7 +6,7 @@
 **Client mutation sweep:** 2026-09-21 (§8).
 **Performance pass:** 2026-09-22 to 23 (§3e).
 **Security review, partial:** 2026-09-25 to 26, recorded 2026-10-04 (§3f). **All 25 findings fixed.**
-**Remaining five domains:** reviewed 2026-10-05 (§3g). **17 of 34 findings open.**
+**Remaining five domains:** reviewed 2026-10-05 (§3g). **16 of 34 findings open.**
 
 > **Read this first.** The audit below is preserved as written — each finding
 > still describes the code as it was on 2026-09-15, because a finding rewritten
@@ -900,7 +900,7 @@ trusting them.
 
 ## 3g. The Remaining Five Domains (2026-10-05)
 
-**Open: 17 of 34.** Fixed so far: N-59, N-60, N-61, N-62, N-63, N-64, N-65, N-66, N-67, N-68, N-69, N-70, N-71, N-72, N-73, N-74, N-92.
+**Open: 16 of 34.** Fixed so far: N-59, N-60, N-61, N-62, N-63, N-64, N-65, N-66, N-67, N-68, N-69, N-70, N-71, N-72, N-73, N-74, N-75, N-92.
 
 The rest of the review §3f began: media, infra, db, guest UI and host UI, one
 reviewer each, with the same brief — races, missing checks, inconsistent
@@ -934,7 +934,7 @@ until every client path that calls it has been read.
 | **N-72** | The guest feed can return approved photos with still-quarantined URLs when the reveal promotion is running elsewhere or failed for one photo. | Medium | `server/routes/photos/feed.ts` | Yes | `93b1175` |
 | **N-73** | The retention sweep purges without the N-47 deletion mark, so an upload mid-purge loses its row and keeps its file; and the mark's one-hour staleness can expire during a very large purge. N-47, incomplete. | Medium | `server/lib/retention.ts` | Yes | `e38d95b` |
 | **N-74** | The retention sweep works from a candidate list read once; an album extended after the list was made can still be purged. | Medium | `server/lib/retention.ts` | Yes | `e38d95b` |
-| **N-75** | A photographer batch upload reports failure on the first bad file while the other files keep uploading in the background; a retry of the batch duplicates them on the wall. | Medium | `src/api/ingestApi.ts`, `src/components/ingest/PhotographerIngestPortal.tsx` | No | Open |
+| **N-75** | A photographer batch upload reports failure on the first bad file while the other files keep uploading in the background; a retry of the batch duplicates them on the wall. | Medium | `src/api/ingestApi.ts`, `src/components/ingest/PhotographerIngestPortal.tsx` | Yes | `37fe996` |
 | **N-76** | Host sign-in and registration errors are always English: the server's message always wins over the translated fallback. | Medium | `src/services/authService.ts`, `src/components/host/HostAuthPage.tsx` | No | Open |
 | **N-77** | The landing showcase fills any missing field of a real opted-in album from the sample weddings — a new album with no photos shows someone else's stock photos and invented counts. | Medium | `src/components/home/PublicWeddingsShowcase.tsx` | No | Open |
 | **N-78** | An offline replay is not idempotent: a server that committed an upload whose response was lost receives it again and stores a duplicate. | Medium | `src/services/offlineQueueService.ts`, `server/routes/photos/upload.ts` | No | Open |
