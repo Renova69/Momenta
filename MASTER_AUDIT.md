@@ -6,7 +6,7 @@
 **Client mutation sweep:** 2026-09-21 (§8).
 **Performance pass:** 2026-09-22 to 23 (§3e).
 **Security review, partial:** 2026-09-25 to 26, recorded 2026-10-04 (§3f). **All 25 findings fixed.**
-**Remaining five domains:** reviewed 2026-10-05 (§3g). **15 of 35 findings open.**
+**Remaining five domains:** reviewed 2026-10-05 (§3g). **14 of 35 findings open.**
 
 > **Read this first.** The audit below is preserved as written — each finding
 > still describes the code as it was on 2026-09-15, because a finding rewritten
@@ -900,7 +900,7 @@ trusting them.
 
 ## 3g. The Remaining Five Domains (2026-10-05)
 
-**Open: 15 of 35.** Fixed so far: N-59, N-60, N-61, N-62, N-63, N-64, N-65, N-66, N-67, N-68, N-69, N-70, N-71, N-72, N-73, N-74, N-75, N-76, N-92, N-93.
+**Open: 14 of 35.** Fixed so far: N-59, N-60, N-61, N-62, N-63, N-64, N-65, N-66, N-67, N-68, N-69, N-70, N-71, N-72, N-73, N-74, N-75, N-76, N-77, N-92, N-93.
 
 The rest of the review §3f began: media, infra, db, guest UI and host UI, one
 reviewer each, with the same brief — races, missing checks, inconsistent
@@ -936,7 +936,7 @@ until every client path that calls it has been read.
 | **N-74** | The retention sweep works from a candidate list read once; an album extended after the list was made can still be purged. | Medium | `server/lib/retention.ts` | Yes | `e38d95b` |
 | **N-75** | A photographer batch upload reports failure on the first bad file while the other files keep uploading in the background; a retry of the batch duplicates them on the wall. | Medium | `src/api/ingestApi.ts`, `src/components/ingest/PhotographerIngestPortal.tsx` | Yes | `37fe996` |
 | **N-76** | Host sign-in and registration errors are always English: the server's message always wins over the translated fallback. | Medium | `src/services/authService.ts`, `src/components/host/HostAuthPage.tsx` | Yes | `1252213` |
-| **N-77** | The landing showcase fills any missing field of a real opted-in album from the sample weddings — a new album with no photos shows someone else's stock photos and invented counts. | Medium | `src/components/home/PublicWeddingsShowcase.tsx` | No | Open |
+| **N-77** | The landing showcase fills any missing field of a real opted-in album from the sample weddings — a new album with no photos shows someone else's stock photos and invented counts. | Medium | `src/components/home/PublicWeddingsShowcase.tsx` | Yes | `7b3c4d1` |
 | **N-78** | An offline replay is not idempotent: a server that committed an upload whose response was lost receives it again and stores a duplicate. | Medium | `src/services/offlineQueueService.ts`, `server/routes/photos/upload.ts` | No | Open |
 | **N-79** | The preview stream is piped with no error handler and is not destroyed when the client disconnects: a storage error can crash the process, and an abort leaks the R2 socket or file handle. | Medium | `server/routes/photos/feed.ts` | No | Open |
 | **N-80** | The microphone stays live if `MediaRecorder` throws after permission was granted. | Low | `src/components/audio/AudioGuestbook.tsx` | No | Open |
