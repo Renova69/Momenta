@@ -161,6 +161,97 @@ describe('AudioGuestbook', () => {
     if (original) Object.defineProperty(navigator, 'mediaDevices', original);
   });
 
+  /**
+   * N-80 — permission granted, then the recorder itself failed: an
+   * unsupported format, or a browser that has MediaRecorder but cannot record
+   * this stream. The microphone was left on, with the browser's recording
+   * indicator lit, and the guest was told they had refused permission.
+   */
+  describe('when the recorder fails after the microphone was granted (N-80)', () => {
+    function grantMicrophone() {
+      const track = { stop: vi.fn() };
+      const stream = { getTracks: () => [track] };
+      const original = Object.getOwnPropertyDescriptor(navigator, 'mediaDevices');
+      Object.defineProperty(navigator, 'mediaDevices', {
+        value: { getUserMedia: vi.fn().mockResolvedValue(stream) },
+        configurable: true,
+      });
+      return {
+        track,
+        restore: () => {
+          if (original) Object.defineProperty(navigator, 'mediaDevices', original);
+        },
+      };
+    }
+
+    async function pressRecord() {
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: i18n.t('audio.record_btn') }));
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+    }
+
+    it('turns the microphone off when the recorder cannot be created', async () => {
+      const mic = grantMicrophone();
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      Object.defineProperty(window, 'MediaRecorder', {
+        value: class extends MockMediaRecorder {
+          constructor(stream: unknown, options?: { mimeType?: string }) {
+            super(stream, options);
+            throw new Error('NotSupportedError');
+          }
+        },
+        writable: true,
+        configurable: true,
+      });
+      render(<AudioGuestbook entries={[]} onAddAudioEntry={vi.fn()} />);
+
+      await pressRecord();
+
+      expect(mic.track.stop).toHaveBeenCalled();
+      expect(screen.getByText(i18n.t('audio.recording_failed'))).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: i18n.t('audio.record_btn') })).toBeInTheDocument();
+      mic.restore();
+    });
+
+    it('turns the microphone off when the recorder cannot start', async () => {
+      const mic = grantMicrophone();
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      Object.defineProperty(window, 'MediaRecorder', {
+        value: class extends MockMediaRecorder {
+          start() {
+            throw new Error('InvalidStateError');
+          }
+        },
+        writable: true,
+        configurable: true,
+      });
+      render(<AudioGuestbook entries={[]} onAddAudioEntry={vi.fn()} />);
+
+      await pressRecord();
+
+      expect(mic.track.stop).toHaveBeenCalled();
+      expect(screen.getByText(i18n.t('audio.recording_failed'))).toBeInTheDocument();
+      mic.restore();
+    });
+
+    it('still says permission was refused when it was', async () => {
+      const original = Object.getOwnPropertyDescriptor(navigator, 'mediaDevices');
+      Object.defineProperty(navigator, 'mediaDevices', {
+        value: { getUserMedia: vi.fn().mockRejectedValue(new Error('NotAllowedError')) },
+        configurable: true,
+      });
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      render(<AudioGuestbook entries={[]} onAddAudioEntry={vi.fn()} />);
+
+      await pressRecord();
+
+      expect(screen.getByText(i18n.t('audio.mic_permission_error'))).toBeInTheDocument();
+      if (original) Object.defineProperty(navigator, 'mediaDevices', original);
+    });
+  });
+
   it('toggles play/pause on an existing entry', () => {
     render(
       <AudioGuestbook entries={[entry({ id: 'a1', guestName: 'Martin' })]} onAddAudioEntry={vi.fn()} />

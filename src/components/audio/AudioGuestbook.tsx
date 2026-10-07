@@ -76,8 +76,16 @@ export const AudioGuestbook: React.FC<AudioGuestbookProps> = ({
       return;
     }
 
+    let stream: MediaStream;
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch (err) {
+      console.error('Microphone permission error:', err);
+      setErrorMsg(i18n.t('audio.mic_permission_error') || i18n.t('audio.mic_denied'));
+      return;
+    }
+
+    try {
       audioChunksRef.current = [];
       const supported = getSupportedAudioMimeType();
       recordedMimeTypeRef.current = supported;
@@ -112,8 +120,18 @@ export const AudioGuestbook: React.FC<AudioGuestbookProps> = ({
         });
       }, 1000);
     } catch (err) {
-      console.error('Microphone permission error:', err);
-      setErrorMsg(i18n.t('audio.mic_permission_error') || i18n.t('audio.mic_denied'));
+      // N-80 — permission was granted, then the recorder failed. The
+      // microphone stayed on, with the browser's recording indicator lit, and
+      // the guest was told they had refused permission.
+      console.error('Recorder could not start:', err);
+      stream.getTracks().forEach((t) => t.stop());
+      mediaRecorderRef.current = null;
+      if (timerIntervalRef.current) {
+        clearInterval(timerIntervalRef.current);
+        timerIntervalRef.current = null;
+      }
+      setIsRecording(false);
+      setErrorMsg(i18n.t('audio.recording_failed'));
     }
   };
 

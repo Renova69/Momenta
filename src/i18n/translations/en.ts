@@ -252,6 +252,7 @@ export const en: Record<string, string> = {
   'filter.black_white': 'B&W Noir',
   'filter.film_grain': 'Film Grain',
   'audio.mic_denied': 'Microphone access was denied. Allow microphone access in your browser to record.',
+  'audio.recording_failed': 'This browser could not start recording. Please try another browser.',
   'audio.save_failed': 'The recording could not be saved. Please try again.',
   'audio.pause': 'Pause',
   'audio.play_message': 'Play this message',

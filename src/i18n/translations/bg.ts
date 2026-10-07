@@ -279,6 +279,7 @@ export const bg: Record<string, string> = {
   'filter.black_white': 'Черно & Бяло',
   'filter.film_grain': 'Филмова лента',
   'audio.mic_denied': 'Разрешението за микрофон беше отказано. Моля, разрешете достъп до микрофона в браузъра.',
+  'audio.recording_failed': 'Този браузър не можа да започне запис. Моля, опитайте с друг браузър.',
   'audio.save_failed': 'Грешка при запазване на записа. Моля, опитайте отново.',
   'audio.pause': 'Пауза',
   'audio.play_message': 'Пусни това съобщение',
