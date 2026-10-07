@@ -8,9 +8,9 @@ import { isValidUuid, detectAudioFormat } from '../lib/validation';
 import { uploadLimiter, uploadIpLimiter } from '../middleware/rateLimit';
 import { requireEventTier } from '../middleware/tierGate';
 import { issueGuestToken } from '../lib/guestAuth';
-import { resolveGuestIdentity } from '../lib/guestIdentity';
+import { resolveGuestIdentity, findGuestIdentity } from '../lib/guestIdentity';
 import { wsManager } from '../ws/wsServer';
-import { errorLabel } from '../lib/errors';
+import { errorLabel, isUniqueViolation } from '../lib/errors';
 import { optionalAuth } from '../middleware/auth';
 
 export const audioRouter = Router();
@@ -35,6 +35,38 @@ const upload = multer({
 // 1. POST /api/audio (Save Audio Recording & Broadcast — Gated to deluxe_keepsake and pro_planner)
 // multer runs first so requireEventTier (which reads req.body.eventId) sees
 // the parsed multipart fields, exactly like the JSON body it used to read.
+/**
+ * The recording this guest already stored under this upload id, as the first
+ * answer carried it, or null (N-78). A phone replays a message whose answer it
+ * never got; when the first attempt had been stored, the replay used to be
+ * stored again.
+ */
+async function findReplayedAudio(eventId: string, guestId: string, localId: string) {
+  const { rows } = await pool.query(
+    `SELECT a.id, a.event_id as "eventId", a.guest_id as "guestId", a.audio_url as "audioUrl",
+            a.duration_seconds as "durationSeconds", a.note, a.created_at as "createdAt",
+            g.name as "guestName", g.avatar_url as "guestAvatar"
+       FROM audio_guestbook a JOIN guests g ON g.id = a.guest_id
+      WHERE a.event_id = $1 AND a.guest_id = $2 AND a.client_upload_id = $3`,
+    [eventId, guestId, localId]
+  );
+  return rows[0] ?? null;
+}
+
+/** The answer to a replay: the stored recording, as the first answer would have carried it. */
+function audioReplayAnswer(
+  stored: Record<string, unknown>,
+  localId: string,
+  guest: { guestId: string; identityProven: boolean; tokenVersion: number },
+  eventId: string
+) {
+  return {
+    ...stored,
+    localId,
+    ...(guest.identityProven ? { guestToken: issueGuestToken(guest.guestId, eventId, guest.tokenVersion) } : {}),
+  };
+}
+
 audioRouter.post('/', uploadIpLimiter, uploadLimiter, upload.single('audio'), requireEventTier('deluxe_keepsake'), async (req, res) => {
   const { eventId, guestId, guestName, note, localId, guestToken } = req.body as Record<string, string | undefined>;
   const durationSeconds = Number.parseInt(req.body?.durationSeconds, 10) || 0;
@@ -62,6 +94,19 @@ audioRouter.post('/', uploadIpLimiter, uploadLimiter, upload.single('audio'), re
     ]);
     if (eventCheck.rows.length === 0) {
       return res.status(404).json({ error: 'Event not found' });
+    }
+
+    // N-78 — a replay is answered before any check: the recording it carries
+    // is already stored and already counted.
+    if (localId) {
+      const uploader = await findGuestIdentity({
+        eventId,
+        guestId,
+        guestToken,
+        deviceFingerprint: req.get('x-device-fingerprint') || undefined,
+      });
+      const stored = uploader ? await findReplayedAudio(eventId, uploader.guestId, localId) : null;
+      if (uploader && stored) return res.status(200).json(audioReplayAnswer(stored, localId, uploader, eventId));
     }
 
     // Recordings count against the same storage allowance as photos.
@@ -151,19 +196,28 @@ audioRouter.post('/', uploadIpLimiter, uploadLimiter, upload.single('audio'), re
       }
 
       const result = await lockClient.query(
-        `INSERT INTO audio_guestbook (event_id, guest_id, audio_url, duration_seconds, note, storage_bytes)
-         VALUES ($1, $2, $3, $4, $5, $6)
+        `INSERT INTO audio_guestbook (event_id, guest_id, audio_url, duration_seconds, note, storage_bytes, client_upload_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
          RETURNING id, event_id as "eventId", guest_id as "guestId", audio_url as "audioUrl", duration_seconds as "durationSeconds", note, created_at as "createdAt"`,
-        [eventId, validGuestId, absoluteAudioUrl, durationSeconds, note?.trim() || null, audioBytes]
+        [eventId, validGuestId, absoluteAudioUrl, durationSeconds, note?.trim() || null, audioBytes, localId || null]
       );
       insertedRow = result.rows[0];
 
       await lockClient.query('COMMIT');
     } catch (err) {
       await lockClient.query('ROLLBACK').catch(() => undefined);
-      throw err;
+      // Two copies of one recording arrived together and the other was stored
+      // first (N-78). This copy's file goes; the answer is the stored one.
+      if (!(localId && isUniqueViolation(err, 'idx_audio_client_upload'))) throw err;
+      insertedRow = null;
     } finally {
       lockClient.release();
+    }
+    if (insertedRow === null && localId) {
+      await discardSavedRecording();
+      const stored = await findReplayedAudio(eventId, validGuestId, localId);
+      if (!stored) throw new Error('A recording refused as a duplicate could not be found');
+      return res.status(200).json(audioReplayAnswer(stored, localId, identity, eventId));
     }
 
     const newEntry = {

@@ -143,7 +143,7 @@ Stores wedding/event settings and feature toggles.
 - `is_public` (BOOLEAN, NOT NULL, default `false`): Whether the album appears
   on the public showcase feed. A privacy control, deliberately **not** tier-gated —
   publishing and withdrawing your own wedding is never a paid feature.
-- `deleting_at` (TIMESTAMPTZ, Nullable — migration 032): set by `DELETE /api/events/:id`, under the album's upload lock, before its media is purged. `getUploadContext` treats an album with this set as gone, so every upload and FTP ingest refuses it and deletes the files it saved, and the reveal promotion skips it. Cleared again if the purge or the row delete fails, because the album is still there; a mark more than an hour old is treated as a deletion that crashed and no longer blocks uploads. Before it, a photo written mid-purge lost its row and kept its file (MASTER_AUDIT N-47).
+- `deleting_at` (TIMESTAMPTZ, Nullable — migration 032): set by `DELETE /api/events/:id`, and by the retention sweep before it purges an expired album's media (N-73), always under the album's upload lock (`markEventDeleting()`). `getUploadContext` treats an album with this set as gone, so every upload and FTP ingest refuses it and deletes the files it saved, and the reveal promotion skips it. Cleared again if the purge or the row delete fails, and by the sweep once its purge is done, because the album is still there; a mark more than an hour old is treated as a deletion that crashed and no longer blocks uploads. One deletion holds it at a time: a second is refused (the route answers 409 `DELETION_IN_PROGRESS`, the sweep skips the album) unless the mark has gone stale. A purge renews the mark every five minutes and stops if it cannot, or if the mark is gone (N-93). Before it, a photo written mid-purge lost its row and kept its file (MASTER_AUDIT N-47).
 - `retention_notified_at` (TIMESTAMPTZ, Nullable): When the host was warned
   that the album is due for deletion, stamped only after a confirmed send that
   did not bounce. **The retention sweep will not delete an album whose value
@@ -217,6 +217,10 @@ Main photo entity.
   (MED-03/SEC-M5). Indexed, and set by both upload paths — a photo awaiting
   moderation must not merely be unlinked from the feed, it must be unreachable.
   Hosts see it through a short-lived, host-scoped preview token instead.
+- `client_upload_id` (TEXT, Nullable — migration 033): the id the uploading
+  device gave this upload (`localId`). Unique per event and guest, so a phone
+  replaying an upload whose answer it never got is answered with this row
+  instead of storing a duplicate (N-78). NULL when the device sent none.
 
 ### `scavenger_quests` & `guest_quest_completions`
 Gamification challenges to get guests taking creative photos.
@@ -241,6 +245,8 @@ Gamification challenges to get guests taking creative photos.
 - `guest_id` (UUID, FK -> `guests.id`) indexed since migration 012 (OPEN_ITEMS.md DB-10).
 - `storage_bytes` (BIGINT): Same accounting/`CHECK (storage_bytes >= 0)`
   treatment as `photos.storage_bytes` (migrations 008, 010).
+- `client_upload_id` (TEXT, Nullable — migration 033): as on `photos`, so a
+  replayed recording is stored once (N-78).
 
 ### `qr_canvas_configs`
 - Stores printable design templates (`A2`, `A3`, `TABLE_CARD`), framing styles, and custom typography.
@@ -356,6 +362,7 @@ the strength of mail nobody received.
 | 030 | `030_demo_accounts_off_showcase.sql` | `users.is_demo` — the public demo logins can no longer put an album on the landing page; the seeded demo wedding is unpublished (N-40). |
 | 031 | `031_subscription_one_time_tier.sql` | `subscriptions.one_time_tier` — a one-time pass outlives a subscription bought on top of it, which now falls back to the pass instead of to free (N-45). Backfilled from rows holding a pass. |
 | 032 | `032_event_deleting_at.sql` | `events.deleting_at` — an album being deleted accepts no new media, so nothing written mid-purge outlives it (N-47). |
+| 033 | `033_client_upload_id.sql` | `photos.client_upload_id`, `audio_guestbook.client_upload_id`, each unique per event and guest — an upload replayed after its answer was lost is stored once (N-78). |
 
 Full detail on the security/architecture-motivated migrations (009-019) is in
 `OPEN_ITEMS.md`, which is kept current as the working audit log for this kind

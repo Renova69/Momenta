@@ -30,9 +30,9 @@ import { issueGuestToken } from '../../lib/guestAuth';
 import { wsManager } from '../../ws/wsServer';
 import { verifyGuestOwnership } from '../../lib/guestIdentity';
 import { isImageMagicBytes, isValidUuid } from '../../lib/validation';
-import { errorLabel } from '../../lib/errors';
+import { errorLabel, isUniqueViolation } from '../../lib/errors';
 import { DEFAULT_MAX_PHOTOS_PER_GUEST } from '../../../shared/planCaps';
-import { CreatePhotoSchema } from './shared';
+import { CreatePhotoSchema, loadGuestPhotoDto } from './shared';
 
 const photosRouter = Router();
 export { photosRouter as uploadRouter };
@@ -82,23 +82,24 @@ interface ResolvedGuest {
  * use to like, comment and upload as that guest indefinitely afterwards. That
  * is what `identityProven` carries.
  */
-async function resolveGuestForUpload(
-  eventId: string,
-  body: {
-    guestId?: string;
-    guestToken?: string;
-    guestName?: string;
-    guestAvatar?: string;
-    guestTable?: string;
-    deviceFingerprint?: string;
-  }
-): Promise<ResolvedGuest> {
-  const { guestId, guestToken, guestName, guestAvatar, guestTable, deviceFingerprint } = body;
-  let currentGuestId = guestId;
-  let identityProven = false;
-  let tokenVersion = 0;
+interface UploaderFields {
+  guestId?: string;
+  guestToken?: string;
+  guestName?: string;
+  guestAvatar?: string;
+  guestTable?: string;
+  deviceFingerprint?: string;
+}
 
-  if (currentGuestId && isValidUuid(currentGuestId) && !currentGuestId.startsWith('guest-')) {
+/**
+ * The uploader, if they already have a guest row: the one their token proves,
+ * else the one their device matches. Never creates a row, so it can run
+ * before the plan's checks (N-78).
+ */
+async function findExistingUploader(eventId: string, body: UploaderFields): Promise<ResolvedGuest | null> {
+  const { guestId, guestToken, deviceFingerprint } = body;
+
+  if (guestId && isValidUuid(guestId)) {
     // A client-supplied guestId is otherwise trusted with no proof it belongs
     // to this event, or that the caller is that guest — either lets one guest's
     // uploads (and their per-guest quota) be attributed to a guestId harvested
@@ -108,49 +109,53 @@ async function resolveGuestForUpload(
     // Shared with lib/guestIdentity.ts. This check was written out in both
     // files, and being identical in two places is how the same two defects —
     // an ownership test satisfiable without a token, and a token_version read
-    // as 0 — came to exist in both, found weeks apart. The *write* semantics
-    // below stay this route's own: it may rename a guest and must always
-    // produce one, neither of which the comment path is allowed to do.
-    const owned = await verifyGuestOwnership(eventId, currentGuestId, guestToken);
-    if (owned) {
-      identityProven = true;
-      tokenVersion = owned.tokenVersion;
-    } else {
-      currentGuestId = undefined;
+    // as 0 — came to exist in both, found weeks apart.
+    const owned = await verifyGuestOwnership(eventId, guestId, guestToken);
+    if (owned) return { guestId, identityProven: true, tokenVersion: owned.tokenVersion };
+  }
+
+  if (deviceFingerprint) {
+    const existing = await pool.query(
+      'SELECT id, token_version FROM guests WHERE event_id = $1 AND device_fingerprint = $2 LIMIT 1',
+      [eventId, deviceFingerprint]
+    );
+    // Resolved purely via a fingerprint match onto a pre-existing row:
+    // attributed correctly, but not proven.
+    if (existing.rows[0]) {
+      return {
+        guestId: existing.rows[0].id,
+        identityProven: false,
+        tokenVersion: Number(existing.rows[0].token_version) || 0,
+      };
     }
   }
 
-  if (!currentGuestId || currentGuestId.startsWith('guest-') || !isValidUuid(currentGuestId)) {
-    if (deviceFingerprint) {
-      const existing = await pool.query(
-        'SELECT id, token_version FROM guests WHERE event_id = $1 AND device_fingerprint = $2 LIMIT 1',
-        [eventId, deviceFingerprint]
-      );
-      currentGuestId = existing.rows[0]?.id;
-      tokenVersion = Number(existing.rows[0]?.token_version) || 0;
-    }
+  return null;
+}
 
-    if (!currentGuestId) {
-      const guestInsert = await pool.query(
-        `INSERT INTO guests (event_id, name, avatar_url, table_number, device_fingerprint)
-         VALUES ($1, $2, $3, $4, $5)
-         ON CONFLICT (event_id, device_fingerprint) WHERE device_fingerprint IS NOT NULL
-         DO UPDATE SET name = EXCLUDED.name
-         RETURNING id, token_version, (xmax = 0) AS inserted`,
-        [eventId, guestName || 'Guest', guestAvatar || null, guestTable || null, deviceFingerprint || null]
-      );
-      currentGuestId = guestInsert.rows[0].id;
-      tokenVersion = Number(guestInsert.rows[0].token_version) || 0;
-      // xmax = 0 means this row was just INSERTed, not matched by the
-      // ON CONFLICT UPDATE branch — a genuinely fresh row is inherently this
-      // caller's own.
-      identityProven = guestInsert.rows[0].inserted;
-    }
-    // else: resolved purely via fingerprint match onto a pre-existing row —
-    // identityProven stays false.
-  }
+async function resolveGuestForUpload(eventId: string, body: UploaderFields): Promise<ResolvedGuest> {
+  const existing = await findExistingUploader(eventId, body);
+  if (existing) return existing;
 
-  return { guestId: currentGuestId as string, identityProven, tokenVersion };
+  // The write semantics are this route's own: it may rename a guest and must
+  // always produce one, neither of which the comment path is allowed to do.
+  const { guestName, guestAvatar, guestTable, deviceFingerprint } = body;
+  const guestInsert = await pool.query(
+    `INSERT INTO guests (event_id, name, avatar_url, table_number, device_fingerprint)
+     VALUES ($1, $2, $3, $4, $5)
+     ON CONFLICT (event_id, device_fingerprint) WHERE device_fingerprint IS NOT NULL
+     DO UPDATE SET name = EXCLUDED.name
+     RETURNING id, token_version, (xmax = 0) AS inserted`,
+    [eventId, guestName || 'Guest', guestAvatar || null, guestTable || null, deviceFingerprint || null]
+  );
+  return {
+    guestId: guestInsert.rows[0].id,
+    tokenVersion: Number(guestInsert.rows[0].token_version) || 0,
+    // xmax = 0 means this row was just INSERTed, not matched by the
+    // ON CONFLICT UPDATE branch — a genuinely fresh row is inherently this
+    // caller's own.
+    identityProven: guestInsert.rows[0].inserted,
+  };
 }
 
 /** Photos this guest already has on the album, against the per-guest ceiling. */
@@ -291,6 +296,8 @@ interface InsertPhotoArgs {
   initialStatus: string;
   isLocked: boolean;
   needsQuarantine: boolean;
+  /** The id the device gave this upload, so a replay finds this row (N-78). */
+  clientUploadId: string | null;
 }
 
 /**
@@ -317,6 +324,7 @@ async function insertPhotoAtomically(args: InsertPhotoArgs): Promise<Step<{ row:
     initialStatus,
     isLocked,
     needsQuarantine,
+    clientUploadId,
   } = args;
 
   const written = await insertPhotoUnderQuota({
@@ -330,8 +338,8 @@ async function insertPhotoAtomically(args: InsertPhotoArgs): Promise<Step<{ row:
           event_id, guest_id, quest_id, storage_path, full_url, thumbnail_url,
           original_url, original_storage_path, original_bytes,
           caption, status, is_locked, filter_applied, width, height, storage_bytes,
-          is_quarantined
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17) RETURNING *`,
+          is_quarantined, client_upload_id
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18) RETURNING *`,
         [
           eventId,
           guestId,
@@ -352,6 +360,7 @@ async function insertPhotoAtomically(args: InsertPhotoArgs): Promise<Step<{ row:
           // H4 — recorded here rather than inferred later from a LIKE over the
           // path columns, so the read path can find these rows by index.
           needsQuarantine,
+          clientUploadId,
         ]
       );
       return photoInsert.rows[0];
@@ -423,6 +432,36 @@ async function recordQuestCompletion(
   if (recorded) wsManager.broadcastToEvent(eventId, 'QUEST_COMPLETED', { questId, guestId });
 }
 
+/**
+ * The photo this guest already stored under this upload id, as the feed lists
+ * it, or null.
+ *
+ * N-78 — a phone replays an upload whose answer it never got. When the first
+ * attempt had been stored, the replay used to be stored again: the same photo
+ * twice in the album and on the wall, and twice against the allowance.
+ */
+async function findReplayedPhoto(eventId: string, guestId: string, localId: string) {
+  const { rows } = await pool.query<{ id: string }>(
+    'SELECT id FROM photos WHERE event_id = $1 AND guest_id = $2 AND client_upload_id = $3',
+    [eventId, guestId, localId]
+  );
+  return rows.length > 0 ? loadGuestPhotoDto(rows[0].id) : null;
+}
+
+/** The answer to a replay: the stored photo, as the first answer would have carried it. */
+function replayAnswer(
+  photo: Record<string, unknown>,
+  localId: string,
+  guest: { guestId: string; identityProven: boolean; tokenVersion: number },
+  eventId: string
+) {
+  return {
+    ...photo,
+    localId,
+    ...(guest.identityProven ? { guestToken: issueGuestToken(guest.guestId, eventId, guest.tokenVersion) } : {}),
+  };
+}
+
 // 3. POST /api/photos (Scoped to specific wedding event)
 photosRouter.post(
   '/',
@@ -455,6 +494,15 @@ photosRouter.post(
       // separate queries exhausted the connection pool during an upload burst.
       const context = await getUploadContext(eventId, deviceFingerprint);
       if (!context) return res.status(404).json({ error: 'Event not found' });
+
+      // N-78 — a replay is answered before any check: the photo it carries is
+      // already stored and already counted. Refused as over a limit it filled
+      // itself, the phone would retry it and finally report it lost.
+      if (localId) {
+        const uploader = await findExistingUploader(eventId, req.body);
+        const stored = uploader ? await findReplayedPhoto(eventId, uploader.guestId, localId) : null;
+        if (uploader && stored) return res.status(200).json(replayAnswer(stored, localId, uploader, eventId));
+      }
 
       // Cheap pre-check: refuse an event already over its allowance before
       // decoding a payload that may be tens of megabytes.
@@ -516,22 +564,34 @@ photosRouter.post(
         original: files.original ? toAbsoluteUrl(files.original.storagePath) : null,
       };
 
-      const inserted = await insertPhotoAtomically({
-        eventId,
-        guestId: guest.guestId,
-        questId: scopedQuestId,
-        caption,
-        filterApplied,
-        deviceFingerprint,
-        files,
-        urls,
-        width: images.derivatives.width || null,
-        height: images.derivatives.height || null,
-        originalBytes: images.originalData ? images.originalData.buffer.length : null,
-        initialStatus,
-        isLocked,
-        needsQuarantine,
-      });
+      let inserted: Awaited<ReturnType<typeof insertPhotoAtomically>>;
+      try {
+        inserted = await insertPhotoAtomically({
+          eventId,
+          guestId: guest.guestId,
+          questId: scopedQuestId,
+          caption,
+          filterApplied,
+          deviceFingerprint,
+          files,
+          urls,
+          width: images.derivatives.width || null,
+          height: images.derivatives.height || null,
+          originalBytes: images.originalData ? images.originalData.buffer.length : null,
+          initialStatus,
+          isLocked,
+          needsQuarantine,
+          clientUploadId: localId || null,
+        });
+      } catch (err) {
+        // Two copies of one upload arrived together and the other was stored
+        // first. This copy's files were removed when its insert failed.
+        if (localId && isUniqueViolation(err, 'idx_photos_client_upload')) {
+          const stored = await findReplayedPhoto(eventId, guest.guestId, localId);
+          if (stored) return res.status(200).json(replayAnswer(stored, localId, guest, eventId));
+        }
+        throw err;
+      }
       if (!inserted.ok) return res.status(inserted.status).json(inserted.body);
       const { row: created, hostUserId } = inserted.value;
 

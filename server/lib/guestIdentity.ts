@@ -103,6 +103,34 @@ export async function verifyGuestOwnership(
   };
 }
 
+/**
+ * The guest a request already belongs to, without creating one: the row its
+ * token proves, else the row its device already has. For answering a replayed
+ * upload before any check or write (N-78).
+ */
+export async function findGuestIdentity(options: ResolveGuestOptions): Promise<ResolvedGuest | null> {
+  const { eventId, guestId, guestToken, deviceFingerprint } = options;
+  if (guestId && isValidUuid(guestId)) {
+    const owned = await verifyGuestOwnership(eventId, guestId, guestToken);
+    if (owned) return { ...owned, identityProven: true };
+  }
+  if (deviceFingerprint && isUsableFingerprint(deviceFingerprint)) {
+    const { rows } = await pool.query<{ id: string; name: string; token_version: number }>(
+      'SELECT id, name, token_version FROM guests WHERE event_id = $1 AND device_fingerprint = $2 LIMIT 1',
+      [eventId, deviceFingerprint]
+    );
+    if (rows[0]) {
+      return {
+        guestId: rows[0].id,
+        name: rows[0].name,
+        tokenVersion: Number(rows[0].token_version) || 0,
+        identityProven: false,
+      };
+    }
+  }
+  return null;
+}
+
 export async function resolveGuestIdentity(options: ResolveGuestOptions): Promise<ResolvedGuest | null> {
   const { eventId, guestId, guestToken, deviceFingerprint, fallbackName } = options;
 
