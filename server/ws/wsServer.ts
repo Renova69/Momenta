@@ -79,12 +79,16 @@ export class WsEventManager {
     const cached = this.hostCheckCache.get(key);
     if (cached && cached.expiresAt > Date.now()) return cached.isHost;
 
-    let isHost = false;
+    let isHost: boolean;
     try {
       const eventRes = await pool.query('SELECT host_user_id FROM events WHERE id = $1', [eventId]);
       isHost = eventRes.rows.length > 0 && eventRes.rows[0].host_user_id === userId;
     } catch (e) {
+      // N-82 — refused for this join, and not remembered: cached as an
+      // answer, one database blip kept a host out of host-only updates on
+      // every join for the next minute.
       console.warn('[WS] Error verifying host ownership:', e);
+      return false;
     }
     this.hostCheckCache.set(key, { isHost, expiresAt: Date.now() + HOST_CHECK_TTL_MS });
     return isHost;
