@@ -84,7 +84,9 @@ describe('PhotographerIngestPortal', () => {
   });
 
   it('uploads selected files with the trimmed key/name/caption and reports success', async () => {
-    const uploadSpy = vi.spyOn(ingestApi, 'uploadPhotos').mockResolvedValue([{ id: 'p1' } as Photo, { id: 'p2' } as Photo]);
+    const uploadSpy = vi
+      .spyOn(ingestApi, 'uploadPhotos')
+      .mockResolvedValue({ photos: [{ id: 'p1' } as Photo, { id: 'p2' } as Photo], failed: [] });
     render(<PhotographerIngestPortal event={EVENT} onClose={vi.fn()} />);
 
     fireEvent.change(screen.getByPlaceholderText('wmi_...'), { target: { value: '  wmi_test_key  ' } });
@@ -114,6 +116,30 @@ describe('PhotographerIngestPortal', () => {
     fireEvent.click(screen.getByText(/Upload 1 to live screen/));
 
     await waitFor(() => expect(screen.getByText('Ingest key revoked')).toBeInTheDocument());
+  });
+
+  it('keeps only the files that failed selected, so a retry sends just those (N-75)', async () => {
+    const files = makeImageFiles(3);
+    const uploadSpy = vi.spyOn(ingestApi, 'uploadPhotos').mockResolvedValueOnce({
+      photos: [{ id: 'p1' } as Photo, { id: 'p2' } as Photo],
+      failed: [{ file: files[1], reason: 'Not a supported image file' }],
+    });
+    render(<PhotographerIngestPortal event={EVENT} onClose={vi.fn()} />);
+    fireEvent.change(screen.getByPlaceholderText('wmi_...'), { target: { value: 'wmi_test_key' } });
+    fireEvent.change(fileInput(), { target: { files } });
+
+    fireEvent.click(screen.getByText(/Upload 3 to live screen/));
+
+    await waitFor(() => expect(screen.getByText(/2 photos sent to the live screen\./)).toBeInTheDocument());
+    expect(
+      screen.getByText(i18n.t('ingest.portal_some_failed', { count: 1, total: 3, reason: 'Not a supported image file' }))
+    ).toBeInTheDocument();
+
+    uploadSpy.mockResolvedValueOnce({ photos: [{ id: 'p3' } as Photo], failed: [] });
+    fireEvent.click(screen.getByText(/Upload 1 to live screen/));
+
+    await waitFor(() => expect(uploadSpy).toHaveBeenCalledTimes(2));
+    expect(uploadSpy.mock.calls[1][2]).toEqual([files[1]]);
   });
 
   it('calls onClose when the close button is clicked', () => {

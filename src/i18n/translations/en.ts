@@ -649,6 +649,7 @@ export const en: Record<string, string> = {
   'ingest.portal_need_key': 'Enter the ingest key, or open this page with the link provided by the host.',
   'ingest.portal_need_files': 'Add at least one image.',
   'ingest.portal_upload_failed': 'Upload failed',
+  'ingest.portal_some_failed': '{{count}} of {{total}} photos did not upload ({{reason}}). They are still selected: upload again to send only those.',
 
   // Public Weddings Showcase (homepage)
   'showcase.badge': 'Live weddings on WedMoments',

@@ -676,6 +676,7 @@ export const bg: Record<string, string> = {
   'ingest.portal_need_key': 'Въведете ключа за качване (или отворете тази страница с връзката, предоставена от домакина).',
   'ingest.portal_need_files': 'Добавете поне една снимка.',
   'ingest.portal_upload_failed': 'Качването не бе успешно',
+  'ingest.portal_some_failed': '{{count}} от {{total}} снимки не бяха качени ({{reason}}). Те остават избрани: качете отново, за да изпратите само тях.',
 
   // Public Weddings Showcase (homepage)
   'showcase.badge': 'Сватби на живо в WedMoments',

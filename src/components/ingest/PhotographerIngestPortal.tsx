@@ -63,14 +63,21 @@ export const PhotographerIngestPortal: React.FC<PhotographerIngestPortalProps> =
     setError('');
     setProgress(0);
     try {
-      const results = await ingestApi.uploadPhotos(event.id, key.trim(), files, {
+      const { photos, failed } = await ingestApi.uploadPhotos(event.id, key.trim(), files, {
         photographerName: photographerName.trim() || 'Official Photographer',
         caption: caption.trim() || undefined,
         concurrency: 4,
         onProgress: (done, total) => setProgress(Math.round((done / total) * 100)),
       });
-      setUploadedCount(results.length);
-      setFiles([]);
+      setUploadedCount(photos.length);
+      // N-75 — only what did not arrive stays selected, so pressing Upload
+      // again never sends a frame to the live screen twice.
+      setFiles(failed.map((f) => f.file));
+      if (failed.length > 0) {
+        setError(
+          i18n.t('ingest.portal_some_failed', { count: failed.length, total: files.length, reason: failed[0].reason })
+        );
+      }
     } catch (err) {
       setError((err instanceof Error ? err.message : '') || i18n.t('ingest.portal_upload_failed'));
     } finally {

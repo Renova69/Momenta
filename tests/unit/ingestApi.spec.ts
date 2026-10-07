@@ -55,7 +55,7 @@ describe('ingestApi.uploadPhotos', () => {
 
     const result = await ingestApi.uploadPhotos('e1', 'key', []);
 
-    expect(result).toEqual([]);
+    expect(result).toEqual({ photos: [], failed: [] });
     expect(calls).toHaveLength(0);
   });
 
@@ -111,7 +111,8 @@ describe('ingestApi.uploadPhotos', () => {
     const names = calls.map((c) => ((c.init.body as FormData).get('file') as File).name).sort();
     expect(names).toEqual(files.map((f) => f.name).sort());
     // Two photos per response, seven responses.
-    expect(result).toHaveLength(14);
+    expect(result.photos).toHaveLength(14);
+    expect(result.failed).toEqual([]);
   });
 
   it('reports progress once per file, ending at the total', async () => {
@@ -176,17 +177,17 @@ describe('ingestApi.uploadPhotos', () => {
         })
     );
 
-    await expect(
-      ingestApi.uploadPhotos('e1', 'k', [fileNamed('a.jpg')])
-    ).rejects.toThrow('Plan limit reached');
+    const result = await ingestApi.uploadPhotos('e1', 'k', [fileNamed('a.jpg')]);
+
+    expect(result.failed.map((f) => [f.file.name, f.reason])).toEqual([['a.jpg', 'Plan limit reached']]);
   });
 
   it('falls back to the status code when the error body is not JSON', async () => {
     stubFetch(() => new Response('<html>502</html>', { status: 502 }));
 
-    await expect(
-      ingestApi.uploadPhotos('e1', 'k', [fileNamed('a.jpg')])
-    ).rejects.toThrow('Upload failed (HTTP 502)');
+    const result = await ingestApi.uploadPhotos('e1', 'k', [fileNamed('a.jpg')]);
+
+    expect(result.failed[0].reason).toBe('Upload failed (HTTP 502)');
   });
 
   it('tolerates a success response that carries no photos array', async () => {
@@ -198,7 +199,85 @@ describe('ingestApi.uploadPhotos', () => {
         })
     );
 
-    await expect(ingestApi.uploadPhotos('e1', 'k', [fileNamed('a.jpg')])).resolves.toEqual([]);
+    await expect(ingestApi.uploadPhotos('e1', 'k', [fileNamed('a.jpg')])).resolves.toEqual({ photos: [], failed: [] });
+  });
+});
+
+/**
+ * N-75 — the first file to fail rejected the whole call while the other
+ * workers kept uploading in the background. The portal reported the batch as
+ * failed and kept every file selected, so the photographer's retry sent the
+ * frames that had arrived a second time, onto the live wall twice.
+ */
+describe('ingestApi.uploadPhotos when some files fail (N-75)', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  const nameOf = (call: Recorded) => ((call.init.body as FormData).get('file') as File).name;
+  const jsonResponse = (status: number, payload: unknown) =>
+    new Response(JSON.stringify(payload), { status, headers: { 'Content-Type': 'application/json' } });
+
+  it('uploads the rest of the batch and names the file that failed', async () => {
+    const calls = stubFetch((call) =>
+      nameOf(call) === 'DSC_2.jpg' ? jsonResponse(400, { error: 'Not a supported image file' }) : okPhotos()
+    );
+    const files = Array.from({ length: 5 }, (_, i) => fileNamed(`DSC_${i}.jpg`));
+
+    const result = await ingestApi.uploadPhotos('e1', 'k', files, { concurrency: 2 });
+
+    expect(calls).toHaveLength(5);
+    expect(result.photos).toHaveLength(4);
+    expect(result.failed.map((f) => f.file.name)).toEqual(['DSC_2.jpg']);
+    expect(result.failed[0].reason).toBe('Not a supported image file');
+  });
+
+  it('counts a file the server turned away inside a successful response as failed', async () => {
+    stubFetch(() =>
+      jsonResponse(201, { photos: [], rejected: [{ file: 'odd.jpg', reason: 'Not a supported image file' }] })
+    );
+
+    const result = await ingestApi.uploadPhotos('e1', 'k', [fileNamed('odd.jpg')]);
+
+    expect(result.failed.map((f) => [f.file.name, f.reason])).toEqual([['odd.jpg', 'Not a supported image file']]);
+  });
+
+  it('counts a dropped connection as that one file failing', async () => {
+    stubFetch((call) => {
+      if (nameOf(call) === 'b.jpg') throw new TypeError('Failed to fetch');
+      return okPhotos();
+    });
+
+    const result = await ingestApi.uploadPhotos('e1', 'k', [fileNamed('a.jpg'), fileNamed('b.jpg'), fileNamed('c.jpg')]);
+
+    expect(result.photos).toHaveLength(2);
+    expect(result.failed.map((f) => f.file.name)).toEqual(['b.jpg']);
+  });
+
+  it('stops starting new files once the key is refused, and returns them as not sent', async () => {
+    // Every remaining file would be refused the same way.
+    const calls = stubFetch(() => jsonResponse(401, { error: 'Invalid or missing ingest key' }));
+    const files = Array.from({ length: 4 }, (_, i) => fileNamed(`f${i}.jpg`));
+
+    const result = await ingestApi.uploadPhotos('e1', 'k', files, { concurrency: 1 });
+
+    expect(calls).toHaveLength(1);
+    expect(result.photos).toEqual([]);
+    expect(result.failed.map((f) => f.file.name).sort()).toEqual(files.map((f) => f.name).sort());
+    expect(result.failed.every((f) => f.reason === 'Invalid or missing ingest key')).toBe(true);
+  });
+
+  it('counts every file towards progress, failed ones included', async () => {
+    stubFetch((call) => (nameOf(call) === 'b.jpg' ? jsonResponse(400, { error: 'bad' }) : okPhotos()));
+    const seen: number[] = [];
+
+    await ingestApi.uploadPhotos('e1', 'k', [fileNamed('a.jpg'), fileNamed('b.jpg')], {
+      concurrency: 1,
+      onProgress: (done) => seen.push(done),
+    });
+
+    expect(seen).toEqual([1, 2]);
   });
 });
 
