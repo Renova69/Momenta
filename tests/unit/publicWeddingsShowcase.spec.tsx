@@ -3,21 +3,25 @@ import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/re
 import React from 'react';
 import { PublicWeddingsShowcase } from '../../src/components/home/PublicWeddingsShowcase';
 import { eventsApi } from '../../src/api/eventsApi';
+import { i18n } from '../../src/i18n';
 
 /**
  * The public showcase on the landing page.
  *
- * It is the first thing a prospective customer sees, and it is built almost
- * entirely out of fallbacks: the API returns rows in mixed casing with fields
- * that may be missing, and every one of them falls back to a bundled demo
- * wedding so the page is never empty or half-rendered. That is a lot of
- * branches, none of which were covered — the component had 0% branch coverage,
- * so any of those fallbacks could have been inverted without a test noticing.
+ * It is the first thing a prospective customer sees. A feed request that
+ * fails, or returns something unexpected, leaves the bundled demo weddings in
+ * place rather than blanking the landing page.
  *
- * The failure mode that matters: a feed request that fails, or returns
- * something unexpected, must leave the demo content in place rather than
- * blanking the landing page of a product that is trying to sell itself.
+ * N-77 — a real album is shown as it is. Each field a real row lacked used to
+ * be filled from the demo wedding at the same index: a new album with no
+ * photos appeared with someone else's stock photos, a demo venue, and 54
+ * photos and 88 guests in place of its real zeros.
  */
+
+/** The bundled demo weddings' images are all hosted here. */
+const DEMO_IMAGE_HOST = 'images.unsplash.com';
+const imageSources = (container: HTMLElement) =>
+  Array.from(container.querySelectorAll('img')).map((i) => i.getAttribute('src') ?? '');
 
 const handlers = () => ({
   onSelectWedding: vi.fn(),
@@ -127,40 +131,80 @@ describe('mapping a live feed', () => {
     expect(await screen.findByText(/Camel Venue/)).toBeTruthy();
   });
 
-  it('substitutes demo values for individual fields the row omits', async () => {
-    // A row missing its title must not render "undefined" at a prospective
-    // customer; it borrows from the bundled wedding at the same index.
+  it('leaves out a field the row omits instead of borrowing a demo one (N-77)', async () => {
     vi.spyOn(eventsApi, 'getShowcaseFeed').mockResolvedValue([
-      serverRow({ title: undefined, host_name: undefined, venue_name: undefined }),
+      serverRow({ venue_name: undefined, event_date: undefined }),
     ] as never);
 
     const { container } = renderShowcase();
 
-    await waitFor(() => expect(eventsApi.getShowcaseFeed).toHaveBeenCalled());
+    expect(await screen.findByText('Server Wedding')).toBeTruthy();
     expect(container.textContent).not.toContain('undefined');
     expect(container.textContent).not.toContain('NaN');
+    expect(container.textContent).not.toContain('Резиденция Бояна');
   });
 
-  it('falls back to demo preview photos when a row carries none', async () => {
+  it('names an untitled album after its hosts', async () => {
+    vi.spyOn(eventsApi, 'getShowcaseFeed').mockResolvedValue([serverRow({ title: undefined })] as never);
+
+    renderShowcase();
+
+    expect(await screen.findByText('Ivan & Maria')).toBeTruthy();
+  });
+
+  it('shows no demo photos for an album that has none yet (N-77)', async () => {
+    vi.spyOn(eventsApi, 'getShowcaseFeed').mockResolvedValue([serverRow({ previewPhotos: [] })] as never);
+
+    const { container } = renderShowcase();
+
+    expect(await screen.findByText('Server Wedding')).toBeTruthy();
+    expect(imageSources(container).some((src) => src.includes(DEMO_IMAGE_HOST))).toBe(false);
+    // Its own cover is still shown.
+    expect(imageSources(container)).toContain('https://cdn.example.com/cover.jpg');
+  });
+
+  it('shows no demo photos when the row carries no preview list at all', async () => {
+    vi.spyOn(eventsApi, 'getShowcaseFeed').mockResolvedValue([serverRow({ previewPhotos: undefined })] as never);
+
+    const { container } = renderShowcase();
+
+    expect(await screen.findByText('Server Wedding')).toBeTruthy();
+    expect(imageSources(container).some((src) => src.includes(DEMO_IMAGE_HOST))).toBe(false);
+  });
+
+  it('shows no demo cover for an album without one', async () => {
     vi.spyOn(eventsApi, 'getShowcaseFeed').mockResolvedValue([
-      serverRow({ previewPhotos: [] }),
+      serverRow({ cover_image_url: undefined, previewPhotos: [] }),
     ] as never);
 
     const { container } = renderShowcase();
 
     expect(await screen.findByText('Server Wedding')).toBeTruthy();
-    expect(container.querySelectorAll('img').length).toBeGreaterThan(0);
+    expect(imageSources(container)).toEqual([]);
   });
 
-  it('falls back when previewPhotos is missing entirely', async () => {
+  it('reports a real count of zero as zero, not the demo wedding counts (N-77)', async () => {
     vi.spyOn(eventsApi, 'getShowcaseFeed').mockResolvedValue([
-      serverRow({ previewPhotos: undefined }),
+      serverRow({ photos_count: 0, guests_count: 0, previewPhotos: [] }),
     ] as never);
 
-    const { container } = renderShowcase();
+    renderShowcase();
+
+    expect(await screen.findByText(i18n.t('showcase.photos_count', { n: 0 }))).toBeTruthy();
+    expect(screen.getByText(i18n.t('showcase.guests_count', { n: 0 }))).toBeTruthy();
+    expect(screen.queryByText(i18n.t('showcase.photos_count', { n: 54 }))).toBeNull();
+  });
+
+  it('leaves out a row with no address, which nothing could open', async () => {
+    vi.spyOn(eventsApi, 'getShowcaseFeed').mockResolvedValue([
+      serverRow({ id: 'no-slug', slug: undefined, title: 'Unreachable' }),
+      serverRow(),
+    ] as never);
+
+    renderShowcase();
 
     expect(await screen.findByText('Server Wedding')).toBeTruthy();
-    expect(container.querySelectorAll('img').length).toBeGreaterThan(0);
+    expect(screen.queryByText('Unreachable')).toBeNull();
   });
 
   it('accepts either casing on a preview photo, and fills a missing caption', async () => {
@@ -180,7 +224,7 @@ describe('mapping a live feed', () => {
     expect(container.textContent).not.toContain('undefined');
   });
 
-  it('renders a photo with no urls at all without breaking', async () => {
+  it('skips a preview photo with no urls rather than showing a demo one in its place', async () => {
     vi.spyOn(eventsApi, 'getShowcaseFeed').mockResolvedValue([
       serverRow({ previewPhotos: [{ id: 'bare' }] }),
     ] as never);
@@ -188,10 +232,10 @@ describe('mapping a live feed', () => {
     const { container } = renderShowcase();
 
     await screen.findByText('Server Wedding');
-    expect(container.querySelectorAll('img').length).toBeGreaterThan(0);
+    expect(imageSources(container)).toEqual(['https://cdn.example.com/cover.jpg']);
   });
 
-  it('cycles the demo fallbacks when the feed is longer than the bundled set', async () => {
+  it('maps a feed longer than the bundled demo set', async () => {
     const rows = Array.from({ length: 7 }, (_, i) =>
       serverRow({ id: `srv-${i}`, slug: `w-${i}`, title: `Wedding ${i}` })
     );

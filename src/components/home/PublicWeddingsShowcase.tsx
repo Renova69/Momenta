@@ -221,6 +221,61 @@ const FALLBACK_SHOWCASE_WEDDINGS: ShowcaseWedding[] = [
   },
 ];
 
+/** The first non-empty string among `values`, or ''. */
+function firstText(...values: unknown[]): string {
+  for (const value of values) {
+    if (typeof value === 'string' && value.trim() !== '') return value;
+  }
+  return '';
+}
+
+/** A count as the server sent it, in either casing; 0 stays 0. */
+function countOf(raw: Record<string, unknown>, snake: string, camel: string): number {
+  const n = Number(raw[snake] ?? raw[camel] ?? 0);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
+}
+
+/**
+ * One real album from the showcase feed, as it is.
+ *
+ * N-77 — every field a real row lacked was filled from the demo wedding at
+ * the same index, so a new album with no photos appeared with someone else's
+ * stock photos, a demo venue, and invented counts (`||` turned its real zeros
+ * into 54 and 88). Nothing is borrowed now: a field the album lacks is left
+ * out of its card. A row with no address is dropped, as nothing could open it.
+ */
+export function toShowcaseWedding(row: unknown): ShowcaseWedding | null {
+  if (!row || typeof row !== 'object') return null;
+  const raw = row as Record<string, unknown>;
+  const id = firstText(raw.id);
+  const slug = firstText(raw.slug);
+  if (!id || !slug) return null;
+
+  const rawPhotos = Array.isArray(raw.previewPhotos) ? (raw.previewPhotos as Array<Record<string, unknown>>) : [];
+  const previewPhotos = rawPhotos
+    .map((p, index) => ({
+      id: firstText(p.id) || `p-${index}`,
+      thumbnailUrl: firstText(p.thumbnail_url, p.thumbnailUrl, p.full_url, p.fullUrl),
+      fullUrl: firstText(p.full_url, p.fullUrl, p.thumbnail_url, p.thumbnailUrl),
+      caption: firstText(p.caption) || i18n.t('showcase.default_caption'),
+    }))
+    .filter((p) => p.thumbnailUrl !== '');
+
+  const hostName = firstText(raw.hostName, raw.host_name);
+  return {
+    id,
+    slug,
+    title: firstText(raw.title) || hostName,
+    hostName,
+    eventDate: firstText(raw.eventDate, raw.event_date),
+    venueName: firstText(raw.venueName, raw.venue_name),
+    coverImageUrl: firstText(raw.coverImageUrl, raw.cover_image_url),
+    photosCount: countOf(raw, 'photos_count', 'photosCount'),
+    guestsCount: countOf(raw, 'guests_count', 'guestsCount'),
+    previewPhotos,
+  };
+}
+
 interface PublicWeddingsShowcaseProps {
   onSelectWedding: (slug: string) => void;
   onOpenCreateEvent: () => void;
@@ -238,37 +293,10 @@ export const PublicWeddingsShowcase: React.FC<PublicWeddingsShowcaseProps> = ({
     let isMounted = true;
     eventsApi.getShowcaseFeed()
       .then((data) => {
-        if (isMounted && Array.isArray(data) && data.length > 0) {
-          const mapped: ShowcaseWedding[] = data.map((ev, index) => {
-            const raw = ev as unknown as Record<string, unknown>;
-            const fallback = FALLBACK_SHOWCASE_WEDDINGS[index % FALLBACK_SHOWCASE_WEDDINGS.length];
-            const rawPhotos = (raw.previewPhotos as Array<Record<string, unknown>>) || [];
-            
-            const previewPhotos = rawPhotos.length > 0
-              ? rawPhotos.map((p, pIdx) => ({
-                  id: String(p.id || `p-${pIdx}`),
-                  thumbnailUrl: String(p.thumbnail_url || p.thumbnailUrl || p.full_url || p.fullUrl || fallback.previewPhotos[0].thumbnailUrl),
-                  fullUrl: String(p.full_url || p.fullUrl || fallback.previewPhotos[0].fullUrl),
-                  caption: String(p.caption || i18n.t('showcase.default_caption')),
-                }))
-              : fallback.previewPhotos;
-
-            return {
-              id: String(ev.id || fallback.id),
-              slug: String(ev.slug || fallback.slug),
-              title: String(ev.title || fallback.title),
-              hostName: String(ev.hostName || (raw.host_name as string) || fallback.hostName),
-              eventDate: String(ev.eventDate || (raw.event_date as string) || fallback.eventDate),
-              venueName: String(ev.venueName || (raw.venue_name as string) || fallback.venueName),
-              coverImageUrl: String(ev.coverImageUrl || (raw.cover_image_url as string) || fallback.coverImageUrl),
-              photosCount: Number(raw.photos_count || raw.photosCount || fallback.photosCount),
-              guestsCount: Number(raw.guests_count || raw.guestsCount || fallback.guestsCount),
-              previewPhotos,
-            };
-          });
-
-          setWeddings(mapped);
-        }
+        if (!isMounted || !Array.isArray(data)) return;
+        const mapped = data.map(toShowcaseWedding).filter((w): w is ShowcaseWedding => w !== null);
+        // The demo weddings stay only while there is no real album to show.
+        if (mapped.length > 0) setWeddings(mapped);
       })
       .catch((err) => {
         console.warn('Failed to load live showcase feed, using default showcases:', err);
@@ -305,12 +333,18 @@ export const PublicWeddingsShowcase: React.FC<PublicWeddingsShowcaseProps> = ({
           >
             {/* Wedding Cover & Header */}
             <div className="relative h-44 sm:h-48 w-full overflow-hidden bg-noir-950">
-              <img
-                src={wedding.coverImageUrl}
-                alt={wedding.title}
-                loading="lazy"
-                className="w-full h-full object-cover object-center group-hover:scale-105 transition-transform duration-700"
-              />
+              {wedding.coverImageUrl ? (
+                <img
+                  src={wedding.coverImageUrl}
+                  alt={wedding.title}
+                  loading="lazy"
+                  className="w-full h-full object-cover object-center group-hover:scale-105 transition-transform duration-700"
+                />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-noir-800 to-noir-950">
+                  <Camera className="w-10 h-10 text-gold-400/40" />
+                </div>
+              )}
               <div className="absolute inset-0 bg-gradient-to-t from-noir-900 via-noir-900/40 to-transparent" />
 
               {/* Status Badge */}
@@ -340,18 +374,23 @@ export const PublicWeddingsShowcase: React.FC<PublicWeddingsShowcaseProps> = ({
                 </h3>
                 
                 <div className="mt-2 space-y-1 text-xs text-cream-400/80">
-                  <div className="flex items-center gap-1.5">
-                    <MapPin className="w-3.5 h-3.5 text-gold-400/80 shrink-0" />
-                    <span className="truncate">{wedding.venueName}</span>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <Calendar className="w-3.5 h-3.5 text-gold-400/80 shrink-0" />
-                    <span>{formatEuDate(wedding.eventDate)}</span>
-                  </div>
+                  {wedding.venueName && (
+                    <div className="flex items-center gap-1.5">
+                      <MapPin className="w-3.5 h-3.5 text-gold-400/80 shrink-0" />
+                      <span className="truncate">{wedding.venueName}</span>
+                    </div>
+                  )}
+                  {wedding.eventDate && (
+                    <div className="flex items-center gap-1.5">
+                      <Calendar className="w-3.5 h-3.5 text-gold-400/80 shrink-0" />
+                      <span>{formatEuDate(wedding.eventDate)}</span>
+                    </div>
+                  )}
                 </div>
               </div>
 
               {/* Photo Previews Ribbon */}
+              {wedding.previewPhotos.length > 0 && (
               <div>
                 <div className="text-[10px] font-semibold uppercase tracking-wider text-cream-400/70 mb-2 flex items-center gap-1">
                   <Heart className="w-3 h-3 text-gold-400 fill-gold-400/30" />
@@ -373,6 +412,7 @@ export const PublicWeddingsShowcase: React.FC<PublicWeddingsShowcaseProps> = ({
                   ))}
                 </div>
               </div>
+              )}
             </div>
           </div>
         ))}
