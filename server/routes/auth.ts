@@ -80,7 +80,7 @@ authRouter.post('/register', authLimiter, validateBody(RegisterSchema), async (r
       [email]
     );
     if (existing.rows.length > 0) {
-      return res.status(409).json({ error: 'Email already registered. Please log in.' });
+      return res.status(409).json({ error: 'Email already registered. Please log in.', code: 'EMAIL_TAKEN' });
     }
 
     const passwordHash = await hashPassword(password);
@@ -171,7 +171,7 @@ authRouter.post('/register', authLimiter, validateBody(RegisterSchema), async (r
         // it was detected a few milliseconds later is a worse answer to an
         // identical situation.
         if (isUniqueViolation(err, 'users_email_key')) {
-          return res.status(409).json({ error: 'Email already registered. Please log in.' });
+          return res.status(409).json({ error: 'Email already registered. Please log in.', code: 'EMAIL_TAKEN' });
         }
         throw err;
       } finally {
@@ -180,7 +180,7 @@ authRouter.post('/register', authLimiter, validateBody(RegisterSchema), async (r
     }
 
     if (!result) {
-      return res.status(409).json({ error: 'Could not allocate a unique event URL. Please try again.' });
+      return res.status(409).json({ error: 'Could not allocate a unique event URL. Please try again.', code: 'SLUG_ALLOCATION_FAILED' });
     }
 
     // [FIX M-9] Never return password_hash — explicit safe fields only
@@ -219,20 +219,20 @@ authRouter.post('/login', authLimiter, validateBody(LoginSchema), async (req, re
     // bcrypt's ~90ms), which is enough to enumerate registered emails.
     if (rows.length === 0) {
       await comparePassword(password, DUMMY_PASSWORD_HASH);
-      return res.status(401).json({ error: 'Invalid email or password.' });
+      return res.status(401).json({ error: 'Invalid email or password.', code: 'INVALID_CREDENTIALS' });
     }
 
     const user = rows[0];
 
     if (!user.password_hash) {
       await comparePassword(password, DUMMY_PASSWORD_HASH);
-      return res.status(401).json({ error: 'Account requires password setup. Please contact support.' });
+      return res.status(401).json({ error: 'Account requires password setup. Please contact support.', code: 'PASSWORD_SETUP_REQUIRED' });
     }
 
     // Verify password against stored hash
     const isValid = await comparePassword(password, user.password_hash);
     if (!isValid) {
-      return res.status(401).json({ error: 'Invalid email or password.' });
+      return res.status(401).json({ error: 'Invalid email or password.', code: 'INVALID_CREDENTIALS' });
     }
 
     // Resolve event — create one if host has none yet (legitimate case for OAuth imports)

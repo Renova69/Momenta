@@ -71,7 +71,7 @@ export const authLimiter = rateLimit({
   max: 25,
   standardHeaders: true,
   legacyHeaders: false,
-  message: { error: 'Too many login attempts. Please try again in a few minutes.' },
+  message: { error: 'Too many login attempts. Please try again in a few minutes.', code: 'TOO_MANY_ATTEMPTS' },
 });
 
 // Live reactions are cheap but spammable — one every ~2 seconds per guest keeps

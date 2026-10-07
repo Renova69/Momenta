@@ -1,6 +1,7 @@
 import { HostUser } from '../types';
 import { ENV } from '../config/env';
-import { SESSION_EXPIRED_EVENT } from '../api/apiClient';
+import { SESSION_EXPIRED_EVENT, ERROR_CODE_KEYS } from '../api/apiClient';
+import { i18n } from '../i18n';
 import { WeddingEvent } from '../types';
 
 /** What a sign-in or registration returns to the caller. */
@@ -9,6 +10,27 @@ export interface AuthResult {
   user?: HostUser;
   event?: Partial<WeddingEvent>;
   error?: string;
+}
+
+/** What each refusal means when the server sent no code for it. */
+const AUTH_STATUS_KEYS: Record<number, string> = {
+  400: 'auth.check_details',
+  401: 'auth.invalid_credentials',
+  409: 'auth.email_taken',
+  429: 'auth.too_many_attempts',
+};
+
+/**
+ * A refused sign-in or registration, in the language the host is reading.
+ *
+ * N-76 — the server's English wording used to win over every translation, so
+ * a host reading Bulgarian got each error in English. The server's code is
+ * read first, then the status, then the caller's general message.
+ */
+async function refusalMessage(res: Response, fallbackKey: string): Promise<string> {
+  const body = (await res.json().catch(() => ({}))) as { code?: unknown };
+  const code = typeof body.code === 'string' ? body.code : '';
+  return i18n.t(ERROR_CODE_KEYS[code] || AUTH_STATUS_KEYS[res.status] || fallbackKey);
 }
 
 const AUTH_USER_KEY = 'wedmoments_host_user';
@@ -106,15 +128,14 @@ export class AuthService {
         this.setSession(data.user, data.token);
         return { success: true, user: data.user, event: data.event };
       } else {
-        const errJson = await res.json().catch(() => ({}));
-        return { success: false, error: errJson.error || 'Login failed' };
+        return { success: false, error: await refusalMessage(res, 'auth.login_failed') };
       }
     } catch (e) {
       console.warn('Backend login unreachable:', e);
       // Never fall back to a password-less demo match: signing in requires the
       // server to verify the bcrypt password. The 1-Click Demo tab (loginWithDemo)
       // remains available as an explicitly local-only preview.
-      return { success: false, error: 'Login failed. Please check your connection and try again.' };
+      return { success: false, error: i18n.t('auth.network_error') };
     }
   }
 
@@ -143,12 +164,11 @@ export class AuthService {
         this.setSession(data.user, data.token);
         return { success: true, user: data.user, event: data.event };
       } else {
-        const errJson = await res.json().catch(() => ({}));
-        return { success: false, error: errJson.error || 'Registration failed' };
+        return { success: false, error: await refusalMessage(res, 'auth.register_failed') };
       }
     } catch (e) {
       console.warn('Backend register offline:', e);
-      return { success: false, error: e instanceof Error ? e.message : 'Network error' };
+      return { success: false, error: i18n.t('auth.network_error') };
     }
   }
 

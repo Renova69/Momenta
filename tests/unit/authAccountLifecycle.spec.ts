@@ -77,6 +77,8 @@ describe('registering the same address twice', () => {
 
     expect(first.status).toBe(201);
     expect(second.status).toBe(409);
+    // N-76 — a code the sign-up page can put into the reader's language.
+    expect(second.body.code).toBe('EMAIL_TAKEN');
   }, 30_000);
 
   it('refuses a simultaneous duplicate with a 409 rather than a 500 (M8)', async () => {
@@ -131,7 +133,9 @@ describe('signing in to an account that cannot take a password', () => {
     const res = await login(email);
 
     expect(res.status).toBe(401);
-    expect(String((await res.json()).error)).toMatch(/password setup/i);
+    const body = await res.json();
+    expect(String(body.error)).toMatch(/password setup/i);
+    expect(body.code).toBe('PASSWORD_SETUP_REQUIRED');
   }, 30_000);
 });
 
@@ -151,6 +155,20 @@ describe('the capitalisation a phone keyboard adds', () => {
     const res = await login(capitalised.toLowerCase());
 
     expect(res.status).toBe(200);
+  }, 30_000);
+
+  it('refuses a wrong password with a code the sign-in page can translate (N-76)', async () => {
+    const email = uniqueEmail('wrongpw');
+    expect((await register(email)).status).toBe(201);
+
+    const res = await fetch(`${BASE_URL}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password: 'not-the-password' }),
+    });
+
+    expect(res.status).toBe(401);
+    expect((await res.json()).code).toBe('INVALID_CREDENTIALS');
   }, 30_000);
 
   it('does not let the same address register twice under different casing', async () => {

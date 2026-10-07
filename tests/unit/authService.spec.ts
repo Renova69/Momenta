@@ -1,7 +1,8 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { AuthService, authService, DEMO_HOST_USERS, DEMO_ACCOUNT_PASSWORD } from '../../src/services/authService';
 import { HostUser, WeddingEvent } from '../../src/types';
 import { SESSION_EXPIRED_EVENT } from '../../src/api/apiClient';
+import { i18n, TRANSLATIONS } from '../../src/i18n';
 
 function createMockResponse<T>(data: T, status = 200, ok = true): Response {
   return {
@@ -89,12 +90,12 @@ describe('Auth Service Client Spec', () => {
 
     // Registration failed response
     global.fetch = vi.fn().mockResolvedValue(
-      createMockResponse({ error: 'Email already exists' }, 400, false)
+      createMockResponse({ error: 'Email already registered. Please log in.', code: 'EMAIL_TAKEN' }, 409, false)
     );
 
     const failedReg = await authService.register('new@example.com', 'New Host', 'Password123!');
     expect(failedReg.success).toBe(false);
-    expect(failedReg.error).toBe('Email already exists');
+    expect(failedReg.error).toBe(i18n.t('auth.email_taken'));
   });
 
   it('signs in demo hosts through the real login route', async () => {
@@ -132,23 +133,96 @@ describe('Auth Service Client Spec', () => {
     expect(authService.isAuthenticated()).toBe(false);
   });
 
-  it('reports the reason a sign-in was refused, or a plain one if the server gave none', async () => {
+  it('reports a refused sign-in as wrong credentials when the server gave no code', async () => {
     global.fetch = vi.fn().mockResolvedValue(createMockResponse({}, 401, false));
 
     const result = await authService.login('host@example.com', 'wrong');
 
     expect(result.success).toBe(false);
-    expect(result.error).toBe('Login failed');
+    expect(result.error).toBe(i18n.t('auth.invalid_credentials'));
   });
 
-  it('prefers the server’s own wording when it sends some', async () => {
-    global.fetch = vi.fn().mockResolvedValue(
-      createMockResponse({ error: 'This account is locked' }, 403, false)
-    );
+  /**
+   * N-76 — the server's English message always won over the translated one,
+   * so a Bulgarian host signing in got every error in English.
+   */
+  describe('in the language the host is reading (N-76)', () => {
+    const original = i18n.getLanguage();
+    afterEach(() => i18n.setLanguage(original));
 
-    const result = await authService.login('host@example.com', 'secret');
+    it('translates the reason by the code the server sends, not its English wording', async () => {
+      global.fetch = vi.fn().mockResolvedValue(
+        createMockResponse({ error: 'Invalid email or password.', code: 'INVALID_CREDENTIALS' }, 401, false)
+      );
 
-    expect(result.error).toBe('This account is locked');
+      i18n.setLanguage('bg');
+      const bg = await authService.login('host@example.com', 'secret');
+      i18n.setLanguage('en');
+      const en = await authService.login('host@example.com', 'secret');
+
+      expect(bg.error).toBe(TRANSLATIONS.bg['auth.invalid_credentials']);
+      expect(en.error).toBe(TRANSLATIONS.en['auth.invalid_credentials']);
+      expect(bg.error).not.toBe(en.error);
+    });
+
+    it('says an account needs its password set up, in the reader language', async () => {
+      global.fetch = vi.fn().mockResolvedValue(
+        createMockResponse({ error: 'Account requires password setup.', code: 'PASSWORD_SETUP_REQUIRED' }, 401, false)
+      );
+
+      const result = await authService.login('host@example.com', 'secret');
+
+      expect(result.error).toBe(i18n.t('auth.password_setup_required'));
+    });
+
+    it('says to wait after too many attempts', async () => {
+      global.fetch = vi.fn().mockResolvedValue(
+        createMockResponse({ error: 'Too many login attempts.', code: 'TOO_MANY_ATTEMPTS' }, 429, false)
+      );
+
+      const result = await authService.login('host@example.com', 'secret');
+
+      expect(result.error).toBe(i18n.t('auth.too_many_attempts'));
+    });
+
+    it('asks to check the details when a registration is refused as invalid', async () => {
+      global.fetch = vi.fn().mockResolvedValue(createMockResponse({ error: 'Validation failed' }, 400, false));
+
+      const result = await authService.register('host@example.com', 'Host', 'x');
+
+      expect(result.error).toBe(i18n.t('auth.check_details'));
+    });
+
+    it('does not call a failed address allocation a taken email', async () => {
+      global.fetch = vi.fn().mockResolvedValue(
+        createMockResponse({ error: 'Could not allocate a unique event URL.', code: 'SLUG_ALLOCATION_FAILED' }, 409, false)
+      );
+
+      const result = await authService.register('host@example.com', 'Host', 'Password123!');
+
+      expect(result.error).toBe(i18n.t('auth.register_failed'));
+    });
+
+    it('falls back to a translated message for anything it has no words for', async () => {
+      global.fetch = vi.fn().mockResolvedValue(createMockResponse({ error: 'Service Unavailable' }, 503, false));
+
+      const login = await authService.login('host@example.com', 'secret');
+      const reg = await authService.register('host@example.com', 'Host', 'Password123!');
+
+      expect(login.error).toBe(i18n.t('auth.login_failed'));
+      expect(reg.error).toBe(i18n.t('auth.register_failed'));
+    });
+
+    it('says the connection failed when the server cannot be reached', async () => {
+      global.fetch = vi.fn().mockRejectedValue(new TypeError('Failed to fetch'));
+      vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+      const login = await authService.login('host@example.com', 'secret');
+      const reg = await authService.register('host@example.com', 'Host', 'Password123!');
+
+      expect(login.error).toBe(i18n.t('auth.network_error'));
+      expect(reg.error).toBe(i18n.t('auth.network_error'));
+    });
   });
 
   it('fails rather than signs in when the server cannot be reached', async () => {

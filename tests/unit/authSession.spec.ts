@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { authService } from '../../src/services/authService';
 import { SESSION_EXPIRED_EVENT } from '../../src/api/apiClient';
 import { HostUser } from '../../src/types';
+import { i18n } from '../../src/i18n';
 
 /**
  * The host session's lifecycle.
@@ -120,7 +121,8 @@ describe('login failure handling', () => {
     const result = await authService.login('host@example.com', 'pw');
 
     expect(result.success).toBe(false);
-    expect(result.error).toContain('connection');
+    // In the language the host is reading (N-76).
+    expect(result.error).toBe(i18n.t('auth.network_error'));
     expect(authService.isAuthenticated()).toBe(false);
   });
 
