@@ -175,6 +175,19 @@ photosRouter.get('/:id/preview', requireUuidParams('id'), async (req, res) => {
     if (!stream) return res.status(404).end();
 
     res.setHeader('Cache-Control', 'private, max-age=60');
+    // N-79 — piped with no error handler, a storage error part way through
+    // was an unhandled 'error' event, which ends the process; and a browser
+    // that went away left the storage stream, an R2 socket or a file handle,
+    // open. Not stream.pipeline: it destroys the response too, so a failure
+    // before the first byte could not still be answered with a 500.
+    stream.on('error', (err) => {
+      console.error('[Photos] preview stream error:', errorLabel(err));
+      // Once bytes have gone there is no status left to send: the response is
+      // cut off, which the browser shows as a broken image.
+      if (res.headersSent) res.destroy();
+      else res.status(500).json({ error: 'Internal server error' });
+    });
+    res.on('close', () => stream.destroy());
     stream.pipe(res);
   } catch (err) {
     console.error('[Photos] preview error:', errorLabel(err));
