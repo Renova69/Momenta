@@ -6,7 +6,7 @@
 **Client mutation sweep:** 2026-09-21 (§8).
 **Performance pass:** 2026-09-22 to 23 (§3e).
 **Security review, partial:** 2026-09-25 to 26, recorded 2026-10-04 (§3f). **All 25 findings fixed.**
-**Remaining five domains:** reviewed 2026-10-05 (§3g). **11 of 35 findings open.**
+**Remaining five domains:** reviewed 2026-10-05 (§3g). **10 of 35 findings open.**
 
 > **Read this first.** The audit below is preserved as written — each finding
 > still describes the code as it was on 2026-09-15, because a finding rewritten
@@ -900,7 +900,7 @@ trusting them.
 
 ## 3g. The Remaining Five Domains (2026-10-05)
 
-**Open: 11 of 35.** Fixed so far: N-59, N-60, N-61, N-62, N-63, N-64, N-65, N-66, N-67, N-68, N-69, N-70, N-71, N-72, N-73, N-74, N-75, N-76, N-77, N-78, N-79, N-80, N-92, N-93.
+**Open: 10 of 35.** Fixed so far: N-59, N-60, N-61, N-62, N-63, N-64, N-65, N-66, N-67, N-68, N-69, N-70, N-71, N-72, N-73, N-74, N-75, N-76, N-77, N-78, N-79, N-80, N-81, N-92, N-93.
 
 The rest of the review §3f began: media, infra, db, guest UI and host UI, one
 reviewer each, with the same brief — races, missing checks, inconsistent
@@ -940,7 +940,7 @@ until every client path that calls it has been read.
 | **N-78** | An offline replay is not idempotent: a server that committed an upload whose response was lost receives it again and stores a duplicate. | Medium | `src/services/offlineQueueService.ts`, `server/routes/photos/upload.ts` | Yes | `8768de4` |
 | **N-79** | The preview stream is piped with no error handler and is not destroyed when the client disconnects: a storage error can crash the process, and an abort leaks the R2 socket or file handle. | Medium | `server/routes/photos/feed.ts` | Yes | `de2cde2` |
 | **N-80** | The microphone stays live if `MediaRecorder` throws after permission was granted. | Low | `src/components/audio/AudioGuestbook.tsx` | Yes | `3448753` |
-| **N-81** | A host who signs in while the page's socket is already open stays a guest on it: `joinEventRoom` never re-sends AUTH. | Low | `src/services/realtimeSocket.ts` | Yes | Open |
+| **N-81** | A host who signs in while the page's socket is already open stays a guest on it: `joinEventRoom` never re-sends AUTH. | Low | `src/services/realtimeSocket.ts` | Yes | `115ce7b` |
 | **N-82** | A database error during the WebSocket host check caches "not host" for 60 seconds. | Low | `server/ws/wsServer.ts` | Yes | Open |
 | **N-83** | The production image installs an unpinned `tsx` at build time, and CI never builds the image. | Low | `Dockerfile`, `.github/workflows/ci.yml` | No | Open |
 | **N-84** | The per-guest photo cap is checked only outside the upload lock, so parallel uploads from one device can exceed it. | Low | `server/routes/photos/upload.ts`, `server/lib/photoWrite.ts` | No | Open |
