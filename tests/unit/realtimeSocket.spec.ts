@@ -269,6 +269,23 @@ describe('RealtimeSocket.joinEventRoom', () => {
     expect(FakeWebSocket.instances[0].messages).toEqual([{ type: 'JOIN_EVENT_ROOM', eventId: 'e2' }]);
   });
 
+  it('authenticates a host who signed in after the socket opened, before joining (N-81)', () => {
+    // The page opened as a guest; the host then signed in on it. The socket
+    // only sent AUTH on open, so the host stayed a guest on it: no photos
+    // awaiting moderation, no host-only updates, until a reload.
+    const socket = new RealtimeSocket(HOST, { getActiveEventId: () => '', onMessage: vi.fn() });
+    socket.connect();
+    FakeWebSocket.instances[0].open();
+    localStorage.setItem('wedmoments_host_token', 'signed-in-later');
+
+    socket.joinEventRoom('e2');
+
+    expect(FakeWebSocket.instances[0].messages).toEqual([
+      { type: 'AUTH', token: 'signed-in-later' },
+      { type: 'JOIN_EVENT_ROOM', eventId: 'e2' },
+    ]);
+  });
+
   it('is a no-op while the socket is still connecting', () => {
     const socket = new RealtimeSocket(HOST, { getActiveEventId: () => '', onMessage: vi.fn() });
     socket.connect();

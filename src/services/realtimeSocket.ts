@@ -17,6 +17,13 @@ const MAX_RECONNECT_DELAY_MS = 60_000;
  */
 const RECONNECT_JITTER = 0.5;
 
+const HOST_TOKEN_KEY = 'wedmoments_host_token';
+
+/** The signed-in host's session token, read fresh each time it is sent. */
+function currentHostToken(): string | null {
+  return typeof window !== 'undefined' ? localStorage.getItem(HOST_TOKEN_KEY) : null;
+}
+
 /**
  * Owns the raw event WebSocket connection: connect, the AUTH/JOIN_EVENT_ROOM
  * handshake on open, and exponential reconnect backoff. Message parsing and
@@ -42,7 +49,7 @@ export class RealtimeSocket {
       this.ws.onopen = () => {
         // [FIX H-8] Reset backoff on successful connect
         this.reconnectDelay = 1000;
-        const token = typeof window !== 'undefined' ? localStorage.getItem('wedmoments_host_token') : null;
+        const token = currentHostToken();
         const activeEventId = this.handlers.getActiveEventId();
         if (this.ws?.readyState === WebSocket.OPEN) {
           if (token) {
@@ -82,6 +89,12 @@ export class RealtimeSocket {
 
   joinEventRoom(eventId: string): void {
     if (this.ws && this.ws.readyState === WebSocket.OPEN && eventId) {
+      // N-81 — AUTH was sent only when the socket opened, so a host who
+      // signed in on a page already open stayed a guest on it: no photos
+      // awaiting moderation, no host-only updates, until a reload. The
+      // server takes a fresh AUTH at any time and reads it on the join.
+      const token = currentHostToken();
+      if (token) this.ws.send(JSON.stringify({ type: 'AUTH', token }));
       this.ws.send(JSON.stringify({ type: 'JOIN_EVENT_ROOM', eventId }));
     }
   }
