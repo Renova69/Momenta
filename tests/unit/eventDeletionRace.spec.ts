@@ -144,6 +144,22 @@ describe('an album being deleted (N-47)', () => {
     expect(row.rows[0].is_quarantined).toBe(true);
   });
 
+  it('refuses while the album is already being deleted, and leaves that deletion its mark', async () => {
+    // The retention sweep may be purging it. Clearing the sweep's mark on the
+    // way out would reopen uploads under the sweep's purge.
+    const host = await registerHost();
+    await query('UPDATE events SET deleting_at = NOW() WHERE id = $1', [host.eventId]);
+
+    const res = await deleteAlbum(host);
+
+    expect(res.status).toBe(409);
+    const row = await query<{ deleting_at: string | null }>('SELECT deleting_at FROM events WHERE id = $1', [
+      host.eventId,
+    ]);
+    expect(row.rows).toHaveLength(1);
+    expect(row.rows[0].deleting_at).not.toBeNull();
+  });
+
   it('takes uploads again if the purge fails and the album is still there', async () => {
     const host = await registerHost();
     purgeHook.failNext = true;

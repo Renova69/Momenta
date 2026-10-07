@@ -45,6 +45,7 @@ export const ERROR_CODE_KEYS: Record<string, string> = {
   MANAGE_SUBSCRIPTION_IN_PORTAL: 'error.manage_subscription_in_portal',
   NO_STRIPE_CUSTOMER: 'error.no_stripe_customer',
   CONFIRMATION_MISMATCH: 'error.confirmation_mismatch',
+  DELETION_IN_PROGRESS: 'error.deletion_in_progress',
   STORAGE_DELETE_FAILED: 'error.storage_delete_failed',
   ALREADY_ENTITLED: 'error.already_entitled',
   BILLING_UNVERIFIABLE: 'error.billing_unverifiable',

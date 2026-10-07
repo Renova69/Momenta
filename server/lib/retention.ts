@@ -225,17 +225,27 @@ export async function refreshExpiryDates(
 const DELETION_MARK_RENEW_MS = 5 * 60 * 1000;
 
 /**
- * Mark an album as being deleted, so uploads are refused until the mark is
- * taken off (N-47). Stamped under the album's upload lock: an upload holding
- * the lock now commits first, and one taking it later sees the mark.
+ * Claim an album's deletion mark, so uploads are refused until it is taken
+ * off (N-47). Stamped under the album's upload lock: an upload holding the
+ * lock now commits first, and one taking it later sees the mark.
+ *
+ * False when another deletion holds a live mark. Two deletions sharing one
+ * mark each took it off on the way out, reopening uploads under the other's
+ * purge. A mark an hour old belongs to a deletion that crashed, and is taken
+ * over — the same age at which getUploadContext stops honouring it.
  */
-export async function markEventDeleting(eventId: string): Promise<void> {
+export async function markEventDeleting(eventId: string): Promise<boolean> {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
     await acquireEventUploadLock(client, eventId);
-    await client.query('UPDATE events SET deleting_at = NOW() WHERE id = $1', [eventId]);
+    const { rowCount } = await client.query(
+      `UPDATE events SET deleting_at = NOW()
+        WHERE id = $1 AND (deleting_at IS NULL OR deleting_at < NOW() - INTERVAL '1 hour')`,
+      [eventId]
+    );
     await client.query('COMMIT');
+    return (rowCount ?? 0) > 0;
   } catch (err) {
     await client.query('ROLLBACK').catch(() => undefined);
     throw err;
@@ -309,15 +319,33 @@ export async function purgeEventMedia(eventId: string): Promise<PurgeResult> {
   let freed = 0;
   const failedPaths: string[] = [];
 
-  // N-73 — keep the caller's deletion mark fresh for as long as this runs. An
-  // album nobody marked stays unmarked: only an existing mark is renewed.
+  // N-73 — a caller that marked the album must keep holding the mark for as
+  // long as this runs. Both callers in the app mark first; the maintenance
+  // scripts purge albums nobody marked, and those stay unmarked.
+  const { rows: markRows } = await pool.query<{ marked: boolean }>(
+    'SELECT deleting_at IS NOT NULL AS marked FROM events WHERE id = $1',
+    [eventId]
+  );
+  const marked = markRows[0]?.marked === true;
+
+  // Renew the mark, or stop. A purge whose mark lapsed has uploads landing in
+  // an album it is emptying, which is the drift the mark exists to prevent:
+  // a renewal that failed, or a mark someone else took off, used to be
+  // logged or ignored and the purge carried on (found by the security review
+  // of e38d95b). Stopping leaves rows naming deleted files — visible, and
+  // finished by the next attempt.
+  const holdMark = async (db: Pool | PoolClient): Promise<void> => {
+    const { rowCount } = await db.query(
+      'UPDATE events SET deleting_at = NOW() WHERE id = $1 AND deleting_at IS NOT NULL',
+      [eventId]
+    );
+    if (!rowCount) throw new Error(`[retention] the deletion mark for ${eventId} was taken off; purge stopped`);
+  };
   let renewedAt = Date.now();
   const renewMark = async (): Promise<void> => {
-    if (Date.now() - renewedAt < DELETION_MARK_RENEW_MS) return;
+    if (!marked || Date.now() - renewedAt < DELETION_MARK_RENEW_MS) return;
+    await holdMark(pool);
     renewedAt = Date.now();
-    await pool
-      .query('UPDATE events SET deleting_at = NOW() WHERE id = $1 AND deleting_at IS NOT NULL', [eventId])
-      .catch((err) => console.warn(`[retention] could not renew the deletion mark for ${eventId}:`, errorLabel(err)));
   };
 
   const deleteObject = async (path: string): Promise<void> => {
@@ -376,6 +404,8 @@ export async function purgeEventMedia(eventId: string): Promise<PurgeResult> {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
+    // Still held, in the same transaction as the delete that relies on it.
+    if (marked) await holdMark(client);
     await client.query("SET LOCAL wedmoments.bulk_purge = 'on'");
     await client.query('DELETE FROM photos WHERE event_id = $1', [eventId]);
     await client.query('DELETE FROM audio_guestbook WHERE event_id = $1', [eventId]);
@@ -462,10 +492,16 @@ export async function sweepExpiredAlbums(
     // N-73 — uploads are refused while the album is purged, as when a host
     // deletes it. Without the mark, a photo landing mid-purge lost its row
     // and kept its file.
+    let claimed: boolean;
     try {
-      await markEventDeleting(candidate.eventId);
+      claimed = await markEventDeleting(candidate.eventId);
     } catch (err) {
       console.error(`[retention] could not mark ${candidate.slug} for deletion, skipped:`, err);
+      continue;
+    }
+    if (!claimed) {
+      // Its host is deleting it, and the mark is theirs to take off.
+      console.log(`[retention] ${candidate.slug} is already being deleted, skipped`);
       continue;
     }
     try {

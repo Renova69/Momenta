@@ -637,7 +637,13 @@ eventsRouter.delete(
       // Stamped under the album's upload lock, so an upload that holds the
       // lock now commits before the snapshot and one that takes it later
       // sees the stamp and refuses (getUploadContext).
-      await markEventDeleting(id);
+      if (!(await markEventDeleting(id))) {
+        // The retention sweep is purging it; its mark is not ours to take off.
+        return res.status(409).json({
+          error: 'This album is already being deleted. Try again in a few minutes.',
+          code: 'DELETION_IN_PROGRESS',
+        });
+      }
 
       // 1. Storage first — see the note above about the cascade.
       // If the purge or the row delete fails, the album is still here and must

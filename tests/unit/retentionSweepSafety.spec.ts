@@ -1,9 +1,15 @@
 import { describe, it, expect, vi, afterAll, afterEach } from 'vitest';
 import fs from 'fs';
-import { sweepExpiredAlbums, purgeEventMedia, GRACE_PERIOD_DAYS, RETENTION_NOTICE_DAYS } from '../../server/lib/retention';
+import {
+  sweepExpiredAlbums,
+  purgeEventMedia,
+  markEventDeleting,
+  GRACE_PERIOD_DAYS,
+  RETENTION_NOTICE_DAYS,
+} from '../../server/lib/retention';
 import { getUploadContext } from '../../server/middleware/tierGate';
 import { storageAdapter } from '../../server/lib/storage';
-import { query } from '../../server/lib/db';
+import { query, pool } from '../../server/lib/db';
 import { deleteEventFixtures } from '../helpers/cleanup';
 
 /**
@@ -202,6 +208,102 @@ describe('an album extended while the sweep is working (N-74)', () => {
     expect(result.deleted).toEqual([first, second]);
     expect(await photoCount(first)).toBe(0);
     expect(await photoCount(second)).toBe(0);
+  });
+});
+
+/**
+ * Found by the security review of e38d95b: the mark could lapse without the
+ * purge noticing. A renewal that failed was only logged, a mark taken off by
+ * something else was renewed into nothing, and the rows were deleted without
+ * checking the mark was still held — each one reopening uploads part way
+ * through, which is the drift the mark exists to prevent. A purge now stops
+ * instead, leaving rows that name deleted files: visible, and finished by the
+ * next attempt.
+ */
+describe('a purge whose deletion mark lapses', () => {
+  /** A second photo, so the purge has more than one file to work through. */
+  async function addSecondPhoto(eventId: string): Promise<void> {
+    const extra = await storageAdapter.save(Buffer.from('second'), `lapse-${Date.now()}.jpg`, 'image/jpeg', eventId);
+    const { rows } = await query<{ guest_id: string }>('SELECT guest_id FROM photos WHERE event_id = $1 LIMIT 1', [
+      eventId,
+    ]);
+    await query(
+      `INSERT INTO photos (event_id, guest_id, storage_path, full_url, status, storage_bytes)
+       VALUES ($1, $2, $3, $3, 'approved', 6)`,
+      [eventId, rows[0].guest_id, extra.storagePath]
+    );
+  }
+
+  it('stops before deleting the rows when its mark was taken off part way', async () => {
+    const eventId = await deletableAlbum(5);
+    await markEventDeleting(eventId);
+    onFirstDelete(async () => {
+      await query('UPDATE events SET deleting_at = NULL WHERE id = $1', [eventId]);
+    });
+
+    await expect(purgeEventMedia(eventId)).rejects.toThrow(/mark/i);
+
+    expect(await photoCount(eventId)).toBe(1);
+  });
+
+  it('stops when its mark cannot be renewed', async () => {
+    const eventId = await deletableAlbum(5);
+    await addSecondPhoto(eventId);
+    await markEventDeleting(eventId);
+    let clock = Date.now();
+    vi.spyOn(Date, 'now').mockImplementation(() => clock);
+    const real = storageAdapter.delete.bind(storageAdapter);
+    vi.spyOn(storageAdapter, 'delete').mockImplementation(async (p: string) => {
+      clock += 10 * 60 * 1000;
+      return real(p);
+    });
+    const realQuery = pool.query.bind(pool) as (...args: unknown[]) => Promise<unknown>;
+    vi.spyOn(pool, 'query').mockImplementation(((...args: unknown[]) => {
+      const sql = String(args[0]);
+      if (sql.includes('SET deleting_at = NOW()') && sql.includes('deleting_at IS NOT NULL')) {
+        return Promise.reject(new Error('connection reset'));
+      }
+      return realQuery(...args);
+    }) as typeof pool.query);
+
+    await expect(purgeEventMedia(eventId)).rejects.toThrow();
+
+    expect(await photoCount(eventId)).toBe(2);
+  });
+
+  it('still purges an album nobody marked, for the maintenance scripts', async () => {
+    const eventId = await deletableAlbum(5);
+
+    await purgeEventMedia(eventId);
+
+    expect(await photoCount(eventId)).toBe(0);
+  });
+});
+
+describe('two deletions of the same album', () => {
+  it('lets only one hold the mark at a time', async () => {
+    const eventId = await deletableAlbum(5);
+
+    expect(await markEventDeleting(eventId)).toBe(true);
+    expect(await markEventDeleting(eventId)).toBe(false);
+  });
+
+  it('lets a deletion take over a mark left behind by one that crashed', async () => {
+    const eventId = await deletableAlbum(5);
+    await query("UPDATE events SET deleting_at = NOW() - INTERVAL '2 hours' WHERE id = $1", [eventId]);
+
+    expect(await markEventDeleting(eventId)).toBe(true);
+  });
+
+  it('leaves an album the host is deleting to the host, mark and all', async () => {
+    const eventId = await deletableAlbum(5);
+    await markEventDeleting(eventId); // the host's delete, under way
+
+    const result = await sweepExpiredAlbums(true, { eventIds: [eventId] });
+
+    expect(result.deleted).toEqual([]);
+    expect(await deletionMark(eventId)).not.toBeNull();
+    expect(await photoCount(eventId)).toBe(1);
   });
 });
 
