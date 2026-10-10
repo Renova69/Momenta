@@ -224,6 +224,26 @@ export async function refreshExpiryDates(
  */
 const DELETION_MARK_RENEW_MS = 5 * 60 * 1000;
 
+/** How often a purge asks whether its album is still to be deleted (N-101). */
+const STILL_WANTED_CHECK_MS = 1000;
+
+/** Raised when the album stopped being deletable part way through its purge. */
+export class PurgeNoLongerWanted extends Error {
+  constructor(eventId: string) {
+    super(`[retention] ${eventId} is no longer to be deleted; purge stopped`);
+    this.name = 'PurgeNoLongerWanted';
+  }
+}
+
+export interface PurgeOptions {
+  /**
+   * Asked between file deletes, at most once a second, and once more before
+   * the rows go: false stops the purge (N-101). A host who extends an album
+   * while the retention sweep is purging it must not lose it.
+   */
+  stillWanted?: () => Promise<boolean>;
+}
+
 /**
  * Claim an album's deletion mark, so uploads are refused until it is taken
  * off (N-47). Stamped under the album's upload lock: an upload holding the
@@ -325,7 +345,11 @@ async function loadCandidates(
  * so the caller can report it, because the row that named the object is about
  * to be deleted and after that only `storage:orphans` can find it.
  */
-export async function purgeEventMedia(eventId: string, mark?: DeletionMark): Promise<PurgeResult> {
+export async function purgeEventMedia(
+  eventId: string,
+  mark?: DeletionMark,
+  options: PurgeOptions = {}
+): Promise<PurgeResult> {
   const { rows: photos } = await pool.query(
     'SELECT storage_path, original_storage_path, thumbnail_url, storage_bytes FROM photos WHERE event_id = $1',
     [eventId]
@@ -368,7 +392,16 @@ export async function purgeEventMedia(eventId: string, mark?: DeletionMark): Pro
     renewedAt = Date.now();
   };
 
+  let checkedAt = Date.now();
+  const confirmWanted = async (force = false): Promise<void> => {
+    if (!options.stillWanted) return;
+    if (!force && Date.now() - checkedAt < STILL_WANTED_CHECK_MS) return;
+    checkedAt = Date.now();
+    if (!(await options.stillWanted())) throw new PurgeNoLongerWanted(eventId);
+  };
+
   const deleteObject = async (path: string): Promise<void> => {
+    await confirmWanted();
     await renewMark();
     try {
       await storageAdapter.delete(path);
@@ -421,6 +454,7 @@ export async function purgeEventMedia(eventId: string, mark?: DeletionMark): Pro
   // failure mode where accounting is left switched off for every other event.
   // Scoped to just this bulk-wipe path: a single photo/audio delete elsewhere
   // still fires the trigger normally, which is correct there.
+  await confirmWanted(true);
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -532,7 +566,11 @@ export async function sweepExpiredAlbums(
         console.log(`[retention] ${candidate.slug} is no longer deletable, skipped`);
         continue;
       }
-      const purge = await purgeEventMedia(candidate.eventId, claimed);
+      const stillDeletable = async (): Promise<boolean> => {
+        const [now] = await loadCandidates(graceCutoff, [candidate.eventId]);
+        return !!now && isNotified(now);
+      };
+      const purge = await purgeEventMedia(candidate.eventId, claimed, { stillWanted: stillDeletable });
       result.deleted.push(candidate.eventId);
       result.freedBytes += purge.freedBytes;
       result.leakedPaths.push(...purge.failedPaths);
@@ -543,7 +581,13 @@ export async function sweepExpiredAlbums(
         ')'
       );
     } catch (err) {
-      console.error(`[retention] failed to purge ${candidate.slug}:`, err);
+      if (err instanceof PurgeNoLongerWanted) {
+        // Extended part way through: what was already deleted cannot come
+        // back, but the rest of the album is kept.
+        console.error(`[retention] ${candidate.slug} was extended during its purge; stopped`);
+      } else {
+        console.error(`[retention] failed to purge ${candidate.slug}:`, err);
+      }
     } finally {
       // The album itself stays; only its media went.
       await clearDeletionMark(claimed).catch((err) =>

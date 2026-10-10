@@ -204,6 +204,47 @@ describe('an album extended while the sweep is working (N-74)', () => {
     expect(await deletionMark(extended)).toBeNull();
   });
 
+  it('stops purging an album its host extends while the purge is running (N-101)', async () => {
+    // The re-check before the purge (N-74) does not cover a purchase that
+    // lands during it, and a purge can run for an hour.
+    const eventId = await deletableAlbum(5);
+    const { rows } = await query<{ guest_id: string }>('SELECT guest_id FROM photos WHERE event_id = $1 LIMIT 1', [
+      eventId,
+    ]);
+    for (const n of [1, 2]) {
+      const extra = await storageAdapter.save(Buffer.from(`more-${n}`), `more-${n}-${Date.now()}.jpg`, 'image/jpeg', eventId);
+      await query(
+        `INSERT INTO photos (event_id, guest_id, storage_path, full_url, status, storage_bytes)
+         VALUES ($1, $2, $3, $3, 'approved', 6)`,
+        [eventId, rows[0].guest_id, extra.storagePath]
+      );
+    }
+    let clock = Date.now();
+    vi.spyOn(Date, 'now').mockImplementation(() => clock);
+    const real = storageAdapter.delete.bind(storageAdapter);
+    let deletes = 0;
+    vi.spyOn(storageAdapter, 'delete').mockImplementation(async (p: string) => {
+      deletes += 1;
+      if (deletes === 1) {
+        // The host pays while the first file is being deleted.
+        await query(
+          `UPDATE events SET expires_at = NOW() + INTERVAL '1 year', retention_notified_at = NULL WHERE id = $1`,
+          [eventId]
+        );
+      }
+      clock += 2000;
+      return real(p);
+    });
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    const result = await sweepExpiredAlbums(true, { eventIds: [eventId] });
+
+    expect(result.deleted).toEqual([]);
+    expect(await photoCount(eventId)).toBe(3);
+    expect(deletes).toBe(1);
+    expect(await deletionMark(eventId)).toBeNull();
+  });
+
   it('still purges every album that remains deletable', async () => {
     const first = await deletableAlbum(9);
     const second = await deletableAlbum(5);
