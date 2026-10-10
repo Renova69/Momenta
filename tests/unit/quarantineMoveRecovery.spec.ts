@@ -234,6 +234,29 @@ describe('a photo whose files moved only in part (N-70)', () => {
     expect(onDisk(row.storage_path)).toBe(true);
   });
 
+  it('withholds a photo whose promotion moved only some of its files (N-95)', async () => {
+    // The row still says quarantined after a part-failed promotion (N-70), and
+    // withholding used to trust that flag and do nothing, leaving the copies
+    // already moved on the public path for a photo the host had just rejected.
+    const photoId = await quarantinedPhoto();
+    const blip = failMovesOf('promoteFromQuarantine', '/thumb-');
+    await promotePhotoFromQuarantine(photoId).catch(() => undefined);
+    blip.mockRestore();
+    const half = await rowOf(photoId);
+    expect(half.is_quarantined).toBe(true);
+    expect(half.storage_path).toMatch(/^\/uploads\//);
+
+    await query("UPDATE photos SET status = 'rejected' WHERE id = $1", [photoId]);
+    await withholdPhotoToQuarantine(photoId);
+
+    const row = await rowOf(photoId);
+    expect(row.is_quarantined).toBe(true);
+    for (const p of [row.storage_path, row.original_storage_path, toStoragePath(row.thumbnail_url)]) {
+      expect(p).toContain('/quarantine/');
+      expect(onDisk(p)).toBe(true);
+    }
+  });
+
   it('records the copies that were withheld when one withholding fails, and finishes on retry', async () => {
     const photoId = await quarantinedPhoto();
     await promotePhotoFromQuarantine(photoId);

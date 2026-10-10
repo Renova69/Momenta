@@ -146,7 +146,14 @@ export async function withholdPhotoToQuarantine(
       'SELECT status, storage_path, original_storage_path, thumbnail_url, is_quarantined FROM photos WHERE id = $1',
       [photoId]
     );
-    if (rows.length === 0 || rows[0].is_quarantined) return;
+    if (rows.length === 0) return;
+    // N-95 — by the paths, not the flag. A promotion that moved only some of
+    // the files keeps the flag set (N-70), and trusting it here left those
+    // copies public for a photo the host had just rejected.
+    const anyPublic = [rows[0].storage_path, rows[0].original_storage_path, toStoragePath(rows[0].thumbnail_url)].some(
+      (p) => !!p && !isQuarantined(p)
+    );
+    if (!anyPublic && rows[0].is_quarantined) return;
     // Approved again since this withhold was asked for (N-71).
     if (PUBLIC_STATUSES.includes(rows[0].status)) return;
 
