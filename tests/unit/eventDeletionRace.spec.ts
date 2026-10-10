@@ -25,14 +25,14 @@ vi.mock('../../server/lib/retention', async () => {
   const { query } = await vi.importActual<typeof import('../../server/lib/db')>('../../server/lib/db');
   return {
     ...actual,
-    purgeEventMedia: async (eventId: string) => {
+    purgeEventMedia: async (eventId: string, mark?: Parameters<typeof actual.purgeEventMedia>[1]) => {
       const row = await query<{ deleting_at: string | null }>('SELECT deleting_at FROM events WHERE id = $1', [eventId]);
       purgeHook.seenDeletingAt = row.rows[0]?.deleting_at ?? null;
       if (purgeHook.failNext) {
         purgeHook.failNext = false;
         throw new Error('storage unavailable');
       }
-      return actual.purgeEventMedia(eventId);
+      return actual.purgeEventMedia(eventId, mark);
     },
   };
 });

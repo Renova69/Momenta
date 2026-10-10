@@ -4,6 +4,7 @@ import {
   sweepExpiredAlbums,
   purgeEventMedia,
   markEventDeleting,
+  clearDeletionMark,
   GRACE_PERIOD_DAYS,
   RETENTION_NOTICE_DAYS,
 } from '../../server/lib/retention';
@@ -123,7 +124,11 @@ describe('a purge that runs for longer than the mark is honoured (N-73)', () => 
   it('renews the mark as it goes', async () => {
     const eventId = await deletableAlbum(5);
     // A purge that began almost an hour ago and still has files to delete.
-    await query("UPDATE events SET deleting_at = NOW() - INTERVAL '55 minutes' WHERE id = $1", [eventId]);
+    const { rows: marked } = await query<{ token: string }>(
+      "UPDATE events SET deleting_at = NOW() - INTERVAL '55 minutes' WHERE id = $1 RETURNING deleting_at::text AS token",
+      [eventId]
+    );
+    const held = { eventId, token: marked[0].token };
     const start = Date.now();
     let clock = start;
     vi.spyOn(Date, 'now').mockImplementation(() => clock);
@@ -142,7 +147,7 @@ describe('a purge that runs for longer than the mark is honoured (N-73)', () => 
       [eventId, rows[0].guest_id, extra.storagePath]
     );
 
-    await purgeEventMedia(eventId);
+    await purgeEventMedia(eventId, held);
 
     const mark = await deletionMark(eventId);
     expect(mark).not.toBeNull();
@@ -236,12 +241,12 @@ describe('a purge whose deletion mark lapses', () => {
 
   it('stops before deleting the rows when its mark was taken off part way', async () => {
     const eventId = await deletableAlbum(5);
-    await markEventDeleting(eventId);
+    const mark = await markEventDeleting(eventId);
     onFirstDelete(async () => {
       await query('UPDATE events SET deleting_at = NULL WHERE id = $1', [eventId]);
     });
 
-    await expect(purgeEventMedia(eventId)).rejects.toThrow(/mark/i);
+    await expect(purgeEventMedia(eventId, mark!)).rejects.toThrow(/mark/i);
 
     expect(await photoCount(eventId)).toBe(1);
   });
@@ -249,7 +254,7 @@ describe('a purge whose deletion mark lapses', () => {
   it('stops when its mark cannot be renewed', async () => {
     const eventId = await deletableAlbum(5);
     await addSecondPhoto(eventId);
-    await markEventDeleting(eventId);
+    const mark = await markEventDeleting(eventId);
     let clock = Date.now();
     vi.spyOn(Date, 'now').mockImplementation(() => clock);
     const real = storageAdapter.delete.bind(storageAdapter);
@@ -260,13 +265,13 @@ describe('a purge whose deletion mark lapses', () => {
     const realQuery = pool.query.bind(pool) as (...args: unknown[]) => Promise<unknown>;
     vi.spyOn(pool, 'query').mockImplementation(((...args: unknown[]) => {
       const sql = String(args[0]);
-      if (sql.includes('SET deleting_at = NOW()') && sql.includes('deleting_at IS NOT NULL')) {
+      if (sql.includes('SET deleting_at = NOW()') && sql.includes('deleting_at = $2::timestamptz')) {
         return Promise.reject(new Error('connection reset'));
       }
       return realQuery(...args);
     }) as typeof pool.query);
 
-    await expect(purgeEventMedia(eventId)).rejects.toThrow();
+    await expect(purgeEventMedia(eventId, mark!)).rejects.toThrow();
 
     expect(await photoCount(eventId)).toBe(2);
   });
@@ -284,15 +289,45 @@ describe('two deletions of the same album', () => {
   it('lets only one hold the mark at a time', async () => {
     const eventId = await deletableAlbum(5);
 
-    expect(await markEventDeleting(eventId)).toBe(true);
-    expect(await markEventDeleting(eventId)).toBe(false);
+    expect(await markEventDeleting(eventId)).not.toBeNull();
+    expect(await markEventDeleting(eventId)).toBeNull();
+  });
+
+  /**
+   * N-100 — a mark recorded a time, not who held it. A deletion that stalled
+   * for an hour had its mark taken over, carried on under the new holder's
+   * mark, and on failure took that mark off, reopening uploads under the
+   * other deletion's purge.
+   */
+  it('does not let a deletion whose mark was taken over take the new holder\'s mark off (N-100)', async () => {
+    const eventId = await deletableAlbum(5);
+    const stalled = await markEventDeleting(eventId);
+    await query("UPDATE events SET deleting_at = NOW() - INTERVAL '2 hours' WHERE id = $1", [eventId]);
+    const successor = await markEventDeleting(eventId);
+    expect(successor).not.toBeNull();
+
+    await clearDeletionMark(stalled!);
+
+    expect(await deletionMark(eventId)).not.toBeNull();
+    await clearDeletionMark(successor!);
+    expect(await deletionMark(eventId)).toBeNull();
+  });
+
+  it('stops a purge whose mark was taken over, rather than carry on under another\'s (N-100)', async () => {
+    const eventId = await deletableAlbum(5);
+    const stalled = await markEventDeleting(eventId);
+    await query("UPDATE events SET deleting_at = NOW() - INTERVAL '2 hours' WHERE id = $1", [eventId]);
+    await markEventDeleting(eventId);
+
+    await expect(purgeEventMedia(eventId, stalled!)).rejects.toThrow(/mark/i);
+    expect(await deletionMark(eventId)).not.toBeNull();
   });
 
   it('lets a deletion take over a mark left behind by one that crashed', async () => {
     const eventId = await deletableAlbum(5);
     await query("UPDATE events SET deleting_at = NOW() - INTERVAL '2 hours' WHERE id = $1", [eventId]);
 
-    expect(await markEventDeleting(eventId)).toBe(true);
+    expect(await markEventDeleting(eventId)).not.toBeNull();
   });
 
   it('leaves an album the host is deleting to the host, mark and all', async () => {

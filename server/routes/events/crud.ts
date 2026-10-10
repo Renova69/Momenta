@@ -640,7 +640,8 @@ eventsRouter.delete(
       // Stamped under the album's upload lock, so an upload that holds the
       // lock now commits before the snapshot and one that takes it later
       // sees the stamp and refuses (getUploadContext).
-      if (!(await markEventDeleting(id))) {
+      const mark = await markEventDeleting(id);
+      if (!mark) {
         // The retention sweep is purging it; its mark is not ours to take off.
         return res.status(409).json({
           error: 'This album is already being deleted. Try again in a few minutes.',
@@ -652,10 +653,10 @@ eventsRouter.delete(
       // If the purge or the row delete fails, the album is still here and must
       // take uploads again. A crash leaves the mark behind; getUploadContext
       // stops honouring one that old (DELETION_STALE_AFTER).
-      const unmark = () => clearDeletionMark(id).catch(() => undefined);
+      const unmark = () => clearDeletionMark(mark).catch(() => undefined);
       let purge: Awaited<ReturnType<typeof purgeEventMedia>>;
       try {
-        purge = await purgeEventMedia(id);
+        purge = await purgeEventMedia(id, mark);
       } catch (err) {
         await unmark();
         throw err;
