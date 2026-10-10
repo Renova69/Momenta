@@ -7,7 +7,7 @@
 **Performance pass:** 2026-09-22 to 23 (§3e).
 **Security review, partial:** 2026-09-25 to 26, recorded 2026-10-04 (§3f). **All 25 findings fixed.**
 **Remaining five domains:** reviewed 2026-10-05 (§3g). **All 36 findings fixed.**
-**Review of the §3g fixes:** 2026-10-10 (§3h). **12 of 12 findings open.**
+**Review of the §3g fixes:** 2026-10-10 (§3h). **11 of 12 findings open.**
 
 > **Read this first.** The audit below is preserved as written — each finding
 > still describes the code as it was on 2026-09-15, because a finding rewritten
@@ -956,9 +956,11 @@ until every client path that calls it has been read.
 | **N-93** | The N-73 deletion mark could lapse without the purge noticing: a failed renewal was only logged, a mark taken off by something else was renewed into nothing, the rows were deleted without checking the mark was still held, and two deletions of one album shared one mark, each clearing it under the other. Found by the background security review of e38d95b. | Medium | `server/lib/retention.ts`, `server/routes/events/crud.ts` | Yes | `7a4ae79` |
 | **N-94** | Three production dependencies had published high or critical advisories, and the CI audit gate was failing on all three: `proxy-addr` 2.0.7 (critical: IP spoofing through an IPv4-mapped IPv6 trust subnet, under Express), `sharp` 0.35.4 (high: librsvg CVE in the decoder every upload goes through), `brace-expansion` 5.0.9 (high: CPU and stack-exhaustion DoS, under archiver). Found while fixing N-83. | High | `package.json`, `package-lock.json` | Yes | `56dbb2d` |
 
+---
+
 ## 3h. The Review of the §3g Fixes (2026-10-10)
 
-**Open: 12 of 12.**
+**Open: 11 of 12.** Fixed so far: N-95.
 
 The same four-way review as after §3f, over everything §3g changed
 (`4795c58..HEAD` at the time): media and quarantine, album lifecycle and
@@ -974,7 +976,7 @@ and N-74, N-103 of N-75, N-104 of N-62.
 
 | ID | Finding | Severity | Files | Verified | Fixed |
 |---|---|---|---|---|---|
-| **N-95** | **Rejecting a photo whose promotion half-failed leaves its moved files public.** Since N-70 a promotion that moves some of a photo's files records them but keeps `is_quarantined` true until all have moved. `withholdPhotoToQuarantine` returns early on that flag, so a rejection or a step back to pending withholds nothing, and the copies already moved stay reachable by URL. | Medium | `server/lib/photoQuarantine.ts` | Yes | Open |
+| **N-95** | **Rejecting a photo whose promotion half-failed leaves its moved files public.** Since N-70 a promotion that moves some of a photo's files records them but keeps `is_quarantined` true until all have moved. `withholdPhotoToQuarantine` returns early on that flag, so a rejection or a step back to pending withholds nothing, and the copies already moved stay reachable by URL. | Medium | `server/lib/photoQuarantine.ts` | Yes | `5407b7d` |
 | **N-96** | **One upload that always times out blocks the offline queue for good.** The 120-second replay timeout (N-59) is a network error to the queue, which spends no retry and ends the pass (N-60). A voice message too large for a slow link stays first in line and nothing queued behind it is ever sent. | Medium | `src/services/offlineQueueService.ts` | Yes | Open |
 | **N-97** | The projector pins no slide until its first tick, so a photo arriving before then (on a new wall, the usual case) still swaps the slide on screen, and the arrival is then shown a second time. | Medium | `src/components/projector/LiveProjectorScreen.tsx` | Yes | Open |
 | **N-98** | The projector picks the slide's Ken Burns pan from its position, so every arriving photo changes the class on the image already showing and restarts its animation mid-slide. | Medium | `src/components/projector/LiveProjectorScreen.tsx` | Yes | Open |
