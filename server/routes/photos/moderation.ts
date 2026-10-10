@@ -14,7 +14,7 @@ import { errorLabel } from '../../lib/errors';
 import { storageAdapter, toStoragePath, isQuarantined } from '../../lib/storage';
 import { requireAuth } from '../../middleware/auth';
 import { validateBody } from '../../middleware/validate';
-import { promotePhotoFromQuarantine, withholdPhotoToQuarantine } from '../../lib/photoQuarantine';
+import { promotePhotoFromQuarantine, withholdPhotoToQuarantine, withPhotoMoveLock } from '../../lib/photoQuarantine';
 import {
   StatusPhotoSchema,
   loadGuestPhotoDto,
@@ -118,17 +118,29 @@ photosRouter.post('/:id/status', requireAuth, requireUuidParams('id'), validateB
 photosRouter.delete('/:id', requireAuth, requireUuidParams('id'), async (req, res) => {
   const { id } = req.params;
   try {
-    const photoQuery = await pool.query(
-      `SELECT p.event_id, p.storage_path, p.original_storage_path, p.thumbnail_url, e.host_user_id
+    const ownerQuery = await pool.query(
+      `SELECT e.host_user_id
          FROM photos p JOIN events e ON e.id = p.event_id
         WHERE p.id = $1`,
       [id]
     );
     // [FIX H-18] Explicit 404 instead of silent success
-    if (photoQuery.rows.length === 0) return res.status(404).json({ error: 'Photo not found' });
-    if (photoQuery.rows[0].host_user_id !== req.user!.userId) return res.status(403).json({ error: 'Forbidden' });
+    if (ownerQuery.rows.length === 0) return res.status(404).json({ error: 'Photo not found' });
+    if (ownerQuery.rows[0].host_user_id !== req.user!.userId) return res.status(403).json({ error: 'Forbidden' });
 
-    const { event_id, storage_path, original_storage_path, thumbnail_url } = photoQuery.rows[0];
+    // N-85 — under the photo's own move lock (N-71), with its paths read once
+    // the lock is held. Read before it, a promotion moving the files at the
+    // same moment left this deleting the old paths while the row went, and
+    // the copies the promotion had just made public stayed in storage with
+    // nothing naming them.
+    let outcome: { eventId: string; failedPaths: string[] } | null = null;
+    await withPhotoMoveLock(pool, String(id), async (client) => {
+      const photoQuery = await client.query(
+        'SELECT event_id, storage_path, original_storage_path, thumbnail_url FROM photos WHERE id = $1',
+        [id]
+      );
+      if (photoQuery.rows.length === 0) return;
+      const { event_id, storage_path, original_storage_path, thumbnail_url } = photoQuery.rows[0];
 
     // Files first, then the row — the same order album deletion follows, and
     // for the same reason. The row is the only record of where the bytes are:
@@ -142,33 +154,46 @@ photosRouter.delete('/:id', requireAuth, requireUuidParams('id'), async (req, re
     // All three derivatives, not just the display copy. Deleting only
     // storage_path left the original — by far the largest file — and the
     // thumbnail in storage forever.
-    const failedPaths: string[] = [];
-    for (const path of [
-      storage_path,
-      original_storage_path,
-      toStoragePath(thumbnail_url),
-    ]) {
-      if (!path) continue;
-      await storageAdapter.delete(path).catch((e: unknown) => {
-        failedPaths.push(path);
-        console.warn('[Photos] Storage delete failed:', errorLabel(e));
-      });
-    }
+      const failedPaths: string[] = [];
+      for (const path of [
+        storage_path,
+        original_storage_path,
+        toStoragePath(thumbnail_url),
+      ]) {
+        if (!path) continue;
+        await storageAdapter.delete(path).catch((e: unknown) => {
+          failedPaths.push(path);
+          console.warn('[Photos] Storage delete failed:', errorLabel(e));
+        });
+      }
 
-    // A file that would not delete keeps its row, so the bytes stay accounted
-    // for and the next attempt can still find them. Reported as a failure
-    // rather than a half-done success: the photo is still there.
+      if (failedPaths.length === 0) {
+        await client.query('DELETE FROM photos WHERE id = $1', [id]);
+      } else {
+        // A file that would not delete keeps its row, so the bytes stay
+        // accounted for and the next attempt can still find them. But the
+        // files that did delete are gone, so the photo is taken out of the
+        // guest feed rather than left there broken (N-85): the host asked
+        // for it to go.
+        await client.query("UPDATE photos SET status = 'rejected' WHERE id = $1", [id]);
+      }
+      outcome = { eventId: event_id, failedPaths };
+    });
+
+    // Deleted by someone else while this waited for the lock.
+    if (!outcome) return res.status(404).json({ error: 'Photo not found' });
+    const { eventId, failedPaths } = outcome as { eventId: string; failedPaths: string[] };
+
     if (failedPaths.length > 0) {
       console.error(`[Photos] delete for ${id} left ${failedPaths.length} object(s) in storage`);
+      wsManager.broadcastToEvent(eventId, 'PHOTO_STATUS_UPDATED', { photoId: id, status: 'rejected' });
       return res.status(502).json({
-        error: 'The photo could not be removed from storage. Nothing was deleted — please try again.',
+        error: 'The photo could not be fully removed from storage. It is hidden from guests — please try again.',
         code: 'STORAGE_DELETE_FAILED',
       });
     }
 
-    await pool.query('DELETE FROM photos WHERE id = $1', [id]);
-
-    wsManager.broadcastToEvent(event_id, 'PHOTO_REMOVED', { photoId: id });
+    wsManager.broadcastToEvent(eventId, 'PHOTO_REMOVED', { photoId: id });
     res.json({ success: true, photoId: id });
   } catch (err) {
     console.error('[Photos] DELETE error:', errorLabel(err));

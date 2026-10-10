@@ -43,7 +43,7 @@ const PUBLIC_STATUSES = ['approved', 'featured'];
  * unlock fails is closed rather than returned to the pool, so it cannot take
  * the lock back into the pool with it.
  */
-async function withPhotoMoveLock(
+export async function withPhotoMoveLock(
   db: Pool | PoolClient,
   photoId: string,
   move: (client: PoolClient) => Promise<void>
