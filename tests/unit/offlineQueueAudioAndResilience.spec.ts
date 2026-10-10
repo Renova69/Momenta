@@ -464,6 +464,75 @@ describe('replaying after the signal comes back (N-59, N-60, N-61)', () => {
     expect(dropped).toHaveBeenCalledTimes(1);
   });
 
+  /**
+   * N-96 — a replay that ran out of time was a network error to the queue,
+   * which spends no retry and ends the pass. A voice message too large for a
+   * slow link then stayed first in line for good, and nothing queued behind
+   * it was ever sent.
+   */
+  describe('a replay that runs out of time (N-96)', () => {
+    /** A fetch that never answers, only gives up when its deadline aborts it. */
+    function stallsUntilAborted() {
+      return (_url: unknown, init?: RequestInit) =>
+        new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')));
+        });
+    }
+
+    /** Run a flush, passing each replay's 120-second deadline as it is set. */
+    async function flushPastDeadlines(fetchSpy: { mock: { calls: unknown[] } }) {
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+      try {
+        const flushing = queue.flushQueue();
+        let settled = false;
+        void flushing.then(() => (settled = true));
+        for (let i = 0; i < 400 && !settled; i++) {
+          await new Promise((resolve) => setImmediate(resolve));
+          if (fetchSpy.mock.calls.length > 0) await vi.advanceTimersByTimeAsync(120_000);
+        }
+        await flushing;
+      } finally {
+        vi.useRealTimers();
+      }
+    }
+
+    it('spends a retry on it and goes on to what is queued behind it', async () => {
+      setOnline(false);
+      await queue.enqueue('audio', { eventId: 'e1', note: 'too big for this link' });
+      await queue.enqueue('photo', { eventId: 'e1' });
+      setOnline(true);
+      // The stalled one first in line: two items queued in one millisecond
+      // otherwise come back in either order.
+      const real = queue.getQueue.bind(queue);
+      vi.spyOn(queue, 'getQueue').mockImplementationOnce(async () =>
+        (await real()).sort((a, b) => (a.type === 'audio' ? -1 : b.type === 'audio' ? 1 : 0))
+      );
+      const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (url, init) =>
+        String(url).includes('/api/audio') ? stallsUntilAborted()(url, init) : jsonResponse({ id: 'p1' })
+      );
+      vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+      await flushPastDeadlines(fetchSpy);
+
+      const remaining = await queue.getQueue();
+      expect(remaining.map((i) => i.type)).toEqual(['audio']);
+      expect(remaining[0].retryCount).toBe(1);
+    });
+
+    it('gives up on one that always runs out of time, and says so', async () => {
+      await queuedPhoto();
+      const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(stallsUntilAborted());
+      vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+      const dropped = vi.fn();
+      queue.onItemDropped(dropped);
+
+      for (let i = 0; i < 7; i++) await flushPastDeadlines(fetchSpy);
+
+      expect(await queue.getQueue()).toHaveLength(0);
+      expect(dropped).toHaveBeenCalledTimes(1);
+    });
+  });
+
   it('gives every replay a deadline, so one stalled request cannot hold the queue', async () => {
     await queuedPhoto();
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse({ id: 'p1' }));

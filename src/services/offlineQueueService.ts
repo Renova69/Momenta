@@ -273,6 +273,15 @@ export class OfflineQueueService {
           try {
             res = await fetch(endpoint, { method: 'POST', headers, body, signal: controller.signal });
           } catch (networkErr) {
+            if (controller.signal.aborted) {
+              // N-96 — this upload ran out of time; the link answered, it was
+              // too slow for this item. Spend a retry and go on: treated as
+              // the network failing, an upload too large for the link stayed
+              // first in line for good and nothing behind it was ever sent.
+              console.warn('[OfflineQueue] Upload ran out of time, trying the next one:', item.id);
+              await this.incrementRetry(item.id);
+              continue;
+            }
             // N-60 — the network failed, not the item. Spend no retry, and stop
             // this pass: the next item would only fail the same way. The next
             // 'online' event or enqueue tries again.
