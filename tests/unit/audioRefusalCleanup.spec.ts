@@ -40,14 +40,18 @@ let eventId = '';
 
 const WEBM = Buffer.concat([Buffer.from([0x1a, 0x45, 0xdf, 0xa3]), Buffer.alloc(2048, 7)]);
 
-function postAudio(): Promise<Response> {
+function postAudio(extraFields: Record<string, string> = {}): Promise<Response> {
   const boundary = `----AudioRefusal${Date.now()}`;
+  const extras = Object.entries(extraFields).map(([key, value]) =>
+    Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="${key}"\r\n\r\n${value}\r\n`)
+  );
   const body = Buffer.concat([
     Buffer.from(
       `--${boundary}\r\nContent-Disposition: form-data; name="audio"; filename="m.webm"\r\nContent-Type: audio/webm\r\n\r\n`
     ),
     WEBM,
     Buffer.from(`\r\n--${boundary}\r\nContent-Disposition: form-data; name="eventId"\r\n\r\n${eventId}\r\n`),
+    ...extras,
     Buffer.from(`--${boundary}--\r\n`),
   ]);
   return fetch(`${BASE_URL}/api/audio`, {
@@ -112,5 +116,19 @@ describe('a voice message refused under the upload lock', () => {
 
     expect(res.status).toBe(201);
     expect(savedRecordings()).toHaveLength(1);
+  });
+
+  it('leaves no recording behind when the row itself cannot be written (N-86)', async () => {
+    // Any failure of the insert, not only the two refusals above: here a
+    // duration the column cannot hold. The file was saved first, and only a
+    // refusal used to remove it.
+    refuseUnderLock.on = false;
+    const before = savedRecordings();
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    const res = await postAudio({ durationSeconds: '99999999999' });
+
+    expect(res.status).toBe(500);
+    expect(savedRecordings()).toEqual(before);
   });
 });

@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import multer from 'multer';
+import type { PoolClient } from 'pg';
 import { pool } from '../lib/db';
 import { CONFIG } from '../lib/config';
 import { saveBuffer, toAbsoluteUrl, storageAdapter } from '../lib/storage';
@@ -173,7 +174,13 @@ audioRouter.post('/', uploadIpLimiter, uploadLimiter, upload.single('audio'), re
     // and saving the file took real time, so concurrent audio uploads for
     // the same event could both have read the same stale total and both
     // passed. This is the check that actually has to hold.
-    const lockClient = await pool.connect();
+    let lockClient: PoolClient;
+    try {
+      lockClient = await pool.connect();
+    } catch (err) {
+      await discardSavedRecording();
+      throw err;
+    }
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let insertedRow: any;
     try {
@@ -206,15 +213,17 @@ audioRouter.post('/', uploadIpLimiter, uploadLimiter, upload.single('audio'), re
       await lockClient.query('COMMIT');
     } catch (err) {
       await lockClient.query('ROLLBACK').catch(() => undefined);
+      // N-86 — whatever stopped the row, the recording saved above names
+      // nothing now. Only the two refusals above used to remove it.
+      await discardSavedRecording();
       // Two copies of one recording arrived together and the other was stored
-      // first (N-78). This copy's file goes; the answer is the stored one.
+      // first (N-78): the answer is the stored one.
       if (!(localId && isUniqueViolation(err, 'idx_audio_client_upload'))) throw err;
       insertedRow = null;
     } finally {
       lockClient.release();
     }
     if (insertedRow === null && localId) {
-      await discardSavedRecording();
       const stored = await findReplayedAudio(eventId, validGuestId, localId);
       if (!stored) throw new Error('A recording refused as a duplicate could not be found');
       return res.status(200).json(audioReplayAnswer(stored, localId, identity, eventId));
