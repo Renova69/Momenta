@@ -7,6 +7,7 @@
 **Performance pass:** 2026-09-22 to 23 (§3e).
 **Security review, partial:** 2026-09-25 to 26, recorded 2026-10-04 (§3f). **All 25 findings fixed.**
 **Remaining five domains:** reviewed 2026-10-05 (§3g). **All 36 findings fixed.**
+**Review of the §3g fixes:** 2026-10-10 (§3h). **12 of 12 findings open.**
 
 > **Read this first.** The audit below is preserved as written — each finding
 > still describes the code as it was on 2026-09-15, because a finding rewritten
@@ -955,8 +956,38 @@ until every client path that calls it has been read.
 | **N-93** | The N-73 deletion mark could lapse without the purge noticing: a failed renewal was only logged, a mark taken off by something else was renewed into nothing, the rows were deleted without checking the mark was still held, and two deletions of one album shared one mark, each clearing it under the other. Found by the background security review of e38d95b. | Medium | `server/lib/retention.ts`, `server/routes/events/crud.ts` | Yes | `7a4ae79` |
 | **N-94** | Three production dependencies had published high or critical advisories, and the CI audit gate was failing on all three: `proxy-addr` 2.0.7 (critical: IP spoofing through an IPv4-mapped IPv6 trust subnet, under Express), `sharp` 0.35.4 (high: librsvg CVE in the decoder every upload goes through), `brace-expansion` 5.0.9 (high: CPU and stack-exhaustion DoS, under archiver). Found while fixing N-83. | High | `package.json`, `package-lock.json` | Yes | `56dbb2d` |
 
----
+## 3h. The Review of the §3g Fixes (2026-10-10)
 
+**Open: 12 of 12.**
+
+The same four-way review as after §3f, over everything §3g changed
+(`4795c58..HEAD` at the time): media and quarantine, album lifecycle and
+infrastructure, identity and the realtime server, and the client. No
+Critical or High findings. Every finding below was checked against the code
+here before it was recorded; several remarks were left out as not defects
+(an informational notice shown through the error toast, rename answers
+crossing in flight, repeated offline QR save errors).
+
+Most of these are edges of §3g's own fixes: N-95 of N-70, N-96 of N-59 and
+N-60, N-97 and N-98 of N-91, N-99 of N-78 and N-84, N-100 and N-101 of N-73
+and N-74, N-103 of N-75, N-104 of N-62.
+
+| ID | Finding | Severity | Files | Verified | Fixed |
+|---|---|---|---|---|---|
+| **N-95** | **Rejecting a photo whose promotion half-failed leaves its moved files public.** Since N-70 a promotion that moves some of a photo's files records them but keeps `is_quarantined` true until all have moved. `withholdPhotoToQuarantine` returns early on that flag, so a rejection or a step back to pending withholds nothing, and the copies already moved stay reachable by URL. | Medium | `server/lib/photoQuarantine.ts` | Yes | Open |
+| **N-96** | **One upload that always times out blocks the offline queue for good.** The 120-second replay timeout (N-59) is a network error to the queue, which spends no retry and ends the pass (N-60). A voice message too large for a slow link stays first in line and nothing queued behind it is ever sent. | Medium | `src/services/offlineQueueService.ts` | Yes | Open |
+| **N-97** | The projector pins no slide until its first tick, so a photo arriving before then (on a new wall, the usual case) still swaps the slide on screen, and the arrival is then shown a second time. | Medium | `src/components/projector/LiveProjectorScreen.tsx` | Yes | Open |
+| **N-98** | The projector picks the slide's Ken Burns pan from its position, so every arriving photo changes the class on the image already showing and restarts its animation mid-slide. | Medium | `src/components/projector/LiveProjectorScreen.tsx` | Yes | Open |
+| **N-99** | Two copies of one upload arriving together at a full cap or allowance: the second is refused by the locked re-check (N-84) before its insert can meet the duplicate, so the phone is told a stored photo, or voice message, was refused and reports it lost. N-78 covers only a replay that arrives after the first copy is stored. | Low | `server/lib/photoWrite.ts`, `server/routes/photos/upload.ts`, `server/routes/audio.ts` | Yes | Open |
+| **N-100** | A deletion mark records a time, not an owner. A purge stalled for over an hour has its mark taken over by another deletion, carries on under it, and on failure clears it, reopening uploads under the other deletion's purge. | Low | `server/lib/retention.ts`, `server/routes/events/crud.ts` | Yes | Open |
+| **N-101** | An album extended after the retention sweep's last check (N-74) is still purged: nothing re-checks during a purge that can run for an hour, and `refreshExpiryDates` takes no lock. | Low | `server/lib/retention.ts` | Yes | Open |
+| **N-102** | The voice-message route takes `localId` with no length limit (the photo schema caps it at 100). A long one fails the insert on the unique index with a 500. | Low | `server/routes/audio.ts` | Yes | Open |
+| **N-103** | The photographer portal's "photos sent" count is replaced, not added to, on a retry: after 8 of 10 frames and a retry of the other 2, it says 2 were sent. | Low | `src/components/ingest/PhotographerIngestPortal.tsx` | Yes | Open |
+| **N-104** | Since N-62 the album address is saved on leaving the field, but the address bar follows each keystroke: a reload before then opens an address that does not exist. A cleared field is never saved and leaves the field and bar empty. | Low | `src/components/host/dashboard/OverviewTab.tsx`, `src/components/host/HostDashboard.tsx` | Yes | Open |
+| **N-105** | The portal's translated batch-failure message quotes the server's English reason, and the client's own fallbacks ("Network error", "Not a supported image file") are English too. | Low | `src/components/ingest/PhotographerIngestPortal.tsx`, `src/api/ingestApi.ts` | Yes | Open |
+| **N-106** | A failed advisory unlock on the reveal promotion's shared connection returns that connection to the pool still holding a photo's move lock; every later approve or delete of that photo then waits for ever. | Low | `server/lib/photoQuarantine.ts` | Yes | Open |
+
+---
 ## 4. Confirmed Low
 
 **All eight fixed in `9e6f239`**, except L-1, which was not a defect: `vercel.json`
