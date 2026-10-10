@@ -6,7 +6,7 @@
 **Client mutation sweep:** 2026-09-21 (§8).
 **Performance pass:** 2026-09-22 to 23 (§3e).
 **Security review, partial:** 2026-09-25 to 26, recorded 2026-10-04 (§3f). **All 25 findings fixed.**
-**Remaining five domains:** reviewed 2026-10-05 (§3g). **8 of 35 findings open.**
+**Remaining five domains:** reviewed 2026-10-05 (§3g). **8 of 36 findings open.**
 
 > **Read this first.** The audit below is preserved as written — each finding
 > still describes the code as it was on 2026-09-15, because a finding rewritten
@@ -900,7 +900,7 @@ trusting them.
 
 ## 3g. The Remaining Five Domains (2026-10-05)
 
-**Open: 8 of 35.** Fixed so far: N-59, N-60, N-61, N-62, N-63, N-64, N-65, N-66, N-67, N-68, N-69, N-70, N-71, N-72, N-73, N-74, N-75, N-76, N-77, N-78, N-79, N-80, N-81, N-82, N-83, N-92, N-93.
+**Open: 8 of 36.** Fixed so far: N-59, N-60, N-61, N-62, N-63, N-64, N-65, N-66, N-67, N-68, N-69, N-70, N-71, N-72, N-73, N-74, N-75, N-76, N-77, N-78, N-79, N-80, N-81, N-82, N-83, N-92, N-93, N-94.
 
 The rest of the review §3f began: media, infra, db, guest UI and host UI, one
 reviewer each, with the same brief — races, missing checks, inconsistent
@@ -953,6 +953,7 @@ until every client path that calls it has been read.
 | **N-91** | The projector wall indexes into a list that new photos shift, so the slide changes mid-display and new photos wait a whole cycle; QR studio save failures are swallowed. | Low | `src/components/projector/LiveProjectorScreen.tsx`, `src/services/qrCanvasService.ts` | No | Open |
 | **N-92** | The live `PHOTO_ADDED` broadcast went to the whole room with `originalUrl`: the untouched camera file, EXIF and GPS included, which the REST feed gives to the host only (MED-02). Found while fixing N-67. | High | `server/lib/photoWrite.ts`, `server/ws/wsServer.ts` | Yes | `aa620e6` |
 | **N-93** | The N-73 deletion mark could lapse without the purge noticing: a failed renewal was only logged, a mark taken off by something else was renewed into nothing, the rows were deleted without checking the mark was still held, and two deletions of one album shared one mark, each clearing it under the other. Found by the background security review of e38d95b. | Medium | `server/lib/retention.ts`, `server/routes/events/crud.ts` | Yes | `7a4ae79` |
+| **N-94** | Three production dependencies had published high or critical advisories, and the CI audit gate was failing on all three: `proxy-addr` 2.0.7 (critical: IP spoofing through an IPv4-mapped IPv6 trust subnet, under Express), `sharp` 0.35.4 (high: librsvg CVE in the decoder every upload goes through), `brace-expansion` 5.0.9 (high: CPU and stack-exhaustion DoS, under archiver). Found while fixing N-83. | High | `package.json`, `package-lock.json` | Yes | `56dbb2d` |
 
 ---
 
