@@ -7,7 +7,7 @@
 **Performance pass:** 2026-09-22 to 23 (§3e).
 **Security review, partial:** 2026-09-25 to 26, recorded 2026-10-04 (§3f). **All 25 findings fixed.**
 **Remaining five domains:** reviewed 2026-10-05 (§3g). **All 36 findings fixed.**
-**Review of the §3g fixes:** 2026-10-10 (§3h). **8 of 12 findings open.**
+**Review of the §3g fixes:** 2026-10-10 (§3h). **7 of 12 findings open.**
 
 > **Read this first.** The audit below is preserved as written — each finding
 > still describes the code as it was on 2026-09-15, because a finding rewritten
@@ -960,7 +960,7 @@ until every client path that calls it has been read.
 
 ## 3h. The Review of the §3g Fixes (2026-10-10)
 
-**Open: 8 of 12.** Fixed so far: N-95, N-96, N-97, N-98.
+**Open: 7 of 12.** Fixed so far: N-95, N-96, N-97, N-98, N-99.
 
 The same four-way review as after §3f, over everything §3g changed
 (`4795c58..HEAD` at the time): media and quarantine, album lifecycle and
@@ -980,7 +980,7 @@ and N-74, N-103 of N-75, N-104 of N-62.
 | **N-96** | **One upload that always times out blocks the offline queue for good.** The 120-second replay timeout (N-59) is a network error to the queue, which spends no retry and ends the pass (N-60). A voice message too large for a slow link stays first in line and nothing queued behind it is ever sent. | Medium | `src/services/offlineQueueService.ts` | Yes | `a4cada6` |
 | **N-97** | The projector pins no slide until its first tick, so a photo arriving before then (on a new wall, the usual case) still swaps the slide on screen, and the arrival is then shown a second time. | Medium | `src/components/projector/LiveProjectorScreen.tsx` | Yes | `0a86f36` |
 | **N-98** | The projector picks the slide's Ken Burns pan from its position, so every arriving photo changes the class on the image already showing and restarts its animation mid-slide. | Medium | `src/components/projector/LiveProjectorScreen.tsx` | Yes | `0a86f36` |
-| **N-99** | Two copies of one upload arriving together at a full cap or allowance: the second is refused by the locked re-check (N-84) before its insert can meet the duplicate, so the phone is told a stored photo, or voice message, was refused and reports it lost. N-78 covers only a replay that arrives after the first copy is stored. | Low | `server/lib/photoWrite.ts`, `server/routes/photos/upload.ts`, `server/routes/audio.ts` | Yes | Open |
+| **N-99** | Two copies of one upload arriving together at a full cap or allowance: the second is refused by the locked re-check (N-84) before its insert can meet the duplicate, so the phone is told a stored photo, or voice message, was refused and reports it lost. N-78 covers only a replay that arrives after the first copy is stored. | Low | `server/lib/photoWrite.ts`, `server/routes/photos/upload.ts`, `server/routes/audio.ts` | Yes | `ded71e2` |
 | **N-100** | A deletion mark records a time, not an owner. A purge stalled for over an hour has its mark taken over by another deletion, carries on under it, and on failure clears it, reopening uploads under the other deletion's purge. | Low | `server/lib/retention.ts`, `server/routes/events/crud.ts` | Yes | Open |
 | **N-101** | An album extended after the retention sweep's last check (N-74) is still purged: nothing re-checks during a purge that can run for an hour, and `refreshExpiryDates` takes no lock. | Low | `server/lib/retention.ts` | Yes | Open |
 | **N-102** | The voice-message route takes `localId` with no length limit (the photo schema caps it at 100). A long one fails the insert on the unique index with a 500. | Low | `server/routes/audio.ts` | Yes | Open |
