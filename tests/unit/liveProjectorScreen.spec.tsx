@@ -175,6 +175,62 @@ describe('LiveProjectorScreen', () => {
     expect(document.body.textContent).not.toContain('❤️');
   });
 
+  /**
+   * N-91 — the slide on screen was a position in a newest-first list. A new
+   * photo arrives at the front, so every position moved: the slide changed
+   * under the guests watching it, and the new photo, now first, waited for
+   * the whole album to go round. Each arrival also restarted the timer, so a
+   * busy evening could hold one slide on screen indefinitely.
+   */
+  describe('a photo arriving while the wall is showing (N-91)', () => {
+    const day = (n: number) => `2026-01-0${n}T00:00:00Z`;
+    const album = () => [
+      photo({ id: 'a', guestName: 'Guest A', createdAt: day(3) }),
+      photo({ id: 'b', guestName: 'Guest B', createdAt: day(2) }),
+      photo({ id: 'c', guestName: 'Guest C', createdAt: day(1) }),
+    ];
+    const arrival = () => photo({ id: 'n', guestName: 'Guest New', createdAt: day(9) });
+    const tick = (ms = 6000) => act(() => void vi.advanceTimersByTime(ms));
+
+    it('leaves the photo on screen where it is', () => {
+      vi.useFakeTimers();
+      const { rerender } = renderScreen(album());
+      tick();
+      expect(screen.getByText('Guest B')).toBeInTheDocument();
+
+      rerender(<LiveProjectorScreen event={EVENT} photos={[arrival(), ...album()]} onClose={vi.fn()} />);
+
+      expect(screen.getByText('Guest B')).toBeInTheDocument();
+    });
+
+    it('is shown next, and then the slideshow carries on from where it was', () => {
+      vi.useFakeTimers();
+      const { rerender } = renderScreen(album());
+      tick(); // B
+      rerender(<LiveProjectorScreen event={EVENT} photos={[arrival(), ...album()]} onClose={vi.fn()} />);
+
+      tick();
+      expect(screen.getByText('Guest New')).toBeInTheDocument();
+      tick();
+      expect(screen.getByText('Guest C')).toBeInTheDocument();
+    });
+
+    it('does not hold the slide on screen longer because photos arrived', () => {
+      vi.useFakeTimers();
+      const { rerender } = renderScreen(album());
+      tick(4000);
+      // Older than the album, as a photo approved late is: it lands at the end
+      // and moves nothing, so only the timer is under test.
+      const lateApproval = photo({ id: 'late', guestName: 'Guest Late', createdAt: '2025-12-31T00:00:00Z' });
+      rerender(<LiveProjectorScreen event={EVENT} photos={[...album(), lateApproval]} onClose={vi.fn()} />);
+      expect(screen.getByText('Guest A')).toBeInTheDocument();
+
+      tick(2000);
+
+      expect(screen.queryByText('Guest A')).not.toBeInTheDocument();
+    });
+  });
+
   it('calls onClose when the close button is clicked', () => {
     const onClose = vi.fn();
     renderScreen([photo()], onClose);

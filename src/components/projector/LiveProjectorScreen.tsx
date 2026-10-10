@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { WeddingEvent, Photo, ScavengerQuest } from '../../types';
 import { QRCodeSVG } from 'qrcode.react';
 import { i18n } from '../../i18n';
@@ -76,7 +76,63 @@ export const LiveProjectorScreen: React.FC<LiveProjectorScreenProps> = ({
     [photos]
   );
 
-  const [currentIndex, setCurrentIndex] = useState(0);
+  // N-91 — the slide on screen is a photo, not a position. It was an index
+  // into this newest-first list, so a new photo arriving at the front moved
+  // every position: the slide changed under the guests watching it, and the
+  // new photo, now first, waited for the whole album to go round.
+  const [currentId, setCurrentId] = useState<string | null>(null);
+  const currentIdRef = useRef<string | null>(null);
+  currentIdRef.current = currentId;
+  const photosRef = useRef(displayPhotos);
+  photosRef.current = displayPhotos;
+  // Photos that arrived while the wall was showing, shown next in arrival order.
+  const knownIdsRef = useRef<Set<string> | null>(null);
+  const arrivalsRef = useRef<string[]>([]);
+  // The slide the arrivals interrupted, to carry on from once they are shown.
+  const resumeFromRef = useRef<string | null>(null);
+  // Where the slide was, for when the photo on screen is deleted.
+  const lastIndexRef = useRef(0);
+
+  useEffect(() => {
+    const ids = displayPhotos.map((p) => p.id);
+    if (knownIdsRef.current === null) {
+      knownIdsRef.current = new Set(ids);
+      return;
+    }
+    for (const id of ids) {
+      if (knownIdsRef.current.has(id)) continue;
+      knownIdsRef.current.add(id);
+      arrivalsRef.current.push(id);
+    }
+  }, [displayPhotos]);
+
+  const foundIndex = currentId ? displayPhotos.findIndex((p) => p.id === currentId) : -1;
+  const currentIndex =
+    foundIndex >= 0 ? foundIndex : Math.min(lastIndexRef.current, Math.max(displayPhotos.length - 1, 0));
+  lastIndexRef.current = currentIndex;
+
+  /** Move one slide on: arrivals first, then onwards from where the wall was. */
+  const step = useCallback((delta: 1 | -1) => {
+    const list = photosRef.current;
+    if (list.length === 0) return;
+    const indexOf = (id: string | null) => (id ? list.findIndex((p) => p.id === id) : -1);
+
+    if (delta === 1) {
+      while (arrivalsRef.current.length > 0) {
+        const next = arrivalsRef.current.shift()!;
+        if (indexOf(next) < 0) continue;
+        if (resumeFromRef.current === null) resumeFromRef.current = currentIdRef.current;
+        setCurrentId(next);
+        return;
+      }
+    }
+
+    const resumeAt = indexOf(resumeFromRef.current);
+    resumeFromRef.current = null;
+    const at = resumeAt >= 0 && delta === 1 ? resumeAt : indexOf(currentIdRef.current);
+    const from = at >= 0 ? at : Math.min(lastIndexRef.current, list.length - 1);
+    setCurrentId(list[(from + delta + list.length) % list.length].id);
+  }, []);
   const [isPlaying, setIsPlaying] = useState(true);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [slideSpeed, setSlideSpeed] = useState<number>(6000);
@@ -98,8 +154,7 @@ export const LiveProjectorScreen: React.FC<LiveProjectorScreenProps> = ({
     ? 'animate-fade-in'
     : `animate-ken-burns-${kenBurnsVariant(currentIndex)}`;
 
-  const safeIndex = displayPhotos.length > 0 ? Math.min(currentIndex, displayPhotos.length - 1) : 0;
-  const currentPhoto = displayPhotos[safeIndex] || null;
+  const currentPhoto = displayPhotos[currentIndex] || null;
 
   // Live reactions float up over the wall and vanish. Nothing is persisted, and
   // each entry is dropped as its animation finishes so a long reception cannot
@@ -157,28 +212,21 @@ export const LiveProjectorScreen: React.FC<LiveProjectorScreenProps> = ({
     };
   }, []);
 
-  // Auto slideshow ticker
+  // Auto slideshow ticker. Restarted when play, speed or "more than one photo"
+  // changes, not on every arrival (N-91): restarting on each new photo held
+  // one slide on screen for as long as photos kept coming.
+  const hasSeveral = displayPhotos.length > 1;
   useEffect(() => {
-    if (!isPlaying || displayPhotos.length <= 1) return;
+    if (!isPlaying || !hasSeveral) return;
 
-    const timer = setInterval(() => {
-      setCurrentIndex((prev) => (prev + 1) % displayPhotos.length);
-    }, slideSpeed);
+    const timer = setInterval(() => step(1), slideSpeed);
 
     return () => clearInterval(timer);
-  }, [isPlaying, displayPhotos.length, slideSpeed]);
+  }, [isPlaying, hasSeveral, slideSpeed, step]);
 
-  const handleNext = () => {
-    if (displayPhotos.length > 0) {
-      setCurrentIndex((prev) => (prev + 1) % displayPhotos.length);
-    }
-  };
+  const handleNext = () => step(1);
 
-  const handlePrev = () => {
-    if (displayPhotos.length > 0) {
-      setCurrentIndex((prev) => (prev - 1 + displayPhotos.length) % displayPhotos.length);
-    }
-  };
+  const handlePrev = () => step(-1);
 
   const toggleFullscreen = () => {
     if (!document.fullscreenElement) {
@@ -405,10 +453,10 @@ export const LiveProjectorScreen: React.FC<LiveProjectorScreenProps> = ({
           {displayPhotos.slice(0, 8).map((p, idx) => (
             <button
               key={p.id}
-              onClick={() => setCurrentIndex(idx)}
+              onClick={() => setCurrentId(p.id)}
               aria-label={i18n.t('projector.jump_to_photo', { n: idx + 1 })}
               className={`w-12 h-12 rounded-xl overflow-hidden border-2 transition-all shrink-0 ${
-                idx === currentIndex ? 'border-gold-400 scale-105 shadow-glow' : 'border-transparent opacity-60 hover:opacity-100'
+                p.id === currentPhoto?.id ? 'border-gold-400 scale-105 shadow-glow' : 'border-transparent opacity-60 hover:opacity-100'
               }`}
             >
               <img src={p.thumbnailUrl || p.fullUrl} alt="Thumbnail" className="w-full h-full object-cover" />

@@ -21,7 +21,22 @@ export function updateQRCanvasConfig(ctx: ServiceContext, updates: Partial<QRCan
   ctx.notify();
 
   if (event.id) {
-    eventsApi.updateQRConfig(event.id, updates).catch(() => {});
+    eventsApi.updateQRConfig(event.id, updates).catch((err: unknown) => {
+      // N-91 — dropped without a word, so the host printed from a design the
+      // album never saved. Say so, and put back what the server holds.
+      console.warn('[Storage] QR studio change was not saved to the server:', err);
+      ctx.notifyError(err instanceof Error ? err.message : String(err));
+      eventsApi
+        .getQRConfig(event.id)
+        .then((saved) => {
+          if (!saved) return;
+          localStorage.setItem(STORAGE_KEYS.QR_CANVAS(event.id), JSON.stringify(saved));
+          ctx.notify();
+        })
+        .catch(() => {
+          // Offline: the next sync brings the server's copy back.
+        });
+    });
   }
 
   return updated;
