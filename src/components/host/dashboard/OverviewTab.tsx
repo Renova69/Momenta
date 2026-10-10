@@ -11,7 +11,7 @@ import React, { useEffect, useId } from 'react';
 import { Settings, Shield, Trophy, Camera, Users, Lock } from 'lucide-react';
 import { i18n } from '../../../i18n';
 import { THEMES } from '../../../config/themes';
-import { transliterateBg, SLUG_MAX_LENGTH } from '../../../utils/transliterate';
+import { transliterateBg, SLUG_MAX_LENGTH, SLUG_MIN_LENGTH } from '../../../utils/transliterate';
 import { router } from '../../../router';
 import { StorageMeter } from '../StorageMeter';
 import { maskDateInput, maskTimeInput } from './dateFields';
@@ -351,15 +351,23 @@ export const OverviewTab: React.FC = () => {
                   .replace(/-+/g, '-')
                   // The column's length (N-87), so a long paste is not refused at save.
                   .slice(0, SLUG_MAX_LENGTH);
-                // The URL bar preview updates live — it's local and free.
-                // The server write is what's debounced. replace: true
-                // (FE-07) so a handful of keystrokes doesn't push a
-                // history entry per character — router.navigate always
-                // pushed, unlike this typing-preview case needs.
+                // N-104 — the address bar is left alone while typing. It
+                // used to follow each keystroke while the address was saved
+                // only on leaving the field (N-62), so a reload in between
+                // opened an address that did not exist. The effect above
+                // moves the bar once the rename is saved.
                 setSlugDraft(customSlug);
-                router.navigate('host', customSlug, undefined, { replace: true });
               }}
-              onBlur={flushSlugDraft}
+              onBlur={() => {
+                // What is left when the host leaves the field: without
+                // hyphens at either end, and the saved address back if it
+                // is too short to be one, cleared included, rather than an
+                // empty field that is never saved.
+                const clean = slugDraft.replace(/^-+|-+$/g, '');
+                if (clean.length < SLUG_MIN_LENGTH) setSlugDraft(event.slug);
+                else if (clean !== slugDraft) setSlugDraft(clean);
+                flushSlugDraft();
+              }}
               onKeyDown={(e) => {
                 if (e.key === 'Enter') e.currentTarget.blur();
               }}

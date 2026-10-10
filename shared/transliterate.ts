@@ -32,6 +32,9 @@ export function transliterateBg(text: string): string {
 /** The longest album address: the `events.slug` column is VARCHAR(100). */
 export const SLUG_MAX_LENGTH = 100;
 
+/** The shortest address the server accepts. */
+export const SLUG_MIN_LENGTH = 3;
+
 /**
  * How much of a name a generated address keeps (N-87). What is appended to it
  * must still fit the column: the year, a timestamp and a random part on

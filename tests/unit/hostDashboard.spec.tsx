@@ -108,6 +108,55 @@ describe('the album address field (N-62)', () => {
       vi.useRealTimers();
     }
   });
+
+  /**
+   * N-104 — the address bar followed every keystroke while the address was
+   * saved only on leaving the field, so a reload in between opened an address
+   * that did not exist; and a cleared field was never saved, leaving the
+   * field and the bar empty.
+   */
+  it('leaves the address bar alone while the host types (N-104)', () => {
+    vi.spyOn(router, 'getRoute').mockReturnValue({ view: 'host', slug: 'original-slug' });
+    const navigate = vi.spyOn(router, 'navigate').mockImplementation(() => undefined);
+    renderDashboard();
+    const slugInput = screen.getByDisplayValue('original-slug');
+
+    fireEvent.change(slugInput, { target: { value: 'anna-and-boris' } });
+
+    expect(navigate).not.toHaveBeenCalledWith('host', 'anna-and-boris', undefined, { replace: true });
+  });
+
+  it('puts the saved address back when the field is left empty (N-104)', () => {
+    const { onUpdateEvent } = renderDashboard();
+    const slugInput = screen.getByDisplayValue('original-slug');
+
+    fireEvent.change(slugInput, { target: { value: '' } });
+    fireEvent.blur(slugInput);
+
+    expect(onUpdateEvent.mock.calls.filter(([u]) => 'slug' in u)).toEqual([]);
+    expect(screen.getByDisplayValue('original-slug')).toBeInTheDocument();
+  });
+
+  it('puts the saved address back when what is left is too short to be one (N-104)', () => {
+    const { onUpdateEvent } = renderDashboard();
+    const slugInput = screen.getByDisplayValue('original-slug');
+
+    fireEvent.change(slugInput, { target: { value: 'ab-' } });
+    fireEvent.blur(slugInput);
+
+    expect(onUpdateEvent.mock.calls.filter(([u]) => 'slug' in u)).toEqual([]);
+    expect(screen.getByDisplayValue('original-slug')).toBeInTheDocument();
+  });
+
+  it('saves an address typed with a trailing hyphen without it (N-104)', () => {
+    const { onUpdateEvent } = renderDashboard();
+    const slugInput = screen.getByDisplayValue('original-slug');
+
+    fireEvent.change(slugInput, { target: { value: 'anna-and-boris-' } });
+    fireEvent.blur(slugInput);
+
+    expect(onUpdateEvent.mock.calls.filter(([u]) => 'slug' in u)).toEqual([[{ slug: 'anna-and-boris' }]]);
+  });
 });
 
 describe('HostDashboard date picker does not mutate the slug (FE-05)', () => {

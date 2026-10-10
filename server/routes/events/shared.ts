@@ -9,7 +9,7 @@
 import { z } from 'zod';
 import { BackendPlanTier } from '../../middleware/tierGate';
 import { QUEST_PRIZE_MAX_LENGTH } from '../../../shared/eventLimits';
-import { SLUG_MAX_LENGTH } from '../../../shared/transliterate';
+import { SLUG_MAX_LENGTH, SLUG_MIN_LENGTH } from '../../../shared/transliterate';
 
 /**
  * M2 — a slug is not free text. It addresses the event in a URL that QR codes
@@ -21,7 +21,7 @@ import { SLUG_MAX_LENGTH } from '../../../shared/transliterate';
  */
 export const SlugSchema = z
   .string()
-  .min(3)
+  .min(SLUG_MIN_LENGTH)
   // The column's length (N-87): 101 to 120 used to pass here and fail there with a 500.
   .max(SLUG_MAX_LENGTH)
   .regex(
