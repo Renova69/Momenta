@@ -156,7 +156,9 @@ export async function savePhotoVariants(
 export type QuotaWriteOutcome<T> =
   | { ok: true; row: T; hostUserId: string | null }
   | { ok: false; reason: 'event_not_found' }
-  | { ok: false; reason: 'quota'; message: string; code: string };
+  | { ok: false; reason: 'quota'; message: string; code: string }
+  /** Refused by the caller's own `recheck`, with the answer it chose. */
+  | { ok: false; reason: 'refused'; status: number; body: Record<string, unknown> };
 
 /**
  * Re-check the plan allowance under an event-scoped lock and insert the row
@@ -173,6 +175,15 @@ export async function insertPhotoUnderQuota<T>(args: {
   deviceFingerprint?: string;
   storageBytes: number;
   cleanup: () => Promise<void>;
+  /**
+   * A limit of the caller's own, checked again under the lock on the fresh
+   * context: a refusal to send, or null. N-84 — a check made only before
+   * the lock let parallel uploads all pass it against the same count.
+   */
+  recheck?: (
+    client: PoolClient,
+    context: UploadContext
+  ) => Promise<{ status: number; body: Record<string, unknown> } | null>;
   insert: (client: PoolClient, context: UploadContext) => Promise<T>;
 }): Promise<QuotaWriteOutcome<T>> {
   const { eventId, deviceFingerprint, storageBytes, cleanup, insert } = args;
@@ -197,6 +208,13 @@ export async function insertPhotoUnderQuota<T>(args: {
         message: finalCheck.reason || 'Plan limit reached',
         code: finalCheck.code || 'STORAGE_LIMIT_REACHED',
       };
+    }
+
+    const refusal = args.recheck ? await args.recheck(lockClient, freshContext) : null;
+    if (refusal) {
+      await lockClient.query('ROLLBACK');
+      await cleanup();
+      return { ok: false, reason: 'refused', ...refusal };
     }
 
     const row = await insert(lockClient, freshContext);

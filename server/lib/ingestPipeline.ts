@@ -175,7 +175,12 @@ export async function ingestPhoto(
     return {
       ok: false,
       reason: 'tier_limit',
-      message: written.reason === 'event_not_found' ? 'Event not found' : written.message,
+      message:
+        written.reason === 'quota'
+          ? written.message
+          : written.reason === 'event_not_found'
+            ? 'Event not found'
+            : String(written.body.error ?? 'Upload refused'),
     };
   }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

@@ -19,6 +19,7 @@
  */
 
 import { Router, Request, Response } from 'express';
+import type { Pool, PoolClient } from 'pg';
 import { pool } from '../../lib/db';
 import { decodeDataUrl, toAbsoluteUrl } from '../../lib/storage';
 import { buildDerivatives } from '../../lib/images';
@@ -163,7 +164,8 @@ async function checkPerGuestCap(
   eventId: string,
   guestId: string,
   context: UploadContext,
-  deviceFingerprint: string | undefined
+  deviceFingerprint: string | undefined,
+  db: Pool | PoolClient = pool
 ): Promise<Step<null>> {
   // `??`, not `||`: the column is nullable and only null means "host set no
   // limit". `||` also swallowed 0, which is the one value a host could pick
@@ -174,7 +176,7 @@ async function checkPerGuestCap(
   const guestPhotoCount = deviceFingerprint
     ? context.devicePhotoCount
     : (
-        await pool.query('SELECT COUNT(*)::int AS count FROM photos WHERE event_id = $1 AND guest_id = $2', [
+        await db.query('SELECT COUNT(*)::int AS count FROM photos WHERE event_id = $1 AND guest_id = $2', [
           eventId,
           guestId,
         ])
@@ -332,6 +334,12 @@ async function insertPhotoAtomically(args: InsertPhotoArgs): Promise<Step<{ row:
     deviceFingerprint,
     storageBytes: files.totalBytes,
     cleanup: files.cleanup,
+    // N-84 — the cap again, under the lock and on its fresh count: checked
+    // only before the upload, every photo of a burst passed it at once.
+    recheck: async (client, freshContext) => {
+      const cap = await checkPerGuestCap(eventId, guestId, freshContext, deviceFingerprint, client);
+      return cap.ok ? null : { status: cap.status, body: cap.body };
+    },
     insert: async (client) => {
       const photoInsert = await client.query(
         `INSERT INTO photos (
@@ -368,9 +376,9 @@ async function insertPhotoAtomically(args: InsertPhotoArgs): Promise<Step<{ row:
   });
 
   if (!written.ok) {
-    return written.reason === 'event_not_found'
-      ? fail(404, { error: 'Event not found' })
-      : fail(403, { error: written.message, code: written.code });
+    if (written.reason === 'event_not_found') return fail(404, { error: 'Event not found' });
+    if (written.reason === 'refused') return fail(written.status, written.body);
+    return fail(403, { error: written.message, code: written.code });
   }
   return { ok: true, value: { row: written.row, hostUserId: written.hostUserId } };
 }
