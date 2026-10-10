@@ -6,7 +6,7 @@
 **Client mutation sweep:** 2026-09-21 (§8).
 **Performance pass:** 2026-09-22 to 23 (§3e).
 **Security review, partial:** 2026-09-25 to 26, recorded 2026-10-04 (§3f). **All 25 findings fixed.**
-**Remaining five domains:** reviewed 2026-10-05 (§3g). **4 of 36 findings open.**
+**Remaining five domains:** reviewed 2026-10-05 (§3g). **3 of 36 findings open.**
 
 > **Read this first.** The audit below is preserved as written — each finding
 > still describes the code as it was on 2026-09-15, because a finding rewritten
@@ -900,7 +900,7 @@ trusting them.
 
 ## 3g. The Remaining Five Domains (2026-10-05)
 
-**Open: 4 of 36.** Fixed so far: N-59, N-60, N-61, N-62, N-63, N-64, N-65, N-66, N-67, N-68, N-69, N-70, N-71, N-72, N-73, N-74, N-75, N-76, N-77, N-78, N-79, N-80, N-81, N-82, N-83, N-84, N-85, N-86, N-87, N-92, N-93, N-94.
+**Open: 3 of 36.** Fixed so far: N-59, N-60, N-61, N-62, N-63, N-64, N-65, N-66, N-67, N-68, N-69, N-70, N-71, N-72, N-73, N-74, N-75, N-76, N-77, N-78, N-79, N-80, N-81, N-82, N-83, N-84, N-85, N-86, N-87, N-88, N-92, N-93, N-94.
 
 The rest of the review §3f began: media, infra, db, guest UI and host UI, one
 reviewer each, with the same brief — races, missing checks, inconsistent
@@ -947,7 +947,7 @@ until every client path that calls it has been read.
 | **N-85** | Deleting one photo can half-delete it on a storage error, or orphan files a concurrent promotion just moved. | Low | `server/routes/photos/moderation.ts` | Yes | `f1a8bd2` |
 | **N-86** | A voice message whose insert fails for any reason other than quota or a missing album leaves its file in storage. | Low | `server/routes/audio.ts` | Yes | `4bf3586` |
 | **N-87** | A 101–120 character custom address passes validation and fails at the 100-character column with a 500; a 95–100 character one that needs a variant overflows the same way. | Low | `server/routes/events/shared.ts`, `server/routes/events/crud.ts` | Yes | `0835f37` |
-| **N-88** | The feed cursor carries `createdAt` at millisecond precision against microsecond rows, so a photo in the same millisecond can be skipped between pages. | Low | `server/routes/photos/feed.ts` | No | Open |
+| **N-88** | The feed cursor carries `createdAt` at millisecond precision against microsecond rows, so a photo in the same millisecond can be skipped between pages. | Low | `server/routes/photos/feed.ts` | Yes | `29b102b` |
 | **N-89** | `storage-recount` reseeds totals without a lock, so an upload committing during it is undercounted. | Low | `scripts/storage-recount.ts` | No | Open |
 | **N-90** | A new album defaults to the date `2026-09-18`, already past, and clearing the date field throws. | Low | `src/components/host/HostEventsList.tsx` | No | Open |
 | **N-91** | The projector wall indexes into a list that new photos shift, so the slide changes mid-display and new photos wait a whole cycle; QR studio save failures are swallowed. | Low | `src/components/projector/LiveProjectorScreen.tsx`, `src/services/qrCanvasService.ts` | No | Open |
