@@ -21,7 +21,11 @@ vi.mock('../../server/lib/storage', () => ({
   toStoragePath: (url: string) => url,
 }));
 vi.mock('../../server/lib/db', () => ({
-  pool: { query: (sql: string, params?: unknown[]) => query(sql, params), end: async () => undefined },
+  pool: {
+    query: (sql: string, params?: unknown[]) => query(sql, params),
+    connect: async () => ({ query: (sql: string, params?: unknown[]) => query(sql, params), release: () => undefined }),
+    end: async () => undefined,
+  },
 }));
 
 const { sizeOf, main } = await import('../../scripts/storage-recount');

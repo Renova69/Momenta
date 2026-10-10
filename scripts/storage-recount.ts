@@ -40,6 +40,44 @@ export async function sizeOf(storagePath: string | null): Promise<number> {
   });
 }
 
+/**
+ * Re-seed each album's total from its photo and audio rows.
+ *
+ * N-89 — this was one UPDATE for every album, its sums taken from the
+ * snapshot it started with. An upload whose trigger had already raised an
+ * album's total, and which committed while the UPDATE waited for that row,
+ * was overwritten by a sum that did not include it. Now each album is done on
+ * its own: its row is locked first and the sum taken afterwards, in a later
+ * statement. A write that got there first has committed and is counted; one
+ * still waiting on the row applies its own change on top of the new total.
+ */
+export async function reseedEventTotals(eventIds?: string[]): Promise<void> {
+  const ids = eventIds ?? (await pool.query<{ id: string }>('SELECT id FROM events')).rows.map((r) => r.id);
+  for (const id of ids) {
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const locked = await client.query('SELECT 1 FROM events WHERE id = $1 FOR UPDATE', [id]);
+      if (locked.rowCount) {
+        await client.query(
+          `UPDATE events
+              SET storage_bytes =
+                    (SELECT COALESCE(SUM(storage_bytes), 0) FROM photos WHERE event_id = $1)
+                  + (SELECT COALESCE(SUM(storage_bytes), 0) FROM audio_guestbook WHERE event_id = $1)
+            WHERE id = $1`,
+          [id]
+        );
+      }
+      await client.query('COMMIT');
+    } catch (err) {
+      await client.query('ROLLBACK').catch(() => undefined);
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
+}
+
 export async function main() {
   const { rows: photos } = await pool.query(
     'SELECT id, storage_path, original_storage_path, thumbnail_url, storage_bytes FROM photos ORDER BY created_at ASC'
@@ -93,16 +131,7 @@ export async function main() {
   }
 
   // Re-seed the per-event totals from the corrected rows.
-  await pool.query(`
-    UPDATE events e
-       SET storage_bytes = COALESCE(p.total, 0) + COALESCE(a.total, 0)
-      FROM (SELECT id FROM events) src
-      LEFT JOIN (SELECT event_id, SUM(storage_bytes) AS total FROM photos GROUP BY event_id) p
-             ON p.event_id = src.id
-      LEFT JOIN (SELECT event_id, SUM(storage_bytes) AS total FROM audio_guestbook GROUP BY event_id) a
-             ON a.event_id = src.id
-     WHERE e.id = src.id
-  `);
+  await reseedEventTotals();
 
   const { rows: totals } = await pool.query(
     'SELECT COUNT(*)::int AS events, COALESCE(SUM(storage_bytes), 0)::bigint AS total FROM events'
