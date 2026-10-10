@@ -120,7 +120,8 @@ services:
     depends_on:
       db:
         condition: service_healthy
-    command: ["npx", "tsx", "scripts/maintenance-scheduler.ts"]
+    # The image's own tsx, started directly, as the app is (N-83).
+    command: ["node_modules/.bin/tsx", "scripts/maintenance-scheduler.ts"]
     environment:
       NODE_ENV: production
       DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgrespassword}@db:5432/${POSTGRES_DB:-wedmoments_db}

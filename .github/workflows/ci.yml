@@ -199,6 +199,21 @@ jobs:
           retention-days: 14
           if-no-files-found: warn
 
+  # The image production runs. It was never built here, so a Dockerfile that
+  # no longer built — a stage missing a file the build needs, a base image
+  # gone — was found on deploy instead of on the change that broke it (N-83).
+  # Built, not pushed: nothing here publishes anything.
+  image:
+    name: Docker image builds
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Build the production image
+        run: docker build --tag wedmoments:ci .
+
   audit:
     name: Dependency audit
     runs-on: ubuntu-latest

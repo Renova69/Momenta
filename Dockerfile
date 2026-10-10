@@ -53,8 +53,11 @@ RUN apk add --no-cache curl
 # Copy dependency specifications
 COPY package*.json ./
 
-# Install production dependencies only + tsx runtime
-RUN npm ci --omit=dev && npm install -g tsx
+# Production dependencies only. tsx, which runs the TypeScript server, is one
+# of them, so the version installed is the one package-lock.json pins and the
+# tests ran under. It used to be `npm install -g tsx` with no version: whatever
+# npm served on the day the image was built (N-83).
+RUN npm ci --omit=dev
 
 # Copy built frontend from builder stage
 COPY --from=builder /app/dist ./dist
@@ -91,4 +94,6 @@ EXPOSE 6501
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD curl -f http://localhost:6501/api/health || exit 1
 
-CMD ["tsx", "server/index.ts"]
+# The project's own tsx, started directly rather than through npx, so the
+# server receives the stop signal itself and can drain (N-66).
+CMD ["node_modules/.bin/tsx", "server/index.ts"]
