@@ -7,7 +7,7 @@
 **Performance pass:** 2026-09-22 to 23 (§3e).
 **Security review, partial:** 2026-09-25 to 26, recorded 2026-10-04 (§3f). **All 25 findings fixed.**
 **Remaining five domains:** reviewed 2026-10-05 (§3g). **All 36 findings fixed.**
-**Review of the §3g fixes:** 2026-10-10 (§3h). **1 of 12 findings open.**
+**Review of the §3g fixes:** 2026-10-10 (§3h). **All 12 findings fixed.**
 
 > **Read this first.** The audit below is preserved as written — each finding
 > still describes the code as it was on 2026-09-15, because a finding rewritten
@@ -960,7 +960,7 @@ until every client path that calls it has been read.
 
 ## 3h. The Review of the §3g Fixes (2026-10-10)
 
-**Open: 1 of 12.** Fixed so far: N-95, N-96, N-97, N-98, N-99, N-100, N-101, N-102, N-103, N-105, N-106.
+**All 12 fixed.**
 
 The same four-way review as after §3f, over everything §3g changed
 (`4795c58..HEAD` at the time): media and quarantine, album lifecycle and
@@ -985,7 +985,7 @@ and N-74, N-103 of N-75, N-104 of N-62.
 | **N-101** | An album extended after the retention sweep's last check (N-74) is still purged: nothing re-checks during a purge that can run for an hour, and `refreshExpiryDates` takes no lock. | Low | `server/lib/retention.ts` | Yes | `4c67d32` |
 | **N-102** | The voice-message route takes `localId` with no length limit (the photo schema caps it at 100). A long one fails the insert on the unique index with a 500. | Low | `server/routes/audio.ts` | Yes | `21b130b` |
 | **N-103** | The photographer portal's "photos sent" count is replaced, not added to, on a retry: after 8 of 10 frames and a retry of the other 2, it says 2 were sent. | Low | `src/components/ingest/PhotographerIngestPortal.tsx` | Yes | `a99b6f3` |
-| **N-104** | Since N-62 the album address is saved on leaving the field, but the address bar follows each keystroke: a reload before then opens an address that does not exist. A cleared field is never saved and leaves the field and bar empty. | Low | `src/components/host/dashboard/OverviewTab.tsx`, `src/components/host/HostDashboard.tsx` | Yes | Open |
+| **N-104** | Since N-62 the album address is saved on leaving the field, but the address bar follows each keystroke: a reload before then opens an address that does not exist. A cleared field is never saved and leaves the field and bar empty. | Low | `src/components/host/dashboard/OverviewTab.tsx`, `src/components/host/HostDashboard.tsx` | Yes | `b75af02` |
 | **N-105** | The portal's translated batch-failure message quotes the server's English reason, and the client's own fallbacks ("Network error", "Not a supported image file") are English too. | Low | `src/components/ingest/PhotographerIngestPortal.tsx`, `src/api/ingestApi.ts` | Yes | `a99b6f3` |
 | **N-106** | A failed advisory unlock on the reveal promotion's shared connection returns that connection to the pool still holding a photo's move lock; every later approve or delete of that photo then waits for ever. | Low | `server/lib/photoQuarantine.ts` | Yes | `bee1ce3` |
 
