@@ -98,7 +98,13 @@ export const StatusPhotoSchema = z.object({
 // `priority DESC, created_at DESC`, so a cursor keyed on created_at alone
 // would skip any guest photo newer than a higher-priority photographer photo
 // (source: 'photographer' rows get priority=10) once pagination passed it.
-export const CURSOR_PATTERN = /^(-?\d+):(.+)$/;
+/**
+ * `priority:createdAt:photoId`, as each photo's `pageCursor` gives it (N-88):
+ * microsecond time, and the id to break ties. `priority:createdAt` is the form
+ * older apps build from a photo's millisecond createdAt, still accepted.
+ */
+export const CURSOR_PATTERN =
+  /^(-?\d+):(.+?)(?::([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}))?$/;
 export const ListPhotosQuerySchema = z.object({
   eventId: z.string().uuid('A valid eventId query parameter is required'),
   limit: z.coerce.number().int().min(1).max(200).default(100),
@@ -107,7 +113,7 @@ export const ListPhotosQuerySchema = z.object({
     .refine((v) => {
       const match = v.match(CURSOR_PATTERN);
       return !!match && !Number.isNaN(Date.parse(match[2]));
-    }, 'cursor must be "priority:isoTimestamp"')
+    }, 'cursor must be "priority:isoTimestamp" or a pageCursor')
     .optional(),
 });
 
@@ -158,7 +164,11 @@ export function photoDtoQuery(lockedNowSql: string): string {
         p.created_at as "createdAt",
         p.source,
         p.priority,
-        p.photographer_name as "photographerName"
+        p.photographer_name as "photographerName",
+        -- N-88 — where the next page starts after this photo: microsecond
+        -- time, which JSON's createdAt loses, and the id to break ties.
+        p.priority || ':' || to_char(p.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')
+          || ':' || p.id as "pageCursor"
       FROM photos p
       JOIN guests g ON g.id = p.guest_id
       LEFT JOIN scavenger_quests sq ON sq.id = p.quest_id`;

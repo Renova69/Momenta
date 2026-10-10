@@ -87,16 +87,24 @@ photosRouter.get('/', optionalAuth, validateQuery(ListPhotosQuerySchema), async 
       const match = cursor.match(CURSOR_PATTERN)!;
       const cursorPriority = Number.parseInt(match[1], 10);
       const cursorCreatedAt = match[2];
-      params.push(cursorPriority, cursorCreatedAt);
+      const cursorPhotoId = match[3];
       // Composite keyset cursor (DB-03) — matches the ORDER BY exactly, so a
       // page boundary that falls between two rows sharing a priority (the
       // common case, priority=0) can't skip or repeat rows the way a
       // created_at-only cursor did once any priority=10 photo existed.
-      query += ` AND (p.priority, p.created_at) < ($${params.length - 1}, $${params.length})`;
+      if (cursorPhotoId) {
+        // N-88 — to the microsecond, with the id breaking ties: a millisecond
+        // cursor skipped every photo stored later in the same millisecond.
+        params.push(cursorPriority, cursorCreatedAt, cursorPhotoId);
+        query += ` AND (p.priority, p.created_at, p.id) < ($${params.length - 2}, $${params.length - 1}::timestamptz, $${params.length}::uuid)`;
+      } else {
+        params.push(cursorPriority, cursorCreatedAt);
+        query += ` AND (p.priority, p.created_at) < ($${params.length - 1}, $${params.length})`;
+      }
     }
 
     params.push(limit);
-    query += ` ORDER BY p.priority DESC, p.created_at DESC LIMIT $${params.length};`;
+    query += ` ORDER BY p.priority DESC, p.created_at DESC, p.id DESC LIMIT $${params.length};`;
 
     const result = await pool.query(query, params);
 

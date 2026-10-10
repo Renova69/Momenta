@@ -116,6 +116,8 @@ export interface Photo {
   source?: 'guest' | 'photographer';
   priority?: number;
   photographerName?: string;
+  /** Where the feed's next page starts after this photo, as the server gave it (N-88). */
+  pageCursor?: string;
 }
 
 export interface ScavengerQuest {

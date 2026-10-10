@@ -72,6 +72,17 @@ describe('full-album sync across pages (H3)', () => {
     expect(secondCursor).toBe(`0:${page(PAGE_SIZE - 1, 1)[0].createdAt}`);
   });
 
+  it('continues from the cursor the server gave the last photo, when it gives one (N-88)', async () => {
+    // Built here from createdAt the cursor was to the millisecond, and every
+    // photo stored later in that millisecond fell between the pages.
+    const first = page(0, PAGE_SIZE).map((p, i) => ({ ...p, pageCursor: `0:2026-01-01T00:00:00.123456Z:${i}` }));
+    const listSpy = vi.spyOn(photosApi, 'list').mockResolvedValueOnce(first).mockResolvedValueOnce(page(PAGE_SIZE, 3));
+
+    await storageService.syncFromBackend(EVENT_ID);
+
+    expect(listSpy.mock.calls[1][2]).toBe(first[PAGE_SIZE - 1].pageCursor);
+  });
+
   it('stops after one request when the album fits in a single page', async () => {
     const listSpy = vi.spyOn(photosApi, 'list').mockResolvedValueOnce(page(0, 12));
 

@@ -70,6 +70,13 @@ async function fetchAllPhotos(eventId: string): Promise<Photo[]> {
     if (batch.length < PHOTO_PAGE_SIZE) break;
 
     const last = batch[batch.length - 1];
+    // N-88 — the server's own cursor when it sends one: built here from
+    // createdAt it was to the millisecond, and skipped every photo stored
+    // later in the same millisecond as the last one on the page.
+    if (typeof last?.pageCursor === 'string' && last.pageCursor) {
+      cursor = last.pageCursor;
+      continue;
+    }
     const createdAt = last?.createdAt ? new Date(last.createdAt) : null;
     if (!createdAt || Number.isNaN(createdAt.getTime())) break;
     cursor = `${last.priority ?? 0}:${createdAt.toISOString()}`;
