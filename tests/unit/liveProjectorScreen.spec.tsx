@@ -215,6 +215,55 @@ describe('LiveProjectorScreen', () => {
       expect(screen.getByText('Guest C')).toBeInTheDocument();
     });
 
+    it('leaves the first slide where it is when a photo arrives before the first tick (N-97)', () => {
+      vi.useFakeTimers();
+      const { rerender } = renderScreen(album());
+      expect(screen.getByText('Guest A')).toBeInTheDocument();
+
+      rerender(<LiveProjectorScreen event={EVENT} photos={[arrival(), ...album()]} onClose={vi.fn()} />);
+
+      expect(screen.getByText('Guest A')).toBeInTheDocument();
+      tick();
+      expect(screen.getByText('Guest New')).toBeInTheDocument();
+    });
+
+    it('keeps the first photo of a new wall on screen as the next one arrives (N-97)', () => {
+      vi.useFakeTimers();
+      const first = photo({ id: 'first', guestName: 'Guest First', createdAt: day(4) });
+      const { rerender } = renderScreen([]);
+      rerender(<LiveProjectorScreen event={EVENT} photos={[first]} onClose={vi.fn()} />);
+      expect(screen.getByText('Guest First')).toBeInTheDocument();
+
+      rerender(<LiveProjectorScreen event={EVENT} photos={[arrival(), first]} onClose={vi.fn()} />);
+
+      expect(screen.getByText('Guest First')).toBeInTheDocument();
+      tick();
+      expect(screen.getByText('Guest New')).toBeInTheDocument();
+    });
+
+    it('does not restart the pan of the photo on screen when another arrives (N-98)', () => {
+      vi.useFakeTimers();
+      const { rerender, container } = renderScreen(album());
+      tick(); // B
+      const slide = () => container.querySelector('img[class*="animate-"]') as HTMLImageElement;
+      const before = slide().className;
+
+      rerender(<LiveProjectorScreen event={EVENT} photos={[arrival(), ...album()]} onClose={vi.fn()} />);
+
+      expect(slide().className).toBe(before);
+    });
+
+    it('still pans neighbouring slides differently', () => {
+      vi.useFakeTimers();
+      const { container } = renderScreen(album());
+      const pan = () => (container.querySelector('img[class*="animate-ken-burns"]') as HTMLImageElement).className;
+      const first = pan();
+
+      tick();
+
+      expect(pan()).not.toBe(first);
+    });
+
     it('does not hold the slide on screen longer because photos arrived', () => {
       vi.useFakeTimers();
       const { rerender } = renderScreen(album());

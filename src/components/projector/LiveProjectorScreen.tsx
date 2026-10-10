@@ -106,6 +106,16 @@ export const LiveProjectorScreen: React.FC<LiveProjectorScreenProps> = ({
     }
   }, [displayPhotos]);
 
+  // N-97 — a slide is pinned as soon as there is one. Left unpinned until the
+  // first tick, the wall showed whatever was first in the list, so a photo
+  // arriving before then (on a new wall, the usual case) still swapped it.
+  useEffect(() => {
+    if (currentIdRef.current !== null || displayPhotos.length === 0) return;
+    const first = displayPhotos[0].id;
+    arrivalsRef.current = arrivalsRef.current.filter((id) => id !== first);
+    setCurrentId(first);
+  }, [displayPhotos]);
+
   const foundIndex = currentId ? displayPhotos.findIndex((p) => p.id === currentId) : -1;
   const currentIndex =
     foundIndex >= 0 ? foundIndex : Math.min(lastIndexRef.current, Math.max(displayPhotos.length - 1, 0));
@@ -120,7 +130,7 @@ export const LiveProjectorScreen: React.FC<LiveProjectorScreenProps> = ({
     if (delta === 1) {
       while (arrivalsRef.current.length > 0) {
         const next = arrivalsRef.current.shift()!;
-        if (indexOf(next) < 0) continue;
+        if (indexOf(next) < 0 || next === currentIdRef.current) continue;
         if (resumeFromRef.current === null) resumeFromRef.current = currentIdRef.current;
         setCurrentId(next);
         return;
@@ -150,9 +160,17 @@ export const LiveProjectorScreen: React.FC<LiveProjectorScreenProps> = ({
     window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
   // A still photo on a big screen reads as dead air; a slow pan keeps it alive.
+  // N-98 — each photo takes the next pan when it comes on screen and keeps it
+  // while it is there. Taken from its position, a photo arriving at the front
+  // changed the class on the image already showing and restarted its pan.
+  const panRef = useRef<{ id: string | null; variant: 0 | 1 | 2 | 3 }>({ id: null, variant: 3 });
+  const onScreenId = displayPhotos[currentIndex]?.id ?? null;
+  if (onScreenId !== null && panRef.current.id !== onScreenId) {
+    panRef.current = { id: onScreenId, variant: kenBurnsVariant(panRef.current.variant + 1) };
+  }
   const kenBurnsClass = prefersReducedMotion
     ? 'animate-fade-in'
-    : `animate-ken-burns-${kenBurnsVariant(currentIndex)}`;
+    : `animate-ken-burns-${panRef.current.variant}`;
 
   const currentPhoto = displayPhotos[currentIndex] || null;
 
