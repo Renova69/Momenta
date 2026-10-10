@@ -6,7 +6,7 @@
 **Client mutation sweep:** 2026-09-21 (§8).
 **Performance pass:** 2026-09-22 to 23 (§3e).
 **Security review, partial:** 2026-09-25 to 26, recorded 2026-10-04 (§3f). **All 25 findings fixed.**
-**Remaining five domains:** reviewed 2026-10-05 (§3g). **8 of 36 findings open.**
+**Remaining five domains:** reviewed 2026-10-05 (§3g). **7 of 36 findings open.**
 
 > **Read this first.** The audit below is preserved as written — each finding
 > still describes the code as it was on 2026-09-15, because a finding rewritten
@@ -900,7 +900,7 @@ trusting them.
 
 ## 3g. The Remaining Five Domains (2026-10-05)
 
-**Open: 8 of 36.** Fixed so far: N-59, N-60, N-61, N-62, N-63, N-64, N-65, N-66, N-67, N-68, N-69, N-70, N-71, N-72, N-73, N-74, N-75, N-76, N-77, N-78, N-79, N-80, N-81, N-82, N-83, N-92, N-93, N-94.
+**Open: 7 of 36.** Fixed so far: N-59, N-60, N-61, N-62, N-63, N-64, N-65, N-66, N-67, N-68, N-69, N-70, N-71, N-72, N-73, N-74, N-75, N-76, N-77, N-78, N-79, N-80, N-81, N-82, N-83, N-84, N-92, N-93, N-94.
 
 The rest of the review §3f began: media, infra, db, guest UI and host UI, one
 reviewer each, with the same brief — races, missing checks, inconsistent
@@ -943,7 +943,7 @@ until every client path that calls it has been read.
 | **N-81** | A host who signs in while the page's socket is already open stays a guest on it: `joinEventRoom` never re-sends AUTH. | Low | `src/services/realtimeSocket.ts` | Yes | `115ce7b` |
 | **N-82** | A database error during the WebSocket host check caches "not host" for 60 seconds. | Low | `server/ws/wsServer.ts` | Yes | `5ce1d30` |
 | **N-83** | The production image installs an unpinned `tsx` at build time, and CI never builds the image. | Low | `Dockerfile`, `.github/workflows/ci.yml` | Yes | `e6332fe` |
-| **N-84** | The per-guest photo cap is checked only outside the upload lock, so parallel uploads from one device can exceed it. | Low | `server/routes/photos/upload.ts`, `server/lib/photoWrite.ts` | No | Open |
+| **N-84** | The per-guest photo cap is checked only outside the upload lock, so parallel uploads from one device can exceed it. | Low | `server/routes/photos/upload.ts`, `server/lib/photoWrite.ts` | Yes | `6312afb` |
 | **N-85** | Deleting one photo can half-delete it on a storage error, or orphan files a concurrent promotion just moved. | Low | `server/routes/photos/moderation.ts` | No | Open |
 | **N-86** | A voice message whose insert fails for any reason other than quota or a missing album leaves its file in storage. | Low | `server/routes/audio.ts` | No | Open |
 | **N-87** | A 101–120 character custom address passes validation and fails at the 100-character column with a 500; a 95–100 character one that needs a variant overflows the same way. | Low | `server/routes/events/shared.ts`, `server/routes/events/crud.ts` | No | Open |
