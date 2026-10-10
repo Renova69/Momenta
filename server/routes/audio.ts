@@ -197,6 +197,10 @@ audioRouter.post('/', uploadIpLimiter, uploadLimiter, upload.single('audio'), re
       if (!finalCheck.allowed) {
         await lockClient.query('ROLLBACK');
         await discardSavedRecording();
+        // N-99 — a second copy of a recording, refused at the limit the first
+        // copy has just reached, is answered with the stored one.
+        const stored = localId ? await findReplayedAudio(eventId, validGuestId, localId) : null;
+        if (localId && stored) return res.status(200).json(audioReplayAnswer(stored, localId, identity, eventId));
         return res
           .status(403)
           .json({ error: finalCheck.reason, code: finalCheck.code || 'STORAGE_LIMIT_REACHED' });

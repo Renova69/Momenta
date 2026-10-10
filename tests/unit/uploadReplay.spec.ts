@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, vi, beforeAll, afterAll, afterEach } from 'vitest';
 import { createServer } from 'http';
 import { AddressInfo } from 'net';
 import express from 'express';
@@ -7,6 +7,7 @@ import sharp from 'sharp';
 import { photosRouter } from '../../server/routes/photos';
 import { audioRouter } from '../../server/routes/audio';
 import { query } from '../../server/lib/db';
+import { storageAdapter } from '../../server/lib/storage';
 import { deleteEventFixtures } from '../helpers/cleanup';
 import { PLAN_LIMITS } from '../../server/lib/planLimits';
 
@@ -207,6 +208,71 @@ describe('a photo sent again after its answer was lost (N-78)', () => {
     expect(theirs.status).toBe(201);
     expect((await theirs.json()).id).not.toBe((await mine.json()).id);
     expect(await count('photos', eventId)).toBe(3);
+  });
+});
+
+/**
+ * N-99 — two copies of one upload arriving together, with room for only one:
+ * both passed the early checks before either was stored, and the second was
+ * then refused by the locked re-check at the limit the first had just
+ * reached. The phone was told a stored upload had been refused and reported
+ * it lost.
+ */
+describe('two copies of one upload arriving together at a full limit (N-99)', () => {
+  /** Slow every storage write, so both copies are past the early checks before either is stored. */
+  function slowStorage() {
+    const real = storageAdapter.save.bind(storageAdapter);
+    vi.spyOn(storageAdapter, 'save').mockImplementation(async (...args: Parameters<typeof real>) => {
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      return real(...args);
+    });
+  }
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('answers the second copy of a photo with the stored one, not with the cap', async () => {
+    const eventId = await album();
+    await query('UPDATE events SET max_photos_per_guest = 1 WHERE id = $1', [eventId]);
+    const device = fp();
+    await query(`INSERT INTO guests (event_id, name, device_fingerprint) VALUES ($1, 'Replay Guest', $2)`, [
+      eventId,
+      device,
+    ]);
+    slowStorage();
+
+    const [a, b] = await Promise.all([
+      postPhoto(eventId, device, 'photo-race-at-cap'),
+      postPhoto(eventId, device, 'photo-race-at-cap'),
+    ]);
+
+    expect([a.status, b.status].sort()).toEqual([200, 201]);
+    expect((await a.json()).id).toBe((await b.json()).id);
+    expect(await count('photos', eventId)).toBe(1);
+  });
+
+  it('answers the second copy of a voice message with the stored one, not with the allowance', async () => {
+    const eventId = await album();
+    // Room for exactly one recording.
+    await query('UPDATE events SET storage_bytes = $2 WHERE id = $1', [
+      eventId,
+      PLAN_LIMITS.deluxe_keepsake.storageBytes - WEBM.length - 10,
+    ]);
+    const device = fp();
+    await query(`INSERT INTO guests (event_id, name, device_fingerprint) VALUES ($1, 'Replay Guest', $2)`, [
+      eventId,
+      device,
+    ]);
+    slowStorage();
+
+    const [a, b] = await Promise.all([
+      postAudio(eventId, device, 'audio-race-at-limit'),
+      postAudio(eventId, device, 'audio-race-at-limit'),
+    ]);
+
+    expect([a.status, b.status].sort()).toEqual([200, 201]);
+    expect(await count('audio_guestbook', eventId)).toBe(1);
   });
 });
 

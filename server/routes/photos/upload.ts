@@ -512,11 +512,24 @@ photosRouter.post(
         if (uploader && stored) return res.status(200).json(replayAnswer(stored, localId, uploader, eventId));
       }
 
+      // N-99 — a limit that refuses an upload carrying an id may have been
+      // reached by that same upload: two copies arriving together both pass
+      // the check above before either is stored, and the second meets the
+      // limit the first has just filled. Look once more before refusing.
+      const refuse = async (status: number, body: Record<string, unknown>) => {
+        if (localId) {
+          const uploader = await findExistingUploader(eventId, req.body);
+          const stored = uploader ? await findReplayedPhoto(eventId, uploader.guestId, localId) : null;
+          if (uploader && stored) return res.status(200).json(replayAnswer(stored, localId, uploader, eventId));
+        }
+        return res.status(status).json(body);
+      };
+
       // Cheap pre-check: refuse an event already over its allowance before
       // decoding a payload that may be tens of megabytes.
       const tierCheck = checkUploadAllowance(context);
       if (!tierCheck.allowed) {
-        return res.status(403).json({ error: tierCheck.reason, code: tierCheck.code || 'TIER_LIMIT_REACHED' });
+        return refuse(403, { error: tierCheck.reason, code: tierCheck.code || 'TIER_LIMIT_REACHED' });
       }
 
       // H8, the same rule the rest of the app follows: a caller offering
@@ -534,7 +547,7 @@ photosRouter.post(
       const guest = await resolveGuestForUpload(eventId, req.body);
 
       const capCheck = await checkPerGuestCap(eventId, guest.guestId, context, deviceFingerprint);
-      if (!capCheck.ok) return res.status(capCheck.status).json(capCheck.body);
+      if (!capCheck.ok) return refuse(capCheck.status, capCheck.body);
 
       const decoded = await decodeAndValidateImages(fullUrl, originalUrl);
       if (!decoded.ok) return res.status(decoded.status).json(decoded.body);
@@ -546,7 +559,7 @@ photosRouter.post(
       if (incomingBytes > 0) {
         const storageCheck = checkUploadAllowance(context, incomingBytes);
         if (!storageCheck.allowed) {
-          return res.status(403).json({
+          return refuse(403, {
             error: storageCheck.reason,
             code: storageCheck.code || 'STORAGE_LIMIT_REACHED',
           });
@@ -600,7 +613,7 @@ photosRouter.post(
         }
         throw err;
       }
-      if (!inserted.ok) return res.status(inserted.status).json(inserted.body);
+      if (!inserted.ok) return refuse(inserted.status, inserted.body);
       const { row: created, hostUserId } = inserted.value;
 
       await recordQuestCompletion(eventId, scopedQuestId, guest.guestId, created.id);
