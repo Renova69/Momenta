@@ -276,6 +276,25 @@ describe('two copies of one upload arriving together at a full limit (N-99)', ()
   });
 });
 
+describe('the id a phone gives a voice message (N-102)', () => {
+  it('is refused with a 400 when longer than the photo route allows, before anything is stored', async () => {
+    const eventId = await album();
+
+    const res = await postAudio(eventId, fp(), 'a'.repeat(101));
+
+    expect(res.status).toBe(400);
+    expect(await count('audio_guestbook', eventId)).toBe(0);
+  });
+
+  it('is accepted at the limit', async () => {
+    const eventId = await album();
+
+    const res = await postAudio(eventId, fp(), 'a'.repeat(100));
+
+    expect(res.status).toBe(201);
+  });
+});
+
 describe('a voice message sent again after its answer was lost (N-78)', () => {
   it('is stored once, and the replay is answered with the stored message', async () => {
     const eventId = await album();

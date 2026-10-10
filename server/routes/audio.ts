@@ -13,6 +13,7 @@ import { resolveGuestIdentity, findGuestIdentity } from '../lib/guestIdentity';
 import { wsManager } from '../ws/wsServer';
 import { errorLabel, isUniqueViolation } from '../lib/errors';
 import { optionalAuth } from '../middleware/auth';
+import { LOCAL_ID_MAX_LENGTH } from './photos/shared';
 
 export const audioRouter = Router();
 
@@ -78,6 +79,11 @@ audioRouter.post('/', uploadIpLimiter, uploadLimiter, upload.single('audio'), re
     }
     if (!req.file || !req.file.buffer || req.file.buffer.length === 0) {
       return res.status(400).json({ error: 'No audio file uploaded' });
+    }
+    // N-102 — as the photo schema has it. Unbounded, a long id failed the
+    // insert on its unique index with a 500.
+    if (localId !== undefined && (typeof localId !== 'string' || localId.length > LOCAL_ID_MAX_LENGTH)) {
+      return res.status(400).json({ error: 'Invalid localId' });
     }
     // The actual bytes are checked, not the client-claimed MIME type or an
     // already-hosted URL string handed straight through (SEC-M3). The check is

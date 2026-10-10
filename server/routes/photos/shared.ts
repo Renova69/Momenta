@@ -18,6 +18,9 @@ import { RESERVED_DEVICE_FINGERPRINTS } from '../../lib/guestAuth';
 // real capture with a validation error. The caps below track the JSON body limit.
 export const DATA_URL_MAX = CONFIG.MAX_UPLOAD_SIZE_MB * 1024 * 1024;
 
+/** The longest id a device may give an upload (`localId`, stored as `client_upload_id`). */
+export const LOCAL_ID_MAX_LENGTH = 100;
+
 export const CreatePhotoSchema = z
   .object({
     eventId: z.string().optional(),
@@ -44,7 +47,7 @@ export const CreatePhotoSchema = z
     filterApplied: z.string().max(50).optional(),
     questId: z.string().max(100).optional(),
     questTitle: z.string().max(200).optional(),
-    localId: z.string().max(100).optional(),
+    localId: z.string().max(LOCAL_ID_MAX_LENGTH).optional(),
     deviceFingerprint: z.string().max(200).optional(),
     // Proof of guest identity for a client-supplied guestId (SEC-A2). Absent for
     // a first-time device, which is fine — that path mints a fresh guest.
@@ -76,7 +79,7 @@ export const CommentPhotoSchema = z
     // here instead of passing this check and then being trimmed to an empty
     // string by the route handler right before insert.
     commentText: z.string().trim().min(1, 'commentText cannot be empty').max(1000),
-    localId: z.string().max(100).optional(),
+    localId: z.string().max(LOCAL_ID_MAX_LENGTH).optional(),
     guestToken: z.string().max(2000).optional(),
     // H8 — lets a guest with no token still be recognised as the device they
     // already commented from, instead of minting a fresh row per request. Same
