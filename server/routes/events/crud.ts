@@ -12,6 +12,7 @@ import { validateBody } from '../../middleware/validate';
 import { requireUuidParams } from '../../middleware/uuid';
 import { wsManager } from '../../ws/wsServer';
 import { cleanSlug } from '../../lib/storage';
+import { SLUG_MAX_LENGTH } from '../../../shared/transliterate';
 import { requireAuth } from '../../middleware/auth';
 import { getEffectiveTierForEvent, getEffectiveTierForUser, meetsTier, acquireUserEventCreationLock } from '../../middleware/tierGate';
 import { computeExpiry, purgeEventMedia, markEventDeleting, clearDeletionMark } from '../../lib/retention';
@@ -171,7 +172,9 @@ async function isSlugReservedForOthers(slug: string, userId: string): Promise<bo
 
 /** The variant a taken or reserved address is replaced with. */
 function slugVariant(slug: string, attempt: number): string {
-  return `${slug}-${Date.now().toString(36).slice(-4)}${attempt}`;
+  const suffix = `-${Date.now().toString(36).slice(-4)}${attempt}`;
+  // N-87 — the address gives way so the variant still fits the column.
+  return `${slug.slice(0, SLUG_MAX_LENGTH - suffix.length).replace(/-+$/, '')}${suffix}`;
 }
 
 // POST /api/events — create a new event for the authenticated host (multi-event management)

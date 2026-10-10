@@ -29,6 +29,18 @@ export function transliterateBg(text: string): string {
 }
 
 /** Build a URL-safe wedding slug, suffixed with the event year. */
+/** The longest album address: the `events.slug` column is VARCHAR(100). */
+export const SLUG_MAX_LENGTH = 100;
+
+/**
+ * How much of a name a generated address keeps (N-87). What is appended to it
+ * must still fit the column: the year, a timestamp and a random part on
+ * registration, a variant suffix when the address is taken. A 100-character
+ * Bulgarian name transliterates to far more (щ becomes "sht"), and used whole
+ * it overflowed the column with a 500.
+ */
+const GENERATED_SLUG_BASE_MAX = 60;
+
 export function cleanSlug(text: string, dateStr?: string): string {
   const year = dateStr ? new Date(dateStr).getFullYear() || 2026 : 2026;
   if (!text) return `wedding-${year}`;
@@ -40,6 +52,7 @@ export function cleanSlug(text: string, dateStr?: string): string {
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '');
 
-  if (!clean) return `wedding-${year}`;
-  return clean.includes(String(year)) ? clean : `${clean}-${year}`;
+  const base = clean.slice(0, GENERATED_SLUG_BASE_MAX).replace(/-+$/, '');
+  if (!base) return `wedding-${year}`;
+  return base.includes(String(year)) ? base : `${base}-${year}`;
 }

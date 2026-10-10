@@ -11,7 +11,7 @@ import React, { useEffect, useId } from 'react';
 import { Settings, Shield, Trophy, Camera, Users, Lock } from 'lucide-react';
 import { i18n } from '../../../i18n';
 import { THEMES } from '../../../config/themes';
-import { transliterateBg } from '../../../utils/transliterate';
+import { transliterateBg, SLUG_MAX_LENGTH } from '../../../utils/transliterate';
 import { router } from '../../../router';
 import { StorageMeter } from '../StorageMeter';
 import { maskDateInput, maskTimeInput } from './dateFields';
@@ -348,7 +348,9 @@ export const OverviewTab: React.FC = () => {
                 const customSlug = transliterateBg(raw)
                   .toLowerCase()
                   .replace(/[^a-z0-9-]/g, '-')
-                  .replace(/-+/g, '-');
+                  .replace(/-+/g, '-')
+                  // The column's length (N-87), so a long paste is not refused at save.
+                  .slice(0, SLUG_MAX_LENGTH);
                 // The URL bar preview updates live — it's local and free.
                 // The server write is what's debounced. replace: true
                 // (FE-07) so a handful of keystrokes doesn't push a
