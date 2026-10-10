@@ -317,11 +317,18 @@ export async function promoteEligiblePhotos(eventId: string, disposableLocked: b
         .catch((err) => console.warn(`[Quarantine] Could not clear the lock flag for ${eventId}:`, errorLabel(err)));
     }
   } finally {
+    // N-106 — every advisory lock this session took is given back: the
+    // album's, and any photo's whose own unlock failed in withPhotoMoveLock,
+    // which cannot close a connection it does not own. If even that fails,
+    // the connection is closed rather than returned to the pool holding them,
+    // where every later approve or delete of those photos would wait for ever.
+    let released = !held;
     if (held) {
-      await client
-        .query('SELECT pg_advisory_unlock(hashtextextended($1, 0))', [`promote_${eventId}`])
-        .catch(() => undefined);
+      released = await client
+        .query('SELECT pg_advisory_unlock_all()')
+        .then(() => true)
+        .catch(() => false);
     }
-    client.release();
+    client.release(!released);
   }
 }
