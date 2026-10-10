@@ -306,6 +306,7 @@ export const en: Record<string, string> = {
   'host.reset_confirm': 'Reset this album\'s local data? This cannot be undone.',
   'events.load_failed': 'Could not load your weddings: ',
   'events.default_venue': 'Wedding venue',
+  'events.date_required': 'Choose the date of the celebration.',
   'events.create_failed': 'The wedding could not be created.',
   'events.hosts_example': 'e.g. Victoria & Alexander',
   'events.title_example': 'e.g. Victoria & Alexander\'s Wedding',

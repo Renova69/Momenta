@@ -109,6 +109,43 @@ describe('HostEventsList', () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
+  /**
+   * N-90 — the form suggested 18 September 2026 for every new album, a date
+   * already past; and clearing the field made submitting throw, because an
+   * empty date has no ISO form.
+   */
+  it('suggests a date still ahead, not a fixed one already past (N-90)', () => {
+    vi.spyOn(eventsApi, 'listMine').mockResolvedValue([]);
+    render(
+      <HostEventsList isOpen onClose={vi.fn()} currentEvent={CURRENT} onSelectEvent={vi.fn()} onCreateEvent={vi.fn()} onOpenPricing={vi.fn()} />
+    );
+
+    fireEvent.click(screen.getByText(i18n.t('host.new_event')));
+    const date = screen.getByLabelText(i18n.t('ui.host_events_list.2')) as HTMLInputElement;
+
+    expect(new Date(date.value).getTime()).toBeGreaterThan(Date.now());
+  });
+
+  it('asks for a date when the field was cleared, instead of throwing (N-90)', async () => {
+    vi.spyOn(eventsApi, 'listMine').mockResolvedValue([]);
+    const onCreateEvent = vi.fn();
+    render(
+      <HostEventsList isOpen onClose={vi.fn()} currentEvent={CURRENT} onSelectEvent={vi.fn()} onCreateEvent={onCreateEvent} onOpenPricing={vi.fn()} />
+    );
+
+    fireEvent.click(screen.getByText(i18n.t('host.new_event')));
+    fireEvent.change(screen.getByPlaceholderText(i18n.t('events.hosts_example')), { target: { value: 'Gergana & Ivan' } });
+    fireEvent.change(screen.getByLabelText(i18n.t('ui.host_events_list.2')), { target: { value: '' } });
+
+    await act(async () => {
+      fireEvent.submit(screen.getByText(i18n.t('events.create_new')).closest('form')!);
+      await Promise.resolve();
+    });
+
+    expect(onCreateEvent).not.toHaveBeenCalled();
+    expect(screen.getByText(i18n.t('events.date_required'))).toBeInTheDocument();
+  });
+
   it('refuses to submit the create form without a host name', () => {
     vi.spyOn(eventsApi, 'listMine').mockResolvedValue([]);
     const onCreateEvent = vi.fn();

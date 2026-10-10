@@ -21,6 +21,21 @@ interface HostEventsListProps {
   onOpenPricing: () => void;
 }
 
+/** How far ahead the form suggests a new celebration. */
+const SUGGESTED_DAYS_AHEAD = 90;
+
+/**
+ * The date the form starts with, as a datetime-local value: some months
+ * ahead, late afternoon, local time. It was a fixed 18 September 2026, which
+ * every host since that day was offered as a date already past (N-90).
+ */
+function suggestedEventDate(): string {
+  const when = new Date();
+  when.setDate(when.getDate() + SUGGESTED_DAYS_AHEAD);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${when.getFullYear()}-${pad(when.getMonth() + 1)}-${pad(when.getDate())}T16:30`;
+}
+
 export const HostEventsList: React.FC<HostEventsListProps> = ({
   isOpen,
   onClose,
@@ -33,7 +48,7 @@ export const HostEventsList: React.FC<HostEventsListProps> = ({
   const [isCreating, setIsCreating] = useState(false);
   const [title, setTitle] = useState('');
   const [hostName, setHostName] = useState('');
-  const [eventDate, setEventDate] = useState('2026-09-18T16:30');
+  const [eventDate, setEventDate] = useState(suggestedEventDate);
   const [venueName, setVenueName] = useState('');
   const [events, setEvents] = useState<WeddingEvent[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -72,6 +87,13 @@ export const HostEventsList: React.FC<HostEventsListProps> = ({
   const handleCreateSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!hostName.trim()) return;
+    // N-90 — an empty date has no ISO form: toISOString threw, and the
+    // submit failed with nothing on screen to say why.
+    const when = new Date(eventDate);
+    if (!eventDate || Number.isNaN(when.getTime())) {
+      setErrorMsg(i18n.t('events.date_required'));
+      return;
+    }
 
     const slug = generateEventSlug(hostName, eventDate);
 
@@ -79,7 +101,7 @@ export const HostEventsList: React.FC<HostEventsListProps> = ({
       title: title.trim() || i18n.t('host.wedding_of_name', { name: hostName }),
       hostName: hostName.trim(),
       slug,
-      eventDate: new Date(eventDate).toISOString(),
+      eventDate: when.toISOString(),
       venueName: venueName.trim() || i18n.t('events.default_venue'),
       themePalette: 'champagne_gold',
       coverImageUrl: 'https://images.unsplash.com/photo-1511285560929-80b456fea0bc?auto=format&fit=crop&w=1200&q=80',
@@ -168,6 +190,7 @@ export const HostEventsList: React.FC<HostEventsListProps> = ({
                 <input
                   id={`${fieldIds}-3`}
                   type="datetime-local"
+                  required
                   value={eventDate}
                   onChange={(e) => setEventDate(e.target.value)}
                   className="w-full px-3.5 py-2.5 rounded-xl bg-noir-800 border border-cream-400/20 text-xs text-cream-100 focus:outline-none focus:border-gold-400"

@@ -333,6 +333,7 @@ export const bg: Record<string, string> = {
   'host.reset_confirm': 'Сигурни ли сте, че искате да нулирате данните?',
   'events.load_failed': 'Не можахме да заредим събитията: ',
   'events.default_venue': 'Сватбена локация',
+  'events.date_required': 'Изберете датата на празненството.',
   'events.create_failed': 'Неуспешно създаване на събитие.',
   'events.hosts_example': 'напр. Виктория и Александър',
   'events.title_example': 'напр. Сватбата на Виктория и Александър',
