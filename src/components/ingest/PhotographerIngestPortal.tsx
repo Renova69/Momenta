@@ -1,6 +1,7 @@
 import React, { useCallback, useRef, useState } from 'react';
 import { WeddingEvent } from '../../types';
-import { ingestApi } from '../../api/ingestApi';
+import { ingestApi, IngestFailure } from '../../api/ingestApi';
+import { ERROR_CODE_KEYS } from '../../api/apiClient';
 import { i18n } from '../../i18n';
 import {
   UploadCloud,
@@ -15,6 +16,28 @@ import {
 interface PhotographerIngestPortalProps {
   event: WeddingEvent;
   onClose: () => void;
+}
+
+/** Answers the server sends no code for, said by their status. */
+const REFUSAL_STATUS_KEYS: Record<number, string> = {
+  401: 'ingest.reason_bad_key',
+  404: 'ingest.reason_album_gone',
+  413: 'ingest.reason_file_too_big',
+  429: 'ingest.reason_too_fast',
+};
+
+/**
+ * Why a file did not arrive, in the photographer's language (N-105): the
+ * server's code first, then its status, then a general reason. Its own
+ * English wording is never shown.
+ */
+function refusalText(failure: IngestFailure): string {
+  if (failure.code === 'NETWORK') return i18n.t('ingest.reason_network');
+  const key =
+    (failure.code && ERROR_CODE_KEYS[failure.code]) ||
+    (failure.status && REFUSAL_STATUS_KEYS[failure.status]) ||
+    'ingest.portal_upload_failed';
+  return i18n.t(key);
 }
 
 export const PhotographerIngestPortal: React.FC<PhotographerIngestPortalProps> = ({ event, onClose }) => {
@@ -69,13 +92,19 @@ export const PhotographerIngestPortal: React.FC<PhotographerIngestPortalProps> =
         concurrency: 4,
         onProgress: (done, total) => setProgress(Math.round((done / total) * 100)),
       });
-      setUploadedCount(photos.length);
+      // N-103 — a retry adds to what is already on the screen; it used to
+      // replace it, so 8 frames and a retry of 2 read as "2 sent".
+      setUploadedCount((sent) => sent + photos.length);
       // N-75 — only what did not arrive stays selected, so pressing Upload
       // again never sends a frame to the live screen twice.
       setFiles(failed.map((f) => f.file));
       if (failed.length > 0) {
         setError(
-          i18n.t('ingest.portal_some_failed', { count: failed.length, total: files.length, reason: failed[0].reason })
+          i18n.t('ingest.portal_some_failed', {
+            count: failed.length,
+            total: files.length,
+            reason: refusalText(failed[0]),
+          })
         );
       }
     } catch (err) {
@@ -198,7 +227,7 @@ export const PhotographerIngestPortal: React.FC<PhotographerIngestPortalProps> =
 
         {uploadedCount > 0 && !isUploading && (
           <div className="flex items-center gap-2 text-sage-300 text-sm font-semibold">
-            <CheckCircle2 className="w-5 h-5" /> {uploadedCount} photo{uploadedCount !== 1 ? 's' : ''} sent to the live screen.
+            <CheckCircle2 className="w-5 h-5" /> {i18n.t('ingest.portal_sent', { count: uploadedCount })}
           </div>
         )}
 
@@ -208,7 +237,13 @@ export const PhotographerIngestPortal: React.FC<PhotographerIngestPortalProps> =
           className="w-full py-4 rounded-2xl bg-gradient-to-r from-gold-400 to-gold-500 text-noir-900 font-bold shadow-glow hover:brightness-110 flex items-center justify-center gap-2 disabled:opacity-60"
         >
           {isUploading ? <Loader2 className="w-5 h-5 animate-spin" /> : <UploadCloud className="w-5 h-5" />}
-          <span>{isUploading ? `Uploading… ${progress}%` : `Upload ${files.length || ''} to live screen`}</span>
+          <span>
+            {isUploading
+              ? i18n.t('ingest.portal_uploading', { progress })
+              : files.length > 0
+                ? i18n.t('ingest.portal_upload_button', { count: files.length })
+                : i18n.t('ingest.portal_upload_none')}
+          </span>
         </button>
       </main>
     </div>

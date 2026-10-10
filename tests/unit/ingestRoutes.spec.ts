@@ -170,6 +170,7 @@ describe('Photographer Ingest Routes Spec', () => {
       body,
     });
     expect(noKeyRes.status).toBe(401);
+    expect((await noKeyRes.json()).code).toBe('INGEST_KEY_INVALID');
 
     const okRes = await fetch(`${BASE_URL}/api/ingest/${eventId}/photos`, {
       method: 'POST',
@@ -235,7 +236,11 @@ describe('Photographer Ingest Routes Spec', () => {
     });
 
     expect(res.status).toBe(400);
-    expect((await res.json()).uploaded).toBe(0);
+    const body = await res.json();
+    expect(body.uploaded).toBe(0);
+    // N-105 — a code the portal can put into the photographer's language.
+    expect(body.code).toBe('NOT_AN_IMAGE');
+    expect(body.rejected[0].code).toBe('NOT_AN_IMAGE');
   });
 
   it('scopes a key to its own event', async () => {

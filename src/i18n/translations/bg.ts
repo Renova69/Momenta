@@ -685,6 +685,17 @@ export const bg: Record<string, string> = {
   'ingest.portal_need_key': 'Въведете ключа за качване (или отворете тази страница с връзката, предоставена от домакина).',
   'ingest.portal_need_files': 'Добавете поне една снимка.',
   'ingest.portal_upload_failed': 'Качването не бе успешно',
+  'ingest.portal_sent': 'Изпратени към живия екран: {{count}}.',
+  'ingest.portal_uploading': 'Качване… {{progress}}%',
+  'ingest.portal_upload_button': 'Качи {{count}} на живия екран',
+  'ingest.portal_upload_none': 'Качи на живия екран',
+  'ingest.reason_not_image': 'не е поддържано изображение',
+  'ingest.reason_too_many_pixels': 'повече пиксели, отколкото сървърът приема',
+  'ingest.reason_bad_key': 'ключът за качване не е валиден',
+  'ingest.reason_album_gone': 'този албум вече не съществува',
+  'ingest.reason_file_too_big': 'файлът е твърде голям',
+  'ingest.reason_too_fast': 'твърде много качвания наведнъж, изчакайте малко',
+  'ingest.reason_network': 'връзката прекъсна',
   'ingest.portal_some_failed': '{{count}} от {{total}} снимки не бяха качени ({{reason}}). Те остават избрани: качете отново, за да изпратите само тях.',
 
   // Public Weddings Showcase (homepage)

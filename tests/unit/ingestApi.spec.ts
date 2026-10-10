@@ -268,6 +268,34 @@ describe('ingestApi.uploadPhotos when some files fail (N-75)', () => {
     expect(result.failed.every((f) => f.reason === 'Invalid or missing ingest key')).toBe(true);
   });
 
+  it('keeps the code and status of a refusal, for the portal to translate (N-105)', async () => {
+    stubFetch(() => jsonResponse(400, { error: 'Not a supported image file', code: 'NOT_AN_IMAGE' }));
+
+    const result = await ingestApi.uploadPhotos('e1', 'k', [fileNamed('a.jpg')]);
+
+    expect(result.failed[0]).toMatchObject({ code: 'NOT_AN_IMAGE', status: 400 });
+  });
+
+  it('keeps the code of a file the server turned away inside a successful response', async () => {
+    stubFetch(() =>
+      jsonResponse(201, { photos: [], rejected: [{ file: 'big.jpg', reason: 'Too many pixels', code: 'TOO_MANY_PIXELS' }] })
+    );
+
+    const result = await ingestApi.uploadPhotos('e1', 'k', [fileNamed('big.jpg')]);
+
+    expect(result.failed[0].code).toBe('TOO_MANY_PIXELS');
+  });
+
+  it('marks a dropped connection as such', async () => {
+    stubFetch(() => {
+      throw new TypeError('Failed to fetch');
+    });
+
+    const result = await ingestApi.uploadPhotos('e1', 'k', [fileNamed('a.jpg')]);
+
+    expect(result.failed[0].code).toBe('NETWORK');
+  });
+
   it('counts every file towards progress, failed ones included', async () => {
     stubFetch((call) => (nameOf(call) === 'b.jpg' ? jsonResponse(400, { error: 'bad' }) : okPhotos()));
     const seen: number[] = [];

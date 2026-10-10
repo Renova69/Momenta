@@ -658,6 +658,17 @@ export const en: Record<string, string> = {
   'ingest.portal_need_key': 'Enter the ingest key, or open this page with the link provided by the host.',
   'ingest.portal_need_files': 'Add at least one image.',
   'ingest.portal_upload_failed': 'Upload failed',
+  'ingest.portal_sent': '{{count}} photo(s) sent to the live screen.',
+  'ingest.portal_uploading': 'Uploading… {{progress}}%',
+  'ingest.portal_upload_button': 'Upload {{count}} to live screen',
+  'ingest.portal_upload_none': 'Upload to live screen',
+  'ingest.reason_not_image': 'not a supported image',
+  'ingest.reason_too_many_pixels': 'more pixels than this server accepts',
+  'ingest.reason_bad_key': 'the ingest key is not valid',
+  'ingest.reason_album_gone': 'this album no longer exists',
+  'ingest.reason_file_too_big': 'the file is too large',
+  'ingest.reason_too_fast': 'too many uploads at once, wait a moment',
+  'ingest.reason_network': 'the connection dropped',
   'ingest.portal_some_failed': '{{count}} of {{total}} photos did not upload ({{reason}}). They are still selected: upload again to send only those.',
 
   // Public Weddings Showcase (homepage)

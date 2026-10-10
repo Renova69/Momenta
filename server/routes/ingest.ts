@@ -151,12 +151,12 @@ async function requireIngestKeyBeforeBody(req: Request, res: Response, next: Nex
   try {
     const eventCheck = await pool.query('SELECT id FROM events WHERE id = $1', [eventId]);
     if (eventCheck.rows.length === 0) {
-      res.status(404).json({ error: 'Event not found' });
+      res.status(404).json({ error: 'Event not found', code: 'INGEST_ALBUM_NOT_FOUND' });
       return;
     }
     const keyId = await validateIngestKey(eventId, extractIngestKeyFromRequest(req) || '');
     if (!keyId) {
-      res.status(401).json({ error: 'Invalid or missing ingest key' });
+      res.status(401).json({ error: 'Invalid or missing ingest key', code: 'INGEST_KEY_INVALID' });
       return;
     }
     next();
@@ -193,7 +193,9 @@ ingestRouter.post(
     const baseUrl = CONFIG.PUBLIC_BASE_URL;
 
     const created: IngestedPhoto[] = [];
-    const rejected: { file: string; reason: string }[] = [];
+    // N-105 — with a code beside each reason, so the portal can say it in
+    // the photographer's language rather than quote this English.
+    const rejected: { file: string; reason: string; code: string }[] = [];
 
     for (const file of files) {
       if (!file || !file.buffer || !file.mimetype) continue;
@@ -210,17 +212,18 @@ ingestRouter.post(
 
       if (outcome.reason === 'tier_limit') {
         // The event's allowance is exhausted; the rest of the batch will fail too.
-        rejected.push({ file: file.originalname, reason: outcome.message });
+        rejected.push({ file: file.originalname, reason: outcome.message, code: outcome.code });
         break;
       }
-      rejected.push({
-        file: file.originalname,
-        reason: outcome.reason === 'too_large' ? 'Image has more pixels than this server accepts' : 'Not a supported image file',
-      });
+      rejected.push(
+        outcome.reason === 'too_large'
+          ? { file: file.originalname, reason: 'Image has more pixels than this server accepts', code: 'TOO_MANY_PIXELS' }
+          : { file: file.originalname, reason: 'Not a supported image file', code: 'NOT_AN_IMAGE' }
+      );
     }
 
     if (created.length === 0 && rejected.length > 0) {
-      return res.status(400).json({ error: rejected[0].reason, uploaded: 0, rejected });
+      return res.status(400).json({ error: rejected[0].reason, code: rejected[0].code, uploaded: 0, rejected });
     }
 
     res.status(201).json({ success: true, uploaded: created.length, photos: created, rejected });

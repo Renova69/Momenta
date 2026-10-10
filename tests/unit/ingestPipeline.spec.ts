@@ -155,6 +155,7 @@ describe('what the pipeline refuses', () => {
       ok: false,
       reason: 'tier_limit',
       message: 'Event not found',
+      code: 'INGEST_ALBUM_NOT_FOUND',
     });
   }, 20_000);
 });

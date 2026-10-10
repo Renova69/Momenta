@@ -45,7 +45,7 @@ export interface IngestBufferOptions {
 export type IngestRejection =
   | { ok: false; reason: 'not_an_image' }
   | { ok: false; reason: 'too_large' }
-  | { ok: false; reason: 'tier_limit'; message: string };
+  | { ok: false; reason: 'tier_limit'; message: string; code: string };
 
 export type IngestOutcome = { ok: true; photo: IngestedPhoto } | IngestRejection;
 
@@ -72,7 +72,12 @@ export async function ingestPhoto(
   // photographer batch is the fastest way to exhaust an allowance.
   const tierCheck = await checkPhotoUploadTierLimit(eventId, buffer.length);
   if (!tierCheck.allowed) {
-    return { ok: false, reason: 'tier_limit', message: tierCheck.reason || 'Plan limit reached' };
+    return {
+      ok: false,
+      reason: 'tier_limit',
+      message: tierCheck.reason || 'Plan limit reached',
+      code: tierCheck.code || 'TIER_LIMIT_REACHED',
+    };
   }
 
   const photographerName = options.photographerName?.trim() || 'Official Photographer';
@@ -181,6 +186,12 @@ export async function ingestPhoto(
           : written.reason === 'event_not_found'
             ? 'Event not found'
             : String(written.body.error ?? 'Upload refused'),
+      code:
+        written.reason === 'quota'
+          ? written.code
+          : written.reason === 'event_not_found'
+            ? 'INGEST_ALBUM_NOT_FOUND'
+            : String(written.body.code ?? 'TIER_LIMIT_REACHED'),
     };
   }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

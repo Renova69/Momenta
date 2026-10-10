@@ -69,7 +69,7 @@ describe('PhotographerIngestPortal', () => {
     render(<PhotographerIngestPortal event={EVENT} onClose={vi.fn()} />);
     fireEvent.change(fileInput(), { target: { files: makeImageFiles(2) } });
 
-    fireEvent.click(screen.getByText(/Upload 2 to live screen/));
+    fireEvent.click(screen.getByText(i18n.t('ingest.portal_upload_button', { count: 2 })));
 
     expect(screen.getByText(i18n.t('ingest.portal_need_key'))).toBeInTheDocument();
   });
@@ -78,7 +78,7 @@ describe('PhotographerIngestPortal', () => {
     render(<PhotographerIngestPortal event={EVENT} onClose={vi.fn()} />);
     fireEvent.change(screen.getByPlaceholderText('wmi_...'), { target: { value: 'wmi_test_key' } });
 
-    fireEvent.click(screen.getByText(/Upload\s*to live screen/));
+    fireEvent.click(screen.getByText(i18n.t('ingest.portal_upload_none')));
 
     expect(screen.getByText(i18n.t('ingest.portal_need_files'))).toBeInTheDocument();
   });
@@ -93,9 +93,9 @@ describe('PhotographerIngestPortal', () => {
     fireEvent.change(screen.getByDisplayValue(i18n.t('ingest.default_label')), { target: { value: '  Studio X  ' } });
     fireEvent.change(fileInput(), { target: { files: makeImageFiles(2) } });
 
-    fireEvent.click(screen.getByText(/Upload 2 to live screen/));
+    fireEvent.click(screen.getByText(i18n.t('ingest.portal_upload_button', { count: 2 })));
 
-    await waitFor(() => expect(screen.getByText(/2 photos sent to the live screen\./)).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText(i18n.t('ingest.portal_sent', { count: 2 }))).toBeInTheDocument());
 
     expect(uploadSpy).toHaveBeenCalledWith(
       'e1',
@@ -113,7 +113,7 @@ describe('PhotographerIngestPortal', () => {
 
     fireEvent.change(screen.getByPlaceholderText('wmi_...'), { target: { value: 'wmi_test_key' } });
     fireEvent.change(fileInput(), { target: { files: makeImageFiles(1) } });
-    fireEvent.click(screen.getByText(/Upload 1 to live screen/));
+    fireEvent.click(screen.getByText(i18n.t('ingest.portal_upload_button', { count: 1 })));
 
     await waitFor(() => expect(screen.getByText('Ingest key revoked')).toBeInTheDocument());
   });
@@ -128,18 +128,44 @@ describe('PhotographerIngestPortal', () => {
     fireEvent.change(screen.getByPlaceholderText('wmi_...'), { target: { value: 'wmi_test_key' } });
     fireEvent.change(fileInput(), { target: { files } });
 
-    fireEvent.click(screen.getByText(/Upload 3 to live screen/));
+    fireEvent.click(screen.getByText(i18n.t('ingest.portal_upload_button', { count: 3 })));
 
-    await waitFor(() => expect(screen.getByText(/2 photos sent to the live screen\./)).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText(i18n.t('ingest.portal_sent', { count: 2 }))).toBeInTheDocument());
     expect(
-      screen.getByText(i18n.t('ingest.portal_some_failed', { count: 1, total: 3, reason: 'Not a supported image file' }))
+      screen.getByText(
+        i18n.t('ingest.portal_some_failed', { count: 1, total: 3, reason: i18n.t('ingest.portal_upload_failed') })
+      )
     ).toBeInTheDocument();
 
     uploadSpy.mockResolvedValueOnce({ photos: [{ id: 'p3' } as Photo], failed: [] });
-    fireEvent.click(screen.getByText(/Upload 1 to live screen/));
+    fireEvent.click(screen.getByText(i18n.t('ingest.portal_upload_button', { count: 1 })));
 
     await waitFor(() => expect(uploadSpy).toHaveBeenCalledTimes(2));
     expect(uploadSpy.mock.calls[1][2]).toEqual([files[1]]);
+    // N-103 — the retry adds to what was already sent, rather than replacing it.
+    await waitFor(() => expect(screen.getByText(i18n.t('ingest.portal_sent', { count: 3 }))).toBeInTheDocument());
+  });
+
+  it('says why a file was refused in the photographer\'s language, not the server\'s (N-105)', async () => {
+    const files = makeImageFiles(1);
+    vi.spyOn(ingestApi, 'uploadPhotos').mockResolvedValueOnce({
+      photos: [],
+      failed: [{ file: files[0], reason: 'Not a supported image file', code: 'NOT_AN_IMAGE', status: 400 }],
+    });
+    render(<PhotographerIngestPortal event={EVENT} onClose={vi.fn()} />);
+    fireEvent.change(screen.getByPlaceholderText('wmi_...'), { target: { value: 'wmi_test_key' } });
+    fireEvent.change(fileInput(), { target: { files } });
+
+    fireEvent.click(screen.getByText(i18n.t('ingest.portal_upload_button', { count: 1 })));
+
+    await waitFor(() =>
+      expect(
+        screen.getByText(
+          i18n.t('ingest.portal_some_failed', { count: 1, total: 1, reason: i18n.t('ingest.reason_not_image') })
+        )
+      ).toBeInTheDocument()
+    );
+    expect(screen.queryByText(/Not a supported image file/)).toBeNull();
   });
 
   it('calls onClose when the close button is clicked', () => {

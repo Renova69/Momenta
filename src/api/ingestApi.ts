@@ -24,7 +24,11 @@ export interface IngestUploadOptions {
 /** A file from a batch that did not become a photo, and the reason given. */
 export interface IngestFailure {
   file: File;
+  /** The server's own words, for logs. Shown to the photographer by `code` (N-105). */
   reason: string;
+  /** The server's code for the refusal, or NETWORK for a dropped connection. */
+  code?: string;
+  status?: number;
 }
 
 export interface IngestUploadResult {
@@ -39,12 +43,12 @@ export interface IngestUploadResult {
  */
 const BATCH_ENDING_STATUSES = new Set([401, 404, 429]);
 
-/** The server's own message from an error response, or the status code. */
-async function errorMessage(res: Response): Promise<string> {
-  const errJson = await res.json().catch(() => ({}));
-  const message =
-    errJson && typeof errJson === 'object' && 'error' in errJson ? String((errJson as { error: unknown }).error) : '';
-  return message || `Upload failed (HTTP ${res.status})`;
+/** The server's message and code from an error response; the status when it sent neither. */
+async function refusalOf(res: Response): Promise<{ reason: string; code?: string }> {
+  const errJson = (await res.json().catch(() => ({}))) as { error?: unknown; code?: unknown };
+  const message = errJson && typeof errJson === 'object' && 'error' in errJson ? String(errJson.error) : '';
+  const code = typeof errJson?.code === 'string' ? errJson.code : undefined;
+  return { reason: message || `Upload failed (HTTP ${res.status})`, code };
 }
 
 export const ingestApi = {
@@ -92,7 +96,7 @@ export const ingestApi = {
 
     let cursor = 0;
     let done = 0;
-    let batchEnded: string | null = null;
+    let batchEnded: { reason: string; code?: string; status: number } | null = null;
 
     const send = async (file: File): Promise<void> => {
       const formData = new FormData();
@@ -105,14 +109,14 @@ export const ingestApi = {
         res = await fetch(endpoint, { method: 'POST', headers: { 'X-Ingest-Key': key }, body: formData });
       } catch (err) {
         // Venue Wi-Fi: this file did not go, the next one may.
-        failed.push({ file, reason: err instanceof Error ? err.message : 'Network error' });
+        failed.push({ file, reason: err instanceof Error ? err.message : 'Network error', code: 'NETWORK' });
         return;
       }
 
       if (!res.ok) {
-        const reason = await errorMessage(res);
-        failed.push({ file, reason });
-        if (BATCH_ENDING_STATUSES.has(res.status)) batchEnded = reason;
+        const refusal = await refusalOf(res);
+        failed.push({ file, ...refusal, status: res.status });
+        if (BATCH_ENDING_STATUSES.has(res.status)) batchEnded = { ...refusal, status: res.status };
         return;
       }
 
@@ -120,7 +124,12 @@ export const ingestApi = {
       if (Array.isArray(data.photos)) photos.push(...data.photos);
       // One file per request, so a file the server turned away is this one.
       if (Array.isArray(data.rejected) && data.rejected.length > 0) {
-        failed.push({ file, reason: String(data.rejected[0]?.reason || 'Not a supported image file') });
+        const first = data.rejected[0] ?? {};
+        failed.push({
+          file,
+          reason: String(first.reason || 'Not a supported image file'),
+          code: typeof first.code === 'string' ? first.code : undefined,
+        });
       }
     };
 
@@ -136,7 +145,7 @@ export const ingestApi = {
     await Promise.all(workers);
 
     // Files never started because the batch ended are returned as not sent.
-    for (const file of files.slice(cursor)) failed.push({ file, reason: batchEnded ?? '' });
+    for (const file of files.slice(cursor)) failed.push({ file, ...(batchEnded ?? { reason: '' }) });
     return { photos, failed };
   },
 };
