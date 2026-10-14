@@ -1,7 +1,6 @@
 import React, { Suspense, lazy, useState, useEffect, useCallback } from 'react';
 import {
   ThemePalette,
-  Photo,
   PlanTier,
   PhotoReactionKind,
   WeddingEvent,
@@ -70,6 +69,7 @@ const PhotographerIngestPortal = lazy(() =>
 import { isFeatureUnlocked } from './config/tierGating';
 import { useQuestLeaderboard } from './hooks/useQuestLeaderboard';
 import { useCheckoutReturn } from './hooks/useCheckoutReturn';
+import { useLightboxPhoto } from './hooks/useLightboxPhoto';
 import type { RemoteEventPayload } from './services/eventNormalization';
 import { LockedFeatureCard } from './components/common/LockedFeatureBadge';
 import {
@@ -128,7 +128,8 @@ function WeddingAppContent() {
   // Modals state
   const [isCaptureOpen, setIsCaptureOpen] = useState(false);
   const [selectedQuestForCapture, setSelectedQuestForCapture] = useState<string | undefined>(undefined);
-  const [activeLightboxPhoto, setActiveLightboxPhoto] = useState<Photo | null>(null);
+  // N-113 — by id, read from the live list, so what happens inside it shows.
+  const lightbox = useLightboxPhoto(photos);
   const [isGuestProfileOpen, setIsGuestProfileOpen] = useState(false);
   const [isPricingOpen, setIsPricingOpen] = useState(false);
   const [isEventsListOpen, setIsEventsListOpen] = useState(false);
@@ -215,7 +216,7 @@ function WeddingAppContent() {
     [currentGuest, togglePhotoReaction]
   );
 
-  const handleOpenLightbox = useCallback((photo: Photo) => setActiveLightboxPhoto(photo), []);
+  const handleOpenLightbox = lightbox.open;
 
   // Fetched only while a guest is looking at it; see useQuestLeaderboard.
   const guestLeaderboard = useQuestLeaderboard(
@@ -561,8 +562,8 @@ function WeddingAppContent() {
 
       {/* 2. Fullscreen Lightbox & Comments Modal */}
       <LightboxModal
-        photo={activeLightboxPhoto}
-        onClose={() => setActiveLightboxPhoto(null)}
+        photo={lightbox.photo}
+        onClose={lightbox.close}
         currentGuest={safeGuest}
         onLike={handleLikeWithPrompt}
         onReact={handleReactWithPrompt}
