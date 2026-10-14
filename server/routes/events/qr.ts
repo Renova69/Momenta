@@ -38,8 +38,11 @@ eventsRouter.get('/:id/qr-config', requireUuidParams('id'), async (req, res) => 
         eventId: id,
         canvasSize: 'A2',
         frameStyle: 'minimal_gold',
-        headline: 'Capture the Love',
-        subtext: 'Scan the QR code with your phone camera to share your photos and messages to our live wedding gallery.',
+        // N-117 — text the host has not written is left empty, and the
+        // studio fills it in the language it is showing. English here put
+        // "Scan the QR code…" on every Bulgarian poster.
+        headline: null,
+        subtext: null,
         accentColor: '#D4AF37',
         centerIcon: 'heart',
       });
@@ -91,8 +94,8 @@ eventsRouter.put(
     // row's current value instead of clobbering it with the INSERT default.
     const result = await pool.query(
       `INSERT INTO qr_canvas_configs (event_id, canvas_size, frame_style, headline, subtext, accent_color, center_icon)
-       VALUES ($1, COALESCE($2::canvas_size_type, 'A2'), COALESCE($3::frame_style_type, 'minimal_gold'), COALESCE($4, 'Capture the Love'),
-               COALESCE($5, 'Scan the QR code with your phone camera to share your photos.'), COALESCE($6, '#D4AF37'), COALESCE($7, 'heart'))
+       VALUES ($1, COALESCE($2::canvas_size_type, 'A2'), COALESCE($3::frame_style_type, 'minimal_gold'), $4,
+               $5, COALESCE($6, '#D4AF37'), COALESCE($7, 'heart'))
        ON CONFLICT (event_id) DO UPDATE SET
          canvas_size = COALESCE($2::canvas_size_type, qr_canvas_configs.canvas_size),
          frame_style = COALESCE($3::frame_style_type, qr_canvas_configs.frame_style),

@@ -219,3 +219,13 @@ describe('printing', () => {
     expect(await screen.findByText('Preview not mounted')).toBeTruthy();
   });
 });
+
+describe('poster text the host did not write (N-117)', () => {
+  it('is written in the language the studio is showing when the server sends none', async () => {
+    const { i18n } = await import('../../src/i18n');
+    renderStudio({ headline: null as unknown as string, subtext: null as unknown as string });
+
+    expect(screen.getByDisplayValue(i18n.t('canvas.headline_default'))).toBeTruthy();
+    expect(screen.getByDisplayValue(i18n.t('canvas.subtext_default'))).toBeTruthy();
+  });
+});
