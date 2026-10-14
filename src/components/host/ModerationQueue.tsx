@@ -117,6 +117,12 @@ export const ModerationQueue: React.FC<ModerationQueueProps> = ({
                   <div className="absolute top-2 left-2 px-2 py-0.5 rounded-md bg-black/60 text-[10px] text-cream-300 font-medium">
                     {photo.guestName} ({photo.guestTable || i18n.t('moderation.no_table')})
                   </div>
+                  {/* N-128 — a quest entry is judged as one. */}
+                  {photo.questTitle && (
+                    <div className="absolute bottom-2 left-2 px-2 py-0.5 rounded-md bg-gold-400/90 text-[10px] text-noir-900 font-semibold">
+                      {i18n.t('lightbox.quest_tag')} {photo.questTitle}
+                    </div>
+                  )}
                 </div>
 
                 <div className="p-3 flex-1 flex flex-col justify-between">

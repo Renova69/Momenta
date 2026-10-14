@@ -187,3 +187,17 @@ describe('photos the host rejected (N-121)', () => {
     expect(screen.queryByText(new RegExp(i18n.t('host.rejected_title')))).toBeNull();
   });
 });
+
+describe('a photo entered for a quest (N-128)', () => {
+  it('says which quest, so the host can judge it as an entry', () => {
+    render(
+      <ModerationQueue
+        photos={[photo({ status: 'pending', questId: 'q1', questTitle: 'Първата целувка' })]}
+        onSetStatus={vi.fn()}
+        onDeletePhoto={vi.fn()}
+      />
+    );
+
+    expect(screen.getByText(/Първата целувка/)).toBeTruthy();
+  });
+});

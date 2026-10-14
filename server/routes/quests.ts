@@ -52,7 +52,18 @@ questsRouter.get('/events/:id/quests', requireUuidParams('id'), async (req, res)
         sq.points,
         sq.is_active as "isActive",
         COALESCE(
-          (SELECT array_agg(gqc.guest_id::text) FROM guest_quest_completions gqc WHERE gqc.quest_id = sq.id),
+          -- N-128 — the leaderboard's rule: a completion counts while the
+          -- guest has a photo for this quest the host did not reject.
+          (SELECT array_agg(gqc.guest_id::text)
+             FROM guest_quest_completions gqc
+            WHERE gqc.quest_id = sq.id
+              AND EXISTS (
+                    SELECT 1 FROM photos p
+                     WHERE p.event_id = sq.event_id
+                       AND p.guest_id = gqc.guest_id
+                       AND p.quest_id = sq.id
+                       AND p.status <> 'rejected'
+                  )),
           ARRAY[]::text[]
         ) as "completedByGuestIds"
       FROM scavenger_quests sq

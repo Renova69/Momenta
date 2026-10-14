@@ -101,3 +101,33 @@ describe('quests on a free album (N-123)', () => {
     expect((await quests(host.eventId)).length).toBe(5);
   });
 });
+
+/**
+ * N-128 — the leaderboard drops a quest whose photo the host rejected, but
+ * the quest list kept the guest as having completed it: the guest's tick and
+ * the host's "1 completed" stayed while the points were gone.
+ */
+describe('a quest whose photo was rejected (N-128)', () => {
+  it('no longer lists the guest as having completed it', async () => {
+    const host = await registerHost();
+    await query("UPDATE subscriptions SET tier = 'celebration_pass' WHERE user_id = $1", [host.userId]);
+    const quest = (await query('SELECT id FROM scavenger_quests WHERE event_id = $1 LIMIT 1', [host.eventId])).rows[0].id;
+    const guest = (await query(`INSERT INTO guests (event_id, name) VALUES ($1, 'Q') RETURNING id`, [host.eventId])).rows[0].id;
+    const photo = (
+      await query(
+        `INSERT INTO photos (event_id, guest_id, quest_id, storage_path, full_url, status)
+         VALUES ($1, $2, $3, '/x.jpg', '/x.jpg', 'pending') RETURNING id`,
+        [host.eventId, guest, quest]
+      )
+    ).rows[0].id;
+    await query('INSERT INTO guest_quest_completions (quest_id, guest_id, photo_id) VALUES ($1, $2, $3)', [quest, guest, photo]);
+
+    const before = (await quests(host.eventId)).find((q: { id: string }) => q.id === quest);
+    expect(before.completedByGuestIds).toContain(guest);
+
+    await query(`UPDATE photos SET status = 'rejected' WHERE id = $1`, [photo]);
+
+    const after = (await quests(host.eventId)).find((q: { id: string }) => q.id === quest);
+    expect(after.completedByGuestIds).not.toContain(guest);
+  });
+});
