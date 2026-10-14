@@ -107,3 +107,23 @@ export async function buildDerivatives(
     height: metadata.autoOrient?.height ?? metadata.height ?? 0,
   };
 }
+
+/** Edge of the square a guest's selfie is stored at (N-107). */
+export const AVATAR_EDGE = 256;
+const AVATAR_QUALITY = 80;
+
+/**
+ * Build the stored copy of a guest's selfie: a small square JPEG.
+ *
+ * The selfie is drawn at 40 px or so next to every photo the guest uploads, so
+ * there is nothing to gain from keeping more of it; centre-cropped to a square
+ * because every place it is shown is a circle. Same decode rules as a photo —
+ * EXIF orientation applied, truncated input refused, pixel count capped.
+ */
+export async function buildAvatar(original: Buffer): Promise<Buffer> {
+  return sharp(original, { failOn: 'truncated', limitInputPixels: MAX_INPUT_PIXELS })
+    .rotate()
+    .resize({ width: AVATAR_EDGE, height: AVATAR_EDGE, fit: 'cover' })
+    .jpeg({ quality: AVATAR_QUALITY, mozjpeg: true })
+    .toBuffer();
+}

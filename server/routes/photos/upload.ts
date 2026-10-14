@@ -21,7 +21,7 @@
 import { Router, Request, Response } from 'express';
 import type { Pool, PoolClient } from 'pg';
 import { pool } from '../../lib/db';
-import { decodeDataUrl, toAbsoluteUrl } from '../../lib/storage';
+import { decodeDataUrl, isStoredUrlForEvent, toAbsoluteUrl } from '../../lib/storage';
 import { buildDerivatives } from '../../lib/images';
 import { validateBody } from '../../middleware/validate';
 import { uploadLimiter, uploadIpLimiter } from '../../middleware/rateLimit';
@@ -147,7 +147,13 @@ async function resolveGuestForUpload(eventId: string, body: UploaderFields): Pro
      ON CONFLICT (event_id, device_fingerprint) WHERE device_fingerprint IS NOT NULL
      DO UPDATE SET name = EXCLUDED.name
      RETURNING id, token_version, (xmax = 0) AS inserted`,
-    [eventId, guestName || 'Guest', guestAvatar || null, guestTable || null, deviceFingerprint || null]
+    [
+      eventId,
+      guestName || 'Guest',
+      isStoredUrlForEvent(guestAvatar, eventId) ? guestAvatar : null,
+      guestTable || null,
+      deviceFingerprint || null,
+    ]
   );
   return {
     guestId: guestInsert.rows[0].id,

@@ -161,6 +161,7 @@ export const bg: Record<string, string> = {
   'profile.subtitle': 'Вашето име, маса и селфи ще се показват на качените от вас снимки.',
   'profile.name_label': 'Вашето име / Име на двойката *',
   'profile.name_placeholder': 'напр. Силвия и Георги',
+  'profile.avatar_failed': 'Снимката ви не беше запазена. Името ви е записано — можете да опитате със селфито отново от профила.',
   'profile.table_label': 'Номер на маса или роля (По желание)',
   'profile.table_placeholder': 'напр. Маса 4 / Шаферка',
   'profile.save_btn': 'Запази профила',

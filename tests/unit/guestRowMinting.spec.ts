@@ -9,6 +9,7 @@ import { photosRouter } from '../../server/routes/photos';
 import { questsRouter } from '../../server/routes/quests';
 import { guestsRouter } from '../../server/routes/guests';
 import { query } from '../../server/lib/db';
+import { CONFIG } from '../../server/lib/config';
 import { deleteEventFixtures } from '../helpers/cleanup';
 
 /**
@@ -450,7 +451,9 @@ describe('guest rows are not minted per request (H8)', () => {
     }, 20_000);
 
     it('keeps the avatar the guest chose', async () => {
-      const chosen = 'https://example.com/ana.png';
+      // A selfie this server stored for the album (N-107 —
+      // `POST /api/guests/:id/avatar` writes one of these).
+      const chosen = `${CONFIG.PUBLIC_BASE_URL}/uploads/events/${joinHost.eventId}/avatar-1-ana.jpg`;
       const { body } = await join({
         name: 'Ana',
         avatarUrl: chosen,
@@ -458,6 +461,22 @@ describe('guest rows are not minted per request (H8)', () => {
       });
 
       expect(body.avatarUrl).toBe(chosen);
+    }, 20_000);
+
+    it('drops an avatar on another host instead of storing it', async () => {
+      // This test used to store `https://example.com/ana.png`. Every device
+      // rendering the feed fetches a guest's avatar, so an address on another
+      // host told that host who was at the wedding — the leak N-30 closed for
+      // generated avatars, left open for chosen ones. Since N-107 a selfie is
+      // uploaded and stored here, so a picture elsewhere is never the guest's.
+      const { status, body } = await join({
+        name: 'Ana',
+        avatarUrl: 'https://example.com/ana.png',
+        deviceFingerprint: `avatar-ext-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      });
+
+      expect(status).toBe(201);
+      expect(body.avatarUrl).toBeNull();
     }, 20_000);
 
     it('stores nothing at all when the guest chose no picture', async () => {

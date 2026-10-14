@@ -144,6 +144,7 @@ export const en: Record<string, string> = {
   'profile.subtitle': 'Your name, table tag & selfie will appear on your uploaded wedding photos.',
   'profile.name_label': 'Your Name / Couple Name *',
   'profile.name_placeholder': 'e.g. Jessica & Alex',
+  'profile.avatar_failed': 'Your picture was not saved. You have joined — try the selfie again from your profile.',
   'profile.table_label': 'Table Number or Role (Optional)',
   'profile.table_placeholder': 'e.g. Table 4 / Maid of Honor',
   'profile.save_btn': 'Save Profile',

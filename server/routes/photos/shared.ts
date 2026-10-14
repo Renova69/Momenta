@@ -31,7 +31,11 @@ export const CreatePhotoSchema = z
     // straight back on every upload. `optional()` accepts undefined but rejects
     // null, so a guest who never entered a table number had every photo they
     // ever took refused with a 400 before the handler ran.
-    guestAvatar: z.string().max(500).nullish(),
+    // N-107 — no length cap: a client that still holds its selfie as a data:
+    // URL sent it here and had every photo refused. The value is only stored
+    // when it names a picture this server stored (`isStoredUrlForEvent`), so
+    // its length decides nothing; the body limit bounds it.
+    guestAvatar: z.string().nullish(),
     guestTable: z.string().max(50).nullish(),
     // Must be a data: URL, never an already-stored path — otherwise a client can
     // plant an arbitrary /uploads/... or R2 key as storage_path and exfiltrate

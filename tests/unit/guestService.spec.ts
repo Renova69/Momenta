@@ -314,3 +314,75 @@ describe('forgetting an identity the server no longer accepts', () => {
     expect(notify).not.toHaveBeenCalled();
   });
 });
+
+describe('a selfie (N-107)', () => {
+  const SELFIE = 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQ';
+  const STORED = `http://localhost:6501/uploads/events/${EVENT_ID}/avatar-1-ana.jpg`;
+
+  const registered = (over: Partial<Guest> = {}) =>
+    vi.spyOn(guestsApi, 'register').mockResolvedValue({
+      id: 'g-new',
+      eventId: EVENT_ID,
+      name: 'Ana',
+      createdAt: new Date().toISOString(),
+      guestToken: 'tok',
+      ...over,
+    } as Guest);
+
+  it('joins without the picture, then stores the picture as the guest it just became', async () => {
+    // The picture used to travel inside the registration as a data: URL. The
+    // server's cap refused the whole request, so the guest never existed and
+    // every like, comment and photo after it was refused too.
+    const { ctx } = harness();
+    const register = registered();
+    const setAvatar = vi.spyOn(guestsApi, 'setAvatar').mockResolvedValue({ avatarUrl: STORED });
+
+    const result = await registerGuest(ctx, 'Ana', undefined, SELFIE);
+
+    expect(register.mock.calls[0][0].avatarUrl).toBeUndefined();
+    expect(setAvatar).toHaveBeenCalledWith('g-new', { eventId: EVENT_ID, guestToken: 'tok', image: SELFIE });
+    expect(result.avatarUrl).toBe(STORED);
+    expect(storedCurrent()?.avatarUrl).toBe(STORED);
+    expect(storedCurrent()?.guestToken).toBe('tok');
+  });
+
+  it('stays joined and says so when the picture cannot be stored', async () => {
+    const { ctx } = harness();
+    registered();
+    vi.spyOn(guestsApi, 'setAvatar').mockRejectedValue(new Error('500'));
+
+    const result = await registerGuest(ctx, 'Ana', undefined, SELFIE);
+
+    expect(result.id).toBe('g-new');
+    expect(result.guestToken).toBe('tok');
+    expect(result.avatarUrl).toBeUndefined();
+    expect(ctx.notifyError).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps a picture already stored, without sending it again', async () => {
+    const { ctx } = harness();
+    setCurrentGuest(ctx, guest({ id: 'g-new', guestToken: 'tok', avatarUrl: STORED }));
+    const register = registered({ avatarUrl: STORED });
+    const setAvatar = vi.spyOn(guestsApi, 'setAvatar');
+
+    const result = await registerGuest(ctx, 'Ana Petrova');
+
+    expect(register.mock.calls[0][0].avatarUrl).toBe(STORED);
+    expect(setAvatar).not.toHaveBeenCalled();
+    expect(result.avatarUrl).toBe(STORED);
+  });
+
+  it('stores a picture taken offline once the server first gives this phone an identity', async () => {
+    // Joined with no connection: the guest exists only here, holding the
+    // picture. Their first upload is what creates them on the server, and the
+    // picture should follow then rather than never.
+    const { ctx } = harness();
+    setCurrentGuest(ctx, guest({ id: 'guest-123', avatarUrl: SELFIE }));
+    const setAvatar = vi.spyOn(guestsApi, 'setAvatar').mockResolvedValue({ avatarUrl: STORED });
+
+    syncGuestFromServer(ctx, EVENT_ID, 'g-srv', 'tok');
+
+    await vi.waitFor(() => expect(storedCurrent()?.avatarUrl).toBe(STORED));
+    expect(setAvatar).toHaveBeenCalledWith('g-srv', { eventId: EVENT_ID, guestToken: 'tok', image: SELFIE });
+  });
+});

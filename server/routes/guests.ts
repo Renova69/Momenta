@@ -3,8 +3,13 @@ import { z } from 'zod';
 import { pool } from '../lib/db';
 import { validateBody, validateQuery } from '../middleware/validate';
 import { uploadLimiter } from '../middleware/rateLimit';
+import { requireUuidParams } from '../middleware/uuid';
+import { acquireEventUploadLock } from '../middleware/tierGate';
 import { errorLabel } from '../lib/errors';
 import { RESERVED_DEVICE_FINGERPRINTS, issueGuestToken } from '../lib/guestAuth';
+import { verifyGuestOwnership } from '../lib/guestIdentity';
+import { buildAvatar } from '../lib/images';
+import { decodeDataUrl, isStoredUrlForEvent, saveBuffer, storageAdapter, toAbsoluteUrl, toStoragePath } from '../lib/storage';
 
 export const guestsRouter = Router();
 
@@ -13,7 +18,12 @@ const RegisterGuestSchema = z.object({
   eventId: z.string().uuid('A valid eventId is required'),
   name: z.string().min(1, 'name is required').max(100),
   tableNumber: z.string().max(50).optional(),
-  avatarUrl: z.string().max(1000).optional(),
+  // N-107 — no length cap. The onboarding modal sent the selfie itself here, as
+  // a data: URL, and a 1,000-character cap refused the whole registration: the
+  // guest was never created and every later action failed. Only a picture this
+  // server stored is kept (`isStoredUrlForEvent`); anything else is dropped, so
+  // the length decides nothing and the body limit bounds it.
+  avatarUrl: z.string().optional(),
   deviceFingerprint: z.string().max(200).optional(),
 }).refine((data) => !data.deviceFingerprint || !RESERVED_DEVICE_FINGERPRINTS.has(data.deviceFingerprint), {
   message: 'deviceFingerprint is reserved',
@@ -27,7 +37,8 @@ const LookupGuestQuerySchema = z.object({
 
 // 1. POST /api/guests — [FIX H-3] Added rate limiting
 guestsRouter.post('/', uploadLimiter, validateBody(RegisterGuestSchema), async (req, res) => {
-  const { eventId, name, tableNumber, avatarUrl, deviceFingerprint } = req.body;
+  const { eventId, name, tableNumber, deviceFingerprint } = req.body;
+  const avatarUrl = isStoredUrlForEvent(req.body.avatarUrl, eventId) ? req.body.avatarUrl : null;
 
   try {
     let guest;
@@ -58,7 +69,7 @@ guestsRouter.post('/', uploadLimiter, validateBody(RegisterGuestSchema), async (
           eventId,
           name.trim(),
           tableNumber?.trim() || null,
-          avatarUrl || null,
+          avatarUrl,
           deviceFingerprint,
         ]
       );
@@ -75,7 +86,7 @@ guestsRouter.post('/', uploadLimiter, validateBody(RegisterGuestSchema), async (
           eventId,
           name.trim(),
           tableNumber?.trim() || null,
-          avatarUrl || null,
+          avatarUrl,
           null,
         ]
       );
@@ -125,3 +136,97 @@ guestsRouter.get('/', uploadLimiter, validateQuery(LookupGuestQuerySchema), asyn
     res.status(500).json({ error: 'Internal server error' });
   }
 });
+
+const AvatarSchema = z.object({
+  eventId: z.string().uuid('A valid eventId is required'),
+  guestToken: z.string().max(2000).optional(),
+  image: z.string().min(1, 'image is required').startsWith('data:image/', 'image must be a data:image/ URL'),
+});
+
+/**
+ * 3. POST /api/guests/:id/avatar — store a guest's selfie (N-107).
+ *
+ * The selfie used to travel inline as the guest's `avatarUrl`, which no column
+ * cap could hold and which, once stored, would have rode along on every photo
+ * row in every feed page. It is a file, so it is stored as one: a small square
+ * JPEG under the album, its URL written to the guest row, the previous one
+ * removed. Only the guest can set it, proven by their token.
+ *
+ * Written under the album's upload lock and refused while the album is being
+ * deleted, the same as a photo (N-47): `purgeEventMedia` lists avatars from the
+ * guest rows, so one written after that list would outlive the album.
+ * Not counted against the storage allowance — a few kilobytes per guest.
+ */
+guestsRouter.post(
+  '/:id/avatar',
+  uploadLimiter,
+  requireUuidParams('id'),
+  validateBody(AvatarSchema),
+  async (req, res) => {
+    const guestId = String(req.params.id);
+    const { eventId, guestToken, image } = req.body as z.infer<typeof AvatarSchema>;
+
+    try {
+      const owner = await verifyGuestOwnership(eventId, guestId, guestToken);
+      if (!owner) {
+        return res.status(401).json({ error: 'Guest session invalid or expired.', code: 'GUEST_TOKEN_REQUIRED' });
+      }
+
+      const decoded = decodeDataUrl(image);
+      let picture: Buffer;
+      try {
+        if (!decoded) throw new Error('empty image');
+        picture = await buildAvatar(decoded.buffer);
+      } catch {
+        return res.status(400).json({ error: 'Not a supported image file', code: 'NOT_AN_IMAGE' });
+      }
+
+      const saved = await saveBuffer(picture, 'avatar', '.jpg', 'image/jpeg', eventId);
+      const avatarUrl = toAbsoluteUrl(saved.storagePath);
+
+      let previous: string | null = null;
+      let written = false;
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        await acquireEventUploadLock(client, eventId);
+        const { rows } = await client.query<{ previous: string | null }>(
+          `UPDATE guests g SET avatar_url = $1
+             FROM guests old, events e
+            WHERE g.id = $2 AND g.event_id = $3
+              AND old.id = g.id
+              AND e.id = g.event_id
+              AND (e.deleting_at IS NULL OR e.deleting_at < NOW() - INTERVAL '1 hour')
+          RETURNING old.avatar_url AS previous`,
+          [avatarUrl, guestId, eventId]
+        );
+        await client.query('COMMIT');
+        written = rows.length > 0;
+        previous = rows[0]?.previous ?? null;
+      } catch (err) {
+        await client.query('ROLLBACK').catch(() => undefined);
+        throw err;
+      } finally {
+        client.release();
+        if (!written) await storageAdapter.delete(saved.storagePath).catch(() => undefined);
+      }
+
+      if (!written) {
+        return res.status(409).json({ error: 'This album is being deleted.', code: 'DELETION_IN_PROGRESS' });
+      }
+
+      // Best-effort: the row already names the new picture, so a file left
+      // behind here costs a few kilobytes and is swept with the album.
+      if (previous && previous !== avatarUrl && isStoredUrlForEvent(previous, eventId)) {
+        await storageAdapter
+          .delete(toStoragePath(previous) ?? previous)
+          .catch((err) => console.warn('[Guests] could not remove a replaced avatar:', errorLabel(err)));
+      }
+
+      res.json({ avatarUrl });
+    } catch (err) {
+      console.error('[Guests] avatar error:', errorLabel(err));
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  }
+);

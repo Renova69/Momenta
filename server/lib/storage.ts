@@ -533,6 +533,29 @@ export function storagePathBelongsToEvent(storagePath: string | null | undefined
 }
 
 /**
+ * True when `url` names a public object this server stored for `eventId`.
+ *
+ * The only kind of picture a guest row may point at (N-107). A selfie is
+ * uploaded to `POST /api/guests/:id/avatar`, which stores it and writes the
+ * URL; anything else a client sends as an avatar is dropped. That covers both
+ * shapes that reached the column before: a `data:` URL, which overflowed it and
+ * refused the guest, and an address on another host, which every device
+ * rendering the feed would then fetch — the same leak N-30 closed.
+ *
+ * A prefix match against the exact bases the adapters write, not the
+ * substring test {@link storagePathBelongsToEvent} uses, because this value
+ * comes from the client: `https://elsewhere/events/<id>/x.jpg` contains the
+ * segment and is not ours.
+ */
+export function isStoredUrlForEvent(url: unknown, eventId: string): url is string {
+  if (typeof url !== 'string' || url.includes('..')) return false;
+  const id = eventId.toLowerCase();
+  const prefixes = [`${CONFIG.PUBLIC_BASE_URL}/uploads/events/${id}/`, `/uploads/events/${id}/`];
+  if (CONFIG.R2_PUBLIC_URL) prefixes.push(`${CONFIG.R2_PUBLIC_URL}/events/${id}/`);
+  return prefixes.some((prefix) => url.startsWith(prefix));
+}
+
+/**
  * True when a stored object is still quarantined (MED-03/SEC-M5) — a
  * `/quarantine/` segment locally, or a `quarantine/` key segment in an R2
  * URL. Both adapters use the same substring shape for this the same way
