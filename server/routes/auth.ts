@@ -126,7 +126,8 @@ authRouter.post('/register', authLimiter, validateBody(RegisterSchema), async (r
           `INSERT INTO events (title, slug, host_name, host_email, host_user_id, plan_tier, event_date, venue_name, welcome_message)
            VALUES ($1, $2, $3, $4, $5, 'free', $6, 'Голяма зала за тържества', 'Добре дошли на нашия сватбен ден! Сканирайте QR кода, снимайте весели и неподправени моменти и ни помогнете да запечатаме всеки миг заедно.')
            RETURNING id, title, slug, host_name, host_email, host_user_id, event_date, venue_name, welcome_message, theme_palette, cover_image_url, created_at`,
-          [`${fullName}'s Wedding`, newSlug, fullName, email, user.id, defaultEventDate]
+          // N-125 — in the product's language; it was "<name>'s Wedding".
+          [`Сватбата на ${fullName}`, newSlug, fullName, email, user.id, defaultEventDate]
         );
         const event = newEvent.rows[0];
         // New accounts start on the free plan; the subscription row inserted above is authoritative.
@@ -277,7 +278,7 @@ authRouter.post('/login', authLimiter, validateBody(LoginSchema), async (req, re
             `INSERT INTO events (title, slug, host_name, host_email, host_user_id, plan_tier, event_date, venue_name, welcome_message)
              VALUES ($1, $2, $3, $4, $5, 'free', $6, 'Голяма зала за тържества', 'Добре дошли на нашия сватбен ден! Сканирайте QR кода, снимайте весели и неподправени моменти и ни помогнете да запечатаме всеки миг заедно.')
              RETURNING id, title, slug, host_name, host_email, host_user_id, event_date, venue_name, welcome_message, theme_palette, cover_image_url, created_at`,
-            [`${user.full_name}'s Wedding`, newSlug, user.full_name, user.email, user.id, defaultDate]
+            [`Сватбата на ${user.full_name}`, newSlug, user.full_name, user.email, user.id, defaultDate]
           );
           const newEvent = createdEvent.rows[0];
 

@@ -12,6 +12,7 @@ import {
   Check,
   Link2,
 } from 'lucide-react';
+import { formatEuDate } from '../../utils/date';
 
 interface PhotographerIngestPanelProps {
   event: WeddingEvent;
@@ -153,9 +154,9 @@ export const PhotographerIngestPanel: React.FC<PhotographerIngestPanelProps> = (
                 <div className="text-xs font-semibold text-cream-100">{k.label}</div>
                 <div className="text-[10px] text-cream-400/60 font-mono">
                   {k.masked || '\u2026'} &middot; {i18n.t('ingest.created_on')}{' '}
-                  {new Date(k.createdAt).toLocaleDateString()}
+                  {formatEuDate(k.createdAt)}
                   {k.lastUsedAt
-                    ? ` \u00b7 ${i18n.t('ingest.last_used')} ${new Date(k.lastUsedAt).toLocaleDateString()}`
+                    ? ` \u00b7 ${i18n.t('ingest.last_used')} ${formatEuDate(k.lastUsedAt)}`
                     : ''}
                 </div>
               </div>

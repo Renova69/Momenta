@@ -111,7 +111,7 @@ export const TabNav: React.FC = () => {
             }`}
           >
             <KeyRound className="w-4 h-4" />
-            <span>Photographer Ingest</span>
+            <span>{i18n.t('host.tab_photographer')}</span>
           </button>
         </div>
 
@@ -122,7 +122,7 @@ export const TabNav: React.FC = () => {
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gold-400/10 border border-gold-400/40 text-gold-300 text-xs font-semibold hover:bg-gold-400/20 transition-colors"
           >
             <KeyRound className="w-3.5 h-3.5" />
-            <span>Photographer Ingest</span>
+            <span>{i18n.t('host.tab_photographer')}</span>
           </button>
 
           <a

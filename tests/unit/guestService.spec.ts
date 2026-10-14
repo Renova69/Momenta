@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { i18n } from '../../src/i18n';
 import {
   getCurrentGuest,
   getGuests,
@@ -384,5 +385,15 @@ describe('a selfie (N-107)', () => {
 
     await vi.waitFor(() => expect(storedCurrent()?.avatarUrl).toBe(STORED));
     expect(setAvatar).toHaveBeenCalledWith('g-srv', { eventId: EVENT_ID, guestToken: 'tok', image: SELFIE });
+  });
+});
+
+describe('a guest the server named before this phone did (N-125)', () => {
+  it("is called by the app's word for a guest, not the English one", () => {
+    const { ctx } = harness();
+
+    syncGuestFromServer(ctx, EVENT_ID, 'g-srv', 'tok');
+
+    expect(storedCurrent()?.name).toBe(i18n.t('guest.fallback_name'));
   });
 });

@@ -60,7 +60,9 @@ describe('PhotographerIngestPortal', () => {
 
     fireEvent.change(fileInput(), { target: { files: [pdf, jpg] } });
 
-    expect(screen.getByText('1 image selected')).toBeInTheDocument();
+    // N-125 — this asserted the English "1 image selected" the portal showed
+    // in a Bulgarian app; the test agreed with the bug.
+    expect(screen.getByText(i18n.t('ingest.files_selected', { count: 1 }))).toBeInTheDocument();
     expect(screen.queryByText('not-a-photo.pdf')).not.toBeInTheDocument();
     expect(screen.getByText('real.jpg')).toBeInTheDocument();
   });
@@ -175,5 +177,25 @@ describe('PhotographerIngestPortal', () => {
     const buttons = screen.getAllByRole('button');
     fireEvent.click(buttons.find((b) => b.querySelector('svg.lucide-x'))!);
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("the portal in the app's language (N-125)", () => {
+  it('signs the photos with a translated name when the photographer gives none', async () => {
+    const upload = vi.spyOn(ingestApi, 'uploadPhotos').mockResolvedValue({ uploaded: 1, photos: [] } as never);
+    window.location.hash = '#key=wmi_test';
+    render(<PhotographerIngestPortal event={EVENT} onClose={vi.fn()} />);
+    fireEvent.change(fileInput(), { target: { files: makeImageFiles(1) } });
+    // The name field starts filled; a photographer who clears it fell back to
+    // the English "Official Photographer", shown on the wall under every frame.
+    const nameField = screen.getByDisplayValue(i18n.t('ingest.default_label'));
+    fireEvent.change(nameField, { target: { value: '' } });
+
+    fireEvent.click(screen.getByRole('button', { name: i18n.t('ingest.portal_upload_button', { count: 1 }) }));
+
+    await waitFor(() => expect(upload).toHaveBeenCalled());
+    expect(upload.mock.calls[0][3]).toMatchObject({ photographerName: i18n.t('ingest.default_label') });
+    expect(JSON.stringify(upload.mock.calls[0])).not.toContain('Official Photographer');
+    window.location.hash = '';
   });
 });

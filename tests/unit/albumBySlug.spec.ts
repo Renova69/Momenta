@@ -165,3 +165,11 @@ describe('how many guests have joined (N-115)', () => {
     broadcast.mockRestore();
   });
 });
+
+describe("a new album's name (N-125)", () => {
+  it('is in the language of the product, not "<name>’s Wedding"', async () => {
+    const host = await registerHost();
+    const album = await (await bySlug(host.slug, host.token)).json();
+    expect(album.title).toBe('Сватбата на Slug Spec Host');
+  });
+});

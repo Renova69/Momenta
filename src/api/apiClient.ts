@@ -64,6 +64,19 @@ export const ERROR_CODE_KEYS: Record<string, string> = {
   STRIPE_NOT_CONFIGURED: 'error.stripe_not_configured',
 };
 
+/**
+ * N-125 — a refusal the server sends without a code is said by its status, in
+ * the app's language. Its text is English ("Forbidden: You do not own this
+ * event") and reached a Bulgarian host inside a Bulgarian sentence. A 400
+ * keeps the server's words, which say what was wrong with the request.
+ */
+function statusMessage(status: number): string | undefined {
+  if (status === 403) return i18n.t('error.forbidden');
+  if (status === 404) return i18n.t('error.not_found');
+  if (status >= 500) return i18n.t('error.server');
+  return undefined;
+}
+
 /** Broadcast so the auth layer can clear the session without a circular import. */
 export const SESSION_EXPIRED_EVENT = 'wedmoments:session-expired';
 
@@ -121,9 +134,11 @@ export async function apiFetch<T>(endpoint: string, options: RequestInit = {}): 
       if (translationKey) {
         const translated = i18n.t(translationKey);
         if (translated !== translationKey) errorMsg = translated;
+      } else if (!code) {
+        errorMsg = statusMessage(res.status) ?? errorMsg;
       }
     } catch {
-      // ignore JSON parse error
+      errorMsg = statusMessage(res.status) ?? errorMsg;
     }
 
     // A rejected HOST token means the session is over — a JWT expires after 7

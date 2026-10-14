@@ -3,6 +3,7 @@ import { audioApi } from '../api/audioApi';
 import { offlineQueue } from './offlineQueueService';
 import { STORAGE_KEYS } from './storageKeys';
 import { ServiceContext } from './storageServiceContext';
+import { i18n } from '../i18n';
 
 // FE-04 — a blob: URL only lives as long as the page load that created it.
 // Tracks which events' audio have already been swept for dead blob: URLs
@@ -55,7 +56,7 @@ export function addAudioEntry(
   const currentGuest: Guest = ctx.getCurrentGuest() || {
     id: 'anonymous',
     eventId: event.id,
-    name: 'Guest',
+    name: i18n.t('guest.fallback_name'),
     avatarUrl: undefined,
     createdAt: new Date().toISOString(),
   };

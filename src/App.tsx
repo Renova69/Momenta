@@ -271,7 +271,7 @@ function WeddingAppContent() {
   const fallbackGuest: Guest = {
     id: 'anonymous',
     eventId: event?.id || '',
-    name: 'Guest',
+    name: i18n.t('guest.fallback_name'),
     createdAt: new Date().toISOString()
   };
   const safeGuest = currentGuest || fallbackGuest;

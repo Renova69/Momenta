@@ -87,7 +87,7 @@ export const PhotographerIngestPortal: React.FC<PhotographerIngestPortalProps> =
     setProgress(0);
     try {
       const { photos, failed } = await ingestApi.uploadPhotos(event.id, key.trim(), files, {
-        photographerName: photographerName.trim() || 'Official Photographer',
+        photographerName: photographerName.trim() || i18n.t('ingest.default_label'),
         caption: caption.trim() || undefined,
         concurrency: 4,
         onProgress: (done, total) => setProgress(Math.round((done / total) * 100)),
@@ -207,7 +207,7 @@ export const PhotographerIngestPortal: React.FC<PhotographerIngestPortalProps> =
           <div className="bg-noir-800/60 rounded-2xl border border-cream-400/10 p-4">
             <div className="flex items-center justify-between mb-3">
               <span className="text-xs font-semibold text-cream-200 flex items-center gap-2">
-                <ImageIcon className="w-4 h-4 text-gold-400" /> {files.length} image{files.length !== 1 ? 's' : ''} selected
+                <ImageIcon className="w-4 h-4 text-gold-400" /> {i18n.t('ingest.files_selected', { count: files.length })}
               </span>
               <button onClick={() => setFiles([])} className="text-[11px] text-cream-400/70 hover:text-cream-200">{i18n.t('ingest.portal_clear')}</button>
             </div>

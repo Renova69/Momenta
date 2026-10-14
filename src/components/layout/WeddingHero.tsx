@@ -91,7 +91,7 @@ export const WeddingHero: React.FC<WeddingHeroProps> = ({
         <div className="flex flex-wrap items-center justify-center gap-2.5 sm:gap-6 text-cream-300/85 text-[11px] sm:text-sm font-medium mb-3 sm:mb-6">
           <div className="flex items-center gap-1">
             <Calendar className="w-3.5 h-3.5 text-gold-400 shrink-0" />
-            <span className="capitalize">{formattedDate}</span>
+            <span>{formattedDate}</span>
           </div>
           <span className="text-gold-400/60">•</span>
           <div className="flex items-center gap-1">

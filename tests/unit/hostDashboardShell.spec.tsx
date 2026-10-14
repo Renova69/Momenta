@@ -145,9 +145,9 @@ describe('tier gates', () => {
 
   it('never gates photographer ingest', () => {
     const { container } = renderDashboard({ planTier: 'free' });
-    // This tab's label is literal, not an i18n key.
+    // N-125 — the label is translated now; it was the literal "Photographer Ingest".
     const button = Array.from(container.querySelectorAll('button')).find((b) =>
-      b.textContent?.includes('Photographer Ingest')
+      b.textContent?.includes(i18n.t('host.tab_photographer'))
     );
     fireEvent.click(button!);
     expect(container.textContent).not.toContain(LOCKED());

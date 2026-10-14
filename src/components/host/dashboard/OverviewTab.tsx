@@ -396,7 +396,7 @@ export const OverviewTab: React.FC = () => {
                   type="text"
                   inputMode="numeric"
                   aria-label={i18n.t('host.event_date_field')}
-                  placeholder="ДД.ММ.ГГГГ"
+                  placeholder={i18n.t('common.date_placeholder')}
                   maxLength={10}
                   value={eventDateText}
                   onChange={(e) => setEventDateText(maskDateInput(e.target.value))}
@@ -407,7 +407,7 @@ export const OverviewTab: React.FC = () => {
                   type="text"
                   inputMode="numeric"
                   aria-label={i18n.t('host.event_time_field')}
-                  placeholder="ЧЧ:ММ"
+                  placeholder={i18n.t('common.time_placeholder')}
                   maxLength={5}
                   value={eventTimeText}
                   onChange={(e) => setEventTimeText(maskTimeInput(e.target.value))}

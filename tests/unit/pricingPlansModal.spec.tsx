@@ -188,7 +188,9 @@ describe('PricingPlansModal', () => {
       await Promise.resolve();
     });
 
-    expect(screen.getByRole('alert')).toHaveTextContent('Failed to start checkout');
+    // N-125 — said in the app's language; the server's English
+    // "Failed to start checkout" reached a Bulgarian host as-is.
+    expect(screen.getByRole('alert')).toHaveTextContent(i18n.t('error.server'));
     // A real, unexplained checkout failure must not silently downgrade to
     // the unpaid self-serve write - only a confirmed "not configured" does.
     expect(onUpgradePlan).not.toHaveBeenCalled();

@@ -82,7 +82,7 @@ export function syncGuestFromServer(ctx: ServiceContext, eventId: string, guestI
   if (!guestId || !guestToken) return;
   const current = getCurrentGuest(ctx, eventId);
   if (current?.id === guestId && current?.guestToken === guestToken) return;
-  const adopted: Guest = { ...(current || { name: 'Guest', createdAt: new Date().toISOString() }), id: guestId, eventId, guestToken };
+  const adopted: Guest = { ...(current || { name: i18n.t('guest.fallback_name'), createdAt: new Date().toISOString() }), id: guestId, eventId, guestToken };
   setCurrentGuest(ctx, adopted);
 
   // A guest who joined offline holds their selfie only here; this is the first

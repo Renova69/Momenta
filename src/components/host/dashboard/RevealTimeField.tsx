@@ -52,7 +52,7 @@ export const RevealTimeField: React.FC<RevealTimeFieldProps> = ({ revealAt, onCo
           type="text"
           inputMode="numeric"
           aria-label={i18n.t('host.reveal_date_field')}
-          placeholder="ДД.ММ.ГГГГ"
+          placeholder={i18n.t('common.date_placeholder')}
           maxLength={10}
           value={dateText}
           onChange={(e) => setDateText(maskDateInput(e.target.value))}
@@ -63,7 +63,7 @@ export const RevealTimeField: React.FC<RevealTimeFieldProps> = ({ revealAt, onCo
           type="text"
           inputMode="numeric"
           aria-label={i18n.t('host.reveal_time_field')}
-          placeholder="ЧЧ:ММ"
+          placeholder={i18n.t('common.time_placeholder')}
           maxLength={5}
           value={timeText}
           onChange={(e) => setTimeText(maskTimeInput(e.target.value))}

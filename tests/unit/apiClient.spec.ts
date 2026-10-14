@@ -53,6 +53,22 @@ describe('API Client Layer Spec', () => {
     await expect(apiFetch('/api/test')).rejects.toThrow('Something specific went wrong');
   });
 
+  // N-125 — a refusal the server sent without a code reached a Bulgarian
+  // host as its English text: "Промяната не беше запазена: Forbidden: You do
+  // not own this event".
+  it("says a refusal without a code in the app's language, by its status", async () => {
+    global.fetch = vi.fn().mockResolvedValue(
+      createMockResponse({ error: 'Forbidden: You do not own this event' }, 403, false)
+    );
+    await expect(apiFetch('/api/test')).rejects.toThrow(i18n.t('error.forbidden'));
+
+    global.fetch = vi.fn().mockResolvedValue(createMockResponse({ error: 'Event not found' }, 404, false));
+    await expect(apiFetch('/api/test')).rejects.toThrow(i18n.t('error.not_found'));
+
+    global.fetch = vi.fn().mockResolvedValue(createMockResponse({ error: 'Internal server error' }, 500, false));
+    await expect(apiFetch('/api/test')).rejects.toThrow(i18n.t('error.server'));
+  });
+
   it('handles ApiError and error parsing in apiFetch', async () => {
     const err = new ApiError('Custom error', 404, { field: 'email' });
     expect(err.name).toBe('ApiError');
@@ -75,7 +91,9 @@ describe('API Client Layer Spec', () => {
       },
     } as unknown as Response);
 
-    await expect(apiFetch('/api/test')).rejects.toThrow('HTTP Error 500');
+    // N-125 — a server failure is said in the app's language, not as
+    // "HTTP Error 500".
+    await expect(apiFetch('/api/test')).rejects.toThrow(i18n.t('error.server'));
   });
 
   describe('a 401 and whose session it ends', () => {
