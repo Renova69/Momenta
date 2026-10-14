@@ -174,7 +174,9 @@ describe('camera permission', () => {
     );
   });
 
-  it("shows the device's own message for a non-permission failure", async () => {
+  // N-124 — this showed the browser's own message, in English, whatever the
+  // app's language: "Camera already in use", "Requested device not found".
+  it("explains a busy camera in the app's language", async () => {
     // A laptop with no camera, or one already held by another application.
     denyCamera('NotReadableError');
     Object.defineProperty(navigator, 'mediaDevices', {
@@ -188,7 +190,23 @@ describe('camera permission', () => {
 
     renderModal();
 
-    expect(await screen.findByText('Camera already in use')).toBeTruthy();
+    expect(await screen.findByText(i18n.t('camera.error_busy'))).toBeTruthy();
+    expect(screen.queryByText('Camera already in use')).toBeNull();
+  });
+
+  it('says there is no camera when there is none', async () => {
+    Object.defineProperty(navigator, 'mediaDevices', {
+      configurable: true,
+      value: {
+        getUserMedia: vi
+          .fn()
+          .mockRejectedValue(Object.assign(new Error('Requested device not found'), { name: 'NotFoundError' })),
+      },
+    });
+
+    renderModal();
+
+    expect(await screen.findByText(i18n.t('camera.error_not_found'))).toBeTruthy();
   });
 });
 
@@ -531,10 +549,10 @@ describe('reviewing a photo when the camera is unavailable (N-108)', () => {
     });
     stubFileReader();
     const { container } = renderModal();
-    expect(await screen.findByText('Camera already in use')).toBeTruthy();
+    expect(await screen.findByText(i18n.t('camera.error_busy'))).toBeTruthy();
 
     fireEvent.change(galleryInput(container), { target: { files: [imageFile('a.jpg')] } });
 
-    await waitFor(() => expect(screen.queryByText('Camera already in use')).toBeNull());
+    await waitFor(() => expect(screen.queryByText(i18n.t('camera.error_busy'))).toBeNull());
   });
 });

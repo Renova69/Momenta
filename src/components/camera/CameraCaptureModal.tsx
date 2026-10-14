@@ -8,6 +8,7 @@ import { CameraViewfinder, FILTER_PREVIEW_CSS } from './CameraViewfinder';
 import { CaptureReview } from './CaptureReview';
 import confetti from 'canvas-confetti';
 import { Camera, UploadCloud, Image as ImageIcon, ShieldAlert } from 'lucide-react';
+import { mediaErrorKey } from '../../utils/mediaErrors';
 
 interface CameraCaptureModalProps {
   isOpen: boolean;
@@ -129,7 +130,8 @@ export const CameraCaptureModal: React.FC<CameraCaptureModalProps> = ({
         setCameraError(i18n.t('camera.permission_subtitle'));
       } else {
         setPermissionState('unsupported');
-        setCameraError(isError ? (err instanceof Error ? err.message : String(err)) : i18n.t('camera.permission_subtitle'));
+        // N-124 — the app's words, not the browser's English message.
+        setCameraError(i18n.t(mediaErrorKey(err, 'camera')));
       }
     } finally {
       setIsStartingCamera(false);

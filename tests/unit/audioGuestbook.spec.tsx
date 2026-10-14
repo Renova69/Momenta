@@ -140,7 +140,7 @@ describe('AudioGuestbook', () => {
     fireEvent.click(screen.getByText(i18n.t('audio.stop_btn')));
     expect(screen.getByText(i18n.t('audio.save_btn'))).toBeInTheDocument();
 
-    fireEvent.click(screen.getByText(i18n.t('camera.retake')));
+    fireEvent.click(screen.getByText(i18n.t('audio.rerecord')));
 
     expect(screen.getByRole('button', { name: i18n.t('audio.record_btn') })).toBeInTheDocument();
     expect(onAddAudioEntry).not.toHaveBeenCalled();
@@ -238,8 +238,11 @@ describe('AudioGuestbook', () => {
 
     it('still says permission was refused when it was', async () => {
       const original = Object.getOwnPropertyDescriptor(navigator, 'mediaDevices');
+      // A browser refuses with a DOMException *named* NotAllowedError; this
+      // used to be a plain Error carrying the name as its message, which only
+      // passed because every failure was reported as a refusal (N-124).
       Object.defineProperty(navigator, 'mediaDevices', {
-        value: { getUserMedia: vi.fn().mockRejectedValue(new Error('NotAllowedError')) },
+        value: { getUserMedia: vi.fn().mockRejectedValue(Object.assign(new Error('denied'), { name: 'NotAllowedError' })) },
         configurable: true,
       });
       vi.spyOn(console, 'error').mockImplementation(() => undefined);
@@ -248,6 +251,24 @@ describe('AudioGuestbook', () => {
       await pressRecord();
 
       expect(screen.getByText(i18n.t('audio.mic_permission_error'))).toBeInTheDocument();
+      if (original) Object.defineProperty(navigator, 'mediaDevices', original);
+    });
+
+    // N-124 — a device with no microphone was told permission was refused,
+    // and sent to browser settings that could not help.
+    it('says there is no microphone when there is none', async () => {
+      const original = Object.getOwnPropertyDescriptor(navigator, 'mediaDevices');
+      Object.defineProperty(navigator, 'mediaDevices', {
+        value: { getUserMedia: vi.fn().mockRejectedValue(Object.assign(new Error('Requested device not found'), { name: 'NotFoundError' })) },
+        configurable: true,
+      });
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      render(<AudioGuestbook entries={[]} onAddAudioEntry={vi.fn()} />);
+
+      await pressRecord();
+
+      expect(screen.getByText(i18n.t('audio.mic_not_found'))).toBeInTheDocument();
+      expect(screen.queryByText(i18n.t('audio.mic_permission_error'))).toBeNull();
       if (original) Object.defineProperty(navigator, 'mediaDevices', original);
     });
   });

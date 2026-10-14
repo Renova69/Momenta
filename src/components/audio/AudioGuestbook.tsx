@@ -13,6 +13,7 @@ import {
   Clock
 } from 'lucide-react';
 import { guestAvatarUrl } from '../../utils/avatar';
+import { mediaErrorKey } from '../../utils/mediaErrors';
 
 interface AudioGuestbookProps {
   entries: AudioGuestbookEntry[];
@@ -80,8 +81,9 @@ export const AudioGuestbook: React.FC<AudioGuestbookProps> = ({
     try {
       stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     } catch (err) {
-      console.error('Microphone permission error:', err);
-      setErrorMsg(i18n.t('audio.mic_permission_error') || i18n.t('audio.mic_denied'));
+      console.error('Microphone error:', err);
+      // N-124 — every failure was reported as a refusal.
+      setErrorMsg(i18n.t(mediaErrorKey(err, 'mic')));
       return;
     }
 
@@ -319,7 +321,7 @@ export const AudioGuestbook: React.FC<AudioGuestbookProps> = ({
                 }}
                 className="flex-1 py-2.5 rounded-xl border border-cream-400/20 text-cream-200 text-xs font-medium hover:bg-noir-800"
               >
-                {i18n.t('camera.retake')}
+                {i18n.t('audio.rerecord')}
               </button>
 
               <button
