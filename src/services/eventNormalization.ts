@@ -148,10 +148,9 @@ export function normalizeEvent(remote: RemoteEventPayload): WeddingEvent {
     hostUserId: remote.hostUserId ?? remote.host_user_id,
     eventDate: remote.eventDate ?? remote.date ?? remote.event_date ?? now,
     venueName: remote.venueName ?? remote.venue_name ?? 'Venue',
-    coverImageUrl:
-      remote.coverImageUrl ??
-      remote.cover_image_url ??
-      'https://images.unsplash.com/photo-1519741497674-611481863552?auto=format&fit=crop&w=1200&q=80',
+    // N-131 — no cover is no cover. The default was an images.unsplash.com
+    // photo, fetched from a third party by every phone showing the album.
+    coverImageUrl: remote.coverImageUrl ?? remote.cover_image_url ?? '',
     welcomeMessage: remote.welcomeMessage ?? remote.welcome_message ?? 'Welcome!',
     themePalette: (remote.themePalette ?? remote.theme_palette ?? 'champagne_gold') as ThemePalette,
     planTier: (remote.planTier ?? remote.plan_tier ?? 'free') as PlanTier,

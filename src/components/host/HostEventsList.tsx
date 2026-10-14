@@ -103,7 +103,6 @@ export const HostEventsList: React.FC<HostEventsListProps> = ({
       eventDate: when.toISOString(),
       venueName: venueName.trim() || i18n.t('events.default_venue'),
       themePalette: 'champagne_gold',
-      coverImageUrl: 'https://images.unsplash.com/photo-1511285560929-80b456fea0bc?auto=format&fit=crop&w=1200&q=80',
     };
 
     setIsSubmitting(true);
@@ -257,11 +256,18 @@ export const HostEventsList: React.FC<HostEventsListProps> = ({
                   }`}
                 >
                   <div className="flex items-center gap-3.5 min-w-0">
-                    <img
-                      src={ev.coverImageUrl}
-                      alt={ev.title}
-                      className="w-14 h-14 rounded-xl object-cover border border-cream-400/15 shrink-0"
-                    />
+                    {ev.coverImageUrl ? (
+                      <img
+                        src={ev.coverImageUrl}
+                        alt={ev.title}
+                        className="w-14 h-14 rounded-xl object-cover border border-cream-400/15 shrink-0"
+                      />
+                    ) : (
+                      <div
+                        aria-hidden="true"
+                        className="w-14 h-14 rounded-xl border border-cream-400/15 shrink-0 bg-gradient-to-br from-gold-400/25 to-noir-900"
+                      />
+                    )}
                     <div className="min-w-0">
                       <div className="flex items-center gap-2">
                         <h4 className="font-serif font-bold text-sm text-cream-100 truncate">

@@ -256,7 +256,9 @@ describe('normalizeEvent — fills a default for everything absent', () => {
       revealAt: null,
       maxPhotosPerGuest: 50,
     });
-    expect(out.coverImageUrl).toContain('unsplash.com');
+    // N-131 — this asserted an images.unsplash.com default: every phone
+    // showing an album with no cover fetched it from a third party.
+    expect(out.coverImageUrl).toBe('');
     expect(out.eventDate).toBeTruthy();
     expect(out.createdAt).toBeTruthy();
     expect(out.updatedAt).toBeTruthy();

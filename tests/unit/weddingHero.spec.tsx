@@ -185,3 +185,21 @@ describe('WeddingHero', () => {
     expect(onOpenAudio).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('an album with no cover (N-131)', () => {
+  it('draws no image, rather than fetching one from a third party', () => {
+    const { container } = render(
+      <WeddingHero
+        event={makeEvent({ coverImageUrl: '' })}
+        photos={[]}
+        quests={NO_QUESTS}
+        audioEntries={NO_AUDIO}
+        guests={NO_GUESTS}
+        onOpenCapture={vi.fn()}
+        onOpenAudio={vi.fn()}
+        onOpenQuests={vi.fn()}
+      />
+    );
+    expect(container.querySelector('img')).toBeNull();
+  });
+});

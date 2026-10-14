@@ -138,6 +138,8 @@ describe('HostEventsList', () => {
     expect(onCreateEvent).toHaveBeenCalledWith(
       expect.objectContaining({ hostName: 'Gergana & Ivan', venueName: 'Boyana Residence', slug: expect.any(String) })
     );
+    // N-131 — a new album stored an images.unsplash.com cover.
+    expect(onCreateEvent.mock.calls[0][0].coverImageUrl).toBeUndefined();
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 

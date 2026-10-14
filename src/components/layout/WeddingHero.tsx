@@ -62,13 +62,16 @@ export const WeddingHero: React.FC<WeddingHeroProps> = ({
           `alt=""`: it is behind the title, at 35% opacity, blurred. A screen
           reader reading the album's name twice is noise, not information.
         */}
-        <img
-          src={event.coverImageUrl}
-          alt=""
-          fetchPriority="high"
-          decoding="async"
-          className="w-full h-full object-cover object-center opacity-35 filter blur-[1px] scale-105"
-        />
+        {/* N-131 — no cover, no image: the gradient below carries the hero. */}
+        {event.coverImageUrl && (
+          <img
+            src={event.coverImageUrl}
+            alt=""
+            fetchPriority="high"
+            decoding="async"
+            className="w-full h-full object-cover object-center opacity-35 filter blur-[1px] scale-105"
+          />
+        )}
         <div className="absolute inset-0 bg-gradient-to-t from-noir-900 via-noir-900/80 to-noir-900/40" />
       </div>
 
