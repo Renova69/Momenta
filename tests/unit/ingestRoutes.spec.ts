@@ -67,6 +67,22 @@ async function registerHost(): Promise<{ token: string; eventId: string }> {
 }
 
 describe('Photographer Ingest Routes Spec', () => {
+  // N-129 — the studio showed couples how to set up FTP on the server
+  // (FTP_ENABLED, FTP_PASV_URL, FTP_TLS_*), with port 2121 hardcoded, whether
+  // or not FTP was running. It asks the server what is actually on offer.
+  describe('what the studio may offer a photographer (N-129)', () => {
+    it('says FTP is off when it is', async () => {
+      const res = await fetch(`${BASE_URL}/api/ingest/setup`, { headers: { Authorization: `Bearer ${hostToken}` } });
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ ftp: null });
+    });
+
+    it('is for signed-in hosts only', async () => {
+      const res = await fetch(`${BASE_URL}/api/ingest/setup`);
+      expect(res.status).toBe(401);
+    });
+  });
+
   beforeAll(async () => {
     const app = express();
     server = createServer(app);

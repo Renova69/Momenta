@@ -107,6 +107,7 @@ describe('PhotographerIngestPanel', () => {
   it('revokes a key and refreshes the list', async () => {
     vi.spyOn(ingestApi, 'listKeys').mockResolvedValue([keyInfo({ id: 'k1', label: 'Studio A' })]);
     const revokeSpy = vi.spyOn(ingestApi, 'revokeKey').mockResolvedValue({ success: true, keyId: 'k1' });
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
 
     render(<PhotographerIngestPanel event={EVENT} />);
     await waitFor(() => expect(screen.getByText('Studio A')).toBeInTheDocument());
@@ -199,6 +200,7 @@ describe('when something fails', () => {
     // has handed out a credential they think is dead.
     vi.spyOn(ingestApi, 'listKeys').mockResolvedValue([keyInfo({ label: 'Studio X' })]);
     vi.spyOn(ingestApi, 'revokeKey').mockRejectedValue(new Error('Revoke failed upstream'));
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
 
     const { container } = render(<PhotographerIngestPanel event={EVENT} />);
     await waitFor(() => expect(screen.getByText('Studio X')).toBeInTheDocument());
@@ -251,5 +253,41 @@ describe('copying on a browser that will not allow it', () => {
     expect(() => copyButton && fireEvent.click(copyButton)).not.toThrow();
 
     Object.defineProperty(navigator, 'clipboard', { configurable: true, value: clipboard });
+  });
+});
+
+describe('what the panel offers (N-129)', () => {
+  it('asks before revoking a photographer\u2019s key', async () => {
+    vi.spyOn(ingestApi, 'listKeys').mockResolvedValue([keyInfo({ id: 'k1', label: 'Studio A' })]);
+    const revoke = vi.spyOn(ingestApi, 'revokeKey').mockResolvedValue({ success: true, keyId: 'k1' });
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+
+    render(<PhotographerIngestPanel event={EVENT} />);
+    await waitFor(() => expect(screen.getByText('Studio A')).toBeInTheDocument());
+    fireEvent.click(document.querySelector('button:has(svg.lucide-trash-2)')!);
+
+    expect(confirm).toHaveBeenCalled();
+    expect(revoke).not.toHaveBeenCalled();
+  });
+
+  it('leaves FTP out when the server has it switched off, and never shows server settings', async () => {
+    vi.spyOn(ingestApi, 'listKeys').mockResolvedValue([]);
+    vi.spyOn(ingestApi, 'setup').mockResolvedValue({ ftp: null });
+
+    const { container } = render(<PhotographerIngestPanel event={EVENT} />);
+    await waitFor(() => expect(ingestApi.setup).toHaveBeenCalled());
+
+    expect(screen.queryByText(i18n.t('ingest.ftp_title'))).toBeNull();
+    expect(container.textContent).not.toMatch(/FTP_ENABLED|FTP_PASV_URL|FTP_TLS/);
+  });
+
+  it('shows FTP, on the port the server uses, when it is on', async () => {
+    vi.spyOn(ingestApi, 'listKeys').mockResolvedValue([]);
+    vi.spyOn(ingestApi, 'setup').mockResolvedValue({ ftp: { port: 2222 } });
+
+    render(<PhotographerIngestPanel event={EVENT} />);
+
+    await waitFor(() => expect(screen.getByText(i18n.t('ingest.ftp_title'))).toBeInTheDocument());
+    expect(screen.getByText('2222')).toBeInTheDocument();
   });
 });

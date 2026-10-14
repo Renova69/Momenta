@@ -13,6 +13,7 @@ import {
   Link2,
 } from 'lucide-react';
 import { formatEuDate } from '../../utils/date';
+import { ENV } from '../../config/env';
 
 interface PhotographerIngestPanelProps {
   event: WeddingEvent;
@@ -25,11 +26,14 @@ export const PhotographerIngestPanel: React.FC<PhotographerIngestPanelProps> = (
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [copied, setCopied] = useState('');
+  // N-129 — FTP only when the server runs it, on the port it uses.
+  const [ftp, setFtp] = useState<{ port: number } | null>(null);
 
   const origin = typeof window !== 'undefined' ? window.location.origin : '';
   const ftpHost = typeof window !== 'undefined' ? window.location.hostname : '';
-  const ftpPort = 2121; // default FTP_PORT (configurable server-side)
-  const ingestEndpoint = `${origin}/api/ingest/${event.id}/photos`;
+  // The API's own address: in development it is not this page's.
+  const apiBase = ENV.API_URL || origin;
+  const ingestEndpoint = `${apiBase}/api/ingest/${event.id}/photos`;
   // Fragment, not query string: fragments are never sent to a server, stay out
   // of access logs, and are stripped from Referer headers.
   const portalUrl = newKey ? `${origin}/e/${event.slug}/ingest#key=${newKey}` : '';
@@ -50,6 +54,13 @@ export const PhotographerIngestPanel: React.FC<PhotographerIngestPanelProps> = (
     if (event.id) refresh();
   }, [event.id, refresh]);
 
+  useEffect(() => {
+    ingestApi
+      .setup()
+      .then((setup) => setFtp(setup?.ftp ?? null))
+      .catch(() => setFtp(null));
+  }, []);
+
   const handleCreate = async () => {
     setError('');
     try {
@@ -63,6 +74,8 @@ export const PhotographerIngestPanel: React.FC<PhotographerIngestPanelProps> = (
   };
 
   const handleRevoke = async (id: string) => {
+    // N-129 — revoking cuts off a photographer mid-shoot; one tap did it.
+    if (!window.confirm(i18n.t('ingest.revoke_confirm'))) return;
     setError('');
     try {
       await ingestApi.revokeKey(id);
@@ -172,13 +185,13 @@ export const PhotographerIngestPanel: React.FC<PhotographerIngestPanelProps> = (
         )}
       </div>
 
-      {/* Integration instructions */}
-      <div className="bg-noir-800/90 rounded-3xl p-6 border border-cream-400/10 space-y-4">
-        <h3 className="font-serif text-base font-bold text-cream-100 flex items-center gap-2">
+      {/* Integration instructions — for the photographer, so folded away (N-129). */}
+      <details className="bg-noir-800/90 rounded-3xl p-6 border border-cream-400/10 space-y-4">
+        <summary className="font-serif text-base font-bold text-cream-100 flex items-center gap-2 cursor-pointer">
           <FolderSync className="w-4 h-4 text-gold-400" /> {i18n.t('ingest.recipes')}
-        </h3>
+        </summary>
 
-        <div className="space-y-3 text-xs text-cream-300/85">
+        <div className="space-y-3 text-xs text-cream-300/85 pt-3">
           <div>
             <span className="font-bold text-cream-100">{i18n.t('ingest.rest_endpoint')}</span>
             <div className="flex items-center gap-2 mt-1">
@@ -206,10 +219,11 @@ export const PhotographerIngestPanel: React.FC<PhotographerIngestPanelProps> = (
               {i18n.t('ingest.hotfolder_hint')}
             </p>
             <code className="block font-mono text-[11px] text-gold-200 bg-black/40 rounded-lg p-2 mt-1 break-all">
-              {`INGEST_WATCH_DIR=/path/to/exports INGEST_API_URL=${origin} INGEST_EVENT_ID=${event.id} INGEST_API_KEY=wmi_… npm run ingest:watch`}
+              {`INGEST_WATCH_DIR=/path/to/exports INGEST_API_URL=${apiBase} INGEST_EVENT_ID=${event.id} INGEST_API_KEY=wmi_… npm run ingest:watch`}
             </code>
           </div>
 
+          {ftp && (
           <div>
             <span className="font-bold text-cream-100">{i18n.t('ingest.ftp_title')}</span>
             <p className="text-cream-400/70 mt-1">
@@ -222,7 +236,7 @@ export const PhotographerIngestPanel: React.FC<PhotographerIngestPanelProps> = (
               </div>
               <div className="bg-black/30 rounded-lg p-2.5">
                 <span className="text-cream-400/60">{i18n.t('ingest.ftp_port')}</span><br />
-                <code className="font-mono text-gold-200">{ftpPort}</code>
+                <code className="font-mono text-gold-200">{ftp.port}</code>
               </div>
               <div className="bg-black/30 rounded-lg p-2.5">
                 <span className="text-cream-400/60">{i18n.t('ingest.ftp_username')}</span><br />
@@ -233,16 +247,10 @@ export const PhotographerIngestPanel: React.FC<PhotographerIngestPanelProps> = (
                 <code className="font-mono text-gold-200 break-all">{newKey || i18n.t('ingest.generate_first')}</code>
               </div>
             </div>
-            <p className="text-cream-400/60 mt-2">
-              {i18n.t('ingest.ftp_requires_1')} <code className="font-mono">FTP_ENABLED=true</code>{' '}
-              {i18n.t('ingest.ftp_requires_2')} <code className="font-mono">FTP_PASV_URL</code>{' '}
-              {i18n.t('ingest.ftp_requires_3')} <code className="font-mono">FTP_TLS_CERT</code>{' '}
-              {i18n.t('ingest.ftp_requires_4')} <code className="font-mono">FTP_TLS_KEY</code>{' '}
-              {i18n.t('ingest.ftp_requires_5')}
-            </p>
           </div>
+          )}
         </div>
-      </div>
+      </details>
     </div>
   );
 };

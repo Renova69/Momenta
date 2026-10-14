@@ -199,3 +199,21 @@ describe("the portal in the app's language (N-125)", () => {
     window.location.hash = '';
   });
 });
+
+describe('what the portal tells a photographer once photos are sent (N-129)', () => {
+  it('says they wait for the couple\u2019s approval when the album is moderated', async () => {
+    vi.spyOn(ingestApi, 'uploadPhotos').mockResolvedValue({
+      photos: [{ id: 'p1', status: 'pending' } as unknown as Photo],
+      failed: [],
+    } as never);
+    window.location.hash = '#key=wmi_test';
+    render(<PhotographerIngestPortal event={EVENT} onClose={vi.fn()} />);
+    fireEvent.change(fileInput(), { target: { files: makeImageFiles(1) } });
+
+    fireEvent.click(screen.getByRole('button', { name: i18n.t('ingest.portal_upload_button', { count: 1 }) }));
+
+    await waitFor(() => expect(screen.getByText(i18n.t('ingest.portal_sent_pending', { count: 1 }))).toBeInTheDocument());
+    expect(screen.queryByText(i18n.t('ingest.portal_sent', { count: 1 }))).toBeNull();
+    window.location.hash = '';
+  });
+});

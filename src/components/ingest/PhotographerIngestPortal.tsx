@@ -56,6 +56,9 @@ export const PhotographerIngestPortal: React.FC<PhotographerIngestPortalProps> =
   const [isUploading, setIsUploading] = useState(false);
   const [progress, setProgress] = useState(0);
   const [uploadedCount, setUploadedCount] = useState(0);
+  // N-129 — in a moderated album the photos wait for the couple; "sent to
+  // the live screen" told the photographer they were already up.
+  const [awaitingApproval, setAwaitingApproval] = useState(0);
   const [error, setError] = useState('');
   const inputRef = useRef<HTMLInputElement | null>(null);
 
@@ -95,6 +98,9 @@ export const PhotographerIngestPortal: React.FC<PhotographerIngestPortalProps> =
       // N-103 — a retry adds to what is already on the screen; it used to
       // replace it, so 8 frames and a retry of 2 read as "2 sent".
       setUploadedCount((sent) => sent + photos.length);
+      setAwaitingApproval(
+        (waiting) => waiting + photos.filter((photo) => (photo as { status?: string }).status === 'pending').length
+      );
       // N-75 — only what did not arrive stays selected, so pressing Upload
       // again never sends a frame to the live screen twice.
       setFiles(failed.map((f) => f.file));
@@ -227,7 +233,10 @@ export const PhotographerIngestPortal: React.FC<PhotographerIngestPortalProps> =
 
         {uploadedCount > 0 && !isUploading && (
           <div className="flex items-center gap-2 text-sage-300 text-sm font-semibold">
-            <CheckCircle2 className="w-5 h-5" /> {i18n.t('ingest.portal_sent', { count: uploadedCount })}
+            <CheckCircle2 className="w-5 h-5" />{' '}
+            {awaitingApproval > 0
+              ? i18n.t('ingest.portal_sent_pending', { count: uploadedCount })
+              : i18n.t('ingest.portal_sent', { count: uploadedCount })}
           </div>
         )}
 

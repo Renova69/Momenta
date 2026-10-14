@@ -49,6 +49,17 @@ const ListKeysQuerySchema = z.object({
 });
 
 // POST /api/ingest/keys — create/rotate an ingest key for an event (host only)
+/**
+ * GET /api/ingest/setup — what the studio may offer a photographer (N-129).
+ *
+ * The studio told couples how to configure FTP on the server (FTP_ENABLED,
+ * FTP_PASV_URL, FTP_TLS_*) and showed port 2121 whether or not FTP was running.
+ * It asks here instead: FTP's port when it is on, null when it is off.
+ */
+ingestRouter.get('/setup', requireAuth, (_req, res) => {
+  res.json({ ftp: CONFIG.FTP_ENABLED ? { port: CONFIG.FTP_PORT } : null });
+});
+
 ingestRouter.post('/keys', requireAuth, validateBody(CreateKeySchema), async (req, res) => {
   const { eventId, label } = req.body;
 

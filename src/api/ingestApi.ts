@@ -61,6 +61,11 @@ export const ingestApi = {
   },
 
   // Host Studio: list (masked) keys for an event.
+  // Host Studio: what may be offered to a photographer (N-129).
+  setup: async (): Promise<{ ftp: { port: number } | null }> => {
+    return apiFetch<{ ftp: { port: number } | null }>('/api/ingest/setup');
+  },
+
   listKeys: async (eventId: string): Promise<IngestKeyInfo[]> => {
     return apiFetch<IngestKeyInfo[]>(`/api/ingest/keys?eventId=${encodeURIComponent(eventId)}`);
   },
