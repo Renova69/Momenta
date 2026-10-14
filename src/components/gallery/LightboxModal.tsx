@@ -1,5 +1,6 @@
 import React, { useId, useState } from 'react';
 import { Photo, Guest, PhotoReactionKind } from '../../types';
+import { downloadImage } from '../../utils/download';
 import { i18n } from '../../i18n';
 import { useDialog } from '../../hooks/useDialog';
 import { avatarColorFor } from '../../utils/avatar';
@@ -76,12 +77,7 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
     // photo and the server's real URL replacing it — both are inherently
     // local/self-generated, never an attacker-controlled redirect target.
     if (!/^(https?:|data:|blob:|\/)/i.test(photo.fullUrl)) return;
-    const link = document.createElement('a');
-    link.href = photo.fullUrl;
-    link.download = `wedmoments-${photo.id}.jpg`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    void downloadImage(photo.fullUrl, `wedmoments-${photo.id}.jpg`);
   };
 
   const handleCopyLink = () => {

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, cleanup, screen, fireEvent } from '@testing-library/react';
+import { render, cleanup, screen, fireEvent, waitFor } from '@testing-library/react';
 import React from 'react';
 import { LightboxModal } from '../../src/components/gallery/LightboxModal';
 import { Photo, Guest } from '../../src/types';
@@ -15,7 +15,10 @@ import { i18n } from '../../src/i18n';
  * it) — a real regression from the SEC-W1 fix itself.
  */
 
-afterEach(() => cleanup());
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+});
 
 const mockGuest: Guest = {
   id: 'guest-1',
@@ -49,11 +52,18 @@ function clickDownloadButton(container: HTMLElement): void {
 }
 
 describe('LightboxModal download guard (SEC-W1, FE-11)', () => {
-  it('allows a real server-hosted URL through', () => {
-    let clickedHref: string | null = null;
+  // N-114 — the link used to be an <a download> straight to the image. The
+  // image is on another origin (the API in development, R2 in production),
+  // where browsers ignore `download`: the guest's tab navigated away from the
+  // album to the bare JPEG. It is fetched and saved from a local copy now.
+  it('saves a server-hosted photo without leaving the album', async () => {
+    let clicked: { href: string; download: string } | null = null;
     vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
-      clickedHref = this.href;
+      clicked = { href: this.href, download: this.download };
     });
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(new Blob(['jpeg'])));
+    const createUrl = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:http://localhost/local-copy');
+    vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined);
 
     const { container } = render(
       <LightboxModal
@@ -67,7 +77,39 @@ describe('LightboxModal download guard (SEC-W1, FE-11)', () => {
     );
 
     clickDownloadButton(container);
-    expect(clickedHref).toContain('/uploads/events/event-1/photo-1.jpg');
+
+    await waitFor(() => expect(clicked).not.toBeNull());
+    expect(fetchSpy.mock.calls[0][0]).toBe('/uploads/events/event-1/photo-1.jpg');
+    expect(createUrl).toHaveBeenCalled();
+    expect(clicked!.href).toBe('blob:http://localhost/local-copy');
+    expect(clicked!.download).toBe('wedmoments-photo-1.jpg');
+  });
+
+  it('opens the photo in a new tab when its host will not hand it over', async () => {
+    const anchorClick = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
+    vi.spyOn(globalThis, 'fetch').mockRejectedValue(new TypeError('Failed to fetch'));
+    const openSpy = vi.spyOn(window, 'open').mockReturnValue(null);
+
+    const { container } = render(
+      <LightboxModal
+        photo={makePhoto('https://pub-example.r2.dev/events/event-1/photo-1.jpg')}
+        onClose={vi.fn()}
+        currentGuest={mockGuest}
+        onLike={vi.fn()}
+        onReact={vi.fn()}
+        onAddComment={vi.fn()}
+      />
+    );
+
+    clickDownloadButton(container);
+
+    await waitFor(() => expect(openSpy).toHaveBeenCalled());
+    expect(openSpy).toHaveBeenCalledWith(
+      'https://pub-example.r2.dev/events/event-1/photo-1.jpg',
+      '_blank',
+      'noopener,noreferrer'
+    );
+    expect(anchorClick).not.toHaveBeenCalled();
   });
 
   it('allows a data: URL through (FE-11) - the optimistic-upload window', () => {
