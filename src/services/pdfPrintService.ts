@@ -1,4 +1,5 @@
 import { CanvasSize, WeddingEvent, QRCanvasConfig } from '../types';
+import { withPngDpi } from '../utils/pngDpi';
 
 export interface PrintDimensions {
   size: CanvasSize;
@@ -121,6 +122,36 @@ function getPrintableElement(): HTMLElement {
   return element;
 }
 
+const MM_PER_INCH = 25.4;
+
+/**
+ * The poster's pixel size for a render `width` pixels wide (N-130): the
+ * paper's exact shape, and the resolution that width works out to. The height
+ * used to follow the on-screen preview's rounded aspect ratio (4960 x 7022 for
+ * an A2 at 300 dpi, which is 4961 x 7016), and a phone, which renders under
+ * its canvas limit, produced a smaller poster than "300 dpi" said.
+ */
+export function printPixelSize(spec: PrintDimensions, width: number): { width: number; height: number; dpi: number } {
+  const exactDpi = width / (spec.widthMm / MM_PER_INCH);
+  return {
+    width,
+    height: Math.round((spec.heightMm / MM_PER_INCH) * exactDpi),
+    dpi: Math.round(exactDpi),
+  };
+}
+
+/** `canvas` redrawn at `width` x `height`, or as it is when it cannot be. */
+function toSize(canvas: HTMLCanvasElement, width: number, height: number): HTMLCanvasElement {
+  if (canvas.width === width && canvas.height === height) return canvas;
+  const out = document.createElement('canvas');
+  out.width = width;
+  out.height = height;
+  const ctx = out.getContext('2d');
+  if (!ctx) return canvas;
+  ctx.drawImage(canvas, 0, 0, width, height);
+  return out;
+}
+
 export function getPrintSpec(size: CanvasSize | undefined): PrintDimensions {
   return PRINT_SPECS[size as CanvasSize] || PRINT_SPECS.A2;
 }
@@ -172,14 +203,19 @@ export async function exportPosterPng(config: {
   canvasConfig: QRCanvasConfig;
 }): Promise<void> {
   const spec = getPrintSpec(config.canvasConfig.canvasSize);
-  const canvas = await renderPosterToCanvas(config.canvasConfig.canvasSize);
+  const rendered = await renderPosterToCanvas(config.canvasConfig.canvasSize);
+  const size = printPixelSize(spec, rendered.width);
+  const canvas = toSize(rendered, size.width, size.height);
 
   const blob = await new Promise<Blob | null>((resolve) =>
     canvas.toBlob(resolve, 'image/png')
   );
   if (!blob) throw new PrintExportError('The poster image could not be encoded.');
 
-  triggerDownload(blob, buildFileName(config.event, spec, 'png'));
+  // N-130 — tagged with its real resolution; untagged, print software read
+  // the "300 dpi" poster as 72 dpi and opened an A2 at about 1.75 m wide.
+  const tagged = withPngDpi(new Uint8Array(await blob.arrayBuffer()), size.dpi);
+  triggerDownload(new Blob([tagged], { type: 'image/png' }), buildFileName(config.event, spec, 'png'));
 }
 
 /**
