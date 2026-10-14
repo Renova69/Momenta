@@ -171,3 +171,51 @@ export async function openSignedInAlbum(ctx: ServiceContext, signedIn: RemoteEve
   }
   if (!loaded) ctx.updateEvent(normalizeEvent(signedIn), false);
 }
+
+/**
+ * Forget everything this browser cached for an album (N-120).
+ *
+ * After a host deleted an album it stayed the active one here, and the studio
+ * opened it again from the cache: every edit was refused, because the album
+ * no longer existed.
+ */
+export function forgetEvent(eventId: string): void {
+  for (const key of [
+    STORAGE_KEYS.EVENT(eventId),
+    STORAGE_KEYS.PHOTOS(eventId),
+    STORAGE_KEYS.QUESTS(eventId),
+    STORAGE_KEYS.AUDIO(eventId),
+    STORAGE_KEYS.GUESTS(eventId),
+    STORAGE_KEYS.QR_CANVAS(eventId),
+    STORAGE_KEYS.CURRENT_GUEST(eventId),
+  ]) {
+    localStorage.removeItem(key);
+  }
+  if (localStorage.getItem(STORAGE_KEYS.ACTIVE_EVENT_ID) === eventId) {
+    localStorage.removeItem(STORAGE_KEYS.ACTIVE_EVENT_ID);
+  }
+}
+
+/**
+ * Make sure the studio shows an album the signed-in host owns (N-119, N-120).
+ *
+ * The studio drew whichever album this browser had cached — the demo wedding
+ * after "reset local data", or one the host had just deleted — and every edit
+ * was refused. When the album shown is not the host's, their own is opened:
+ * the one shown, if the server lists it as theirs (an old cache may not record
+ * an owner), otherwise their latest. `'none'` when they have no album at all.
+ */
+export async function ensureOwnAlbum(
+  ctx: ServiceContext,
+  hostUserId: string
+): Promise<'kept' | 'opened' | 'none'> {
+  const current = getEvent();
+  if (current.hostUserId === hostUserId) return 'kept';
+
+  const mine = await eventsApi.listMine();
+  const target = mine.find((album) => album.id === current.id) ?? mine[0];
+  if (!target) return 'none';
+
+  await openSignedInAlbum(ctx, target as RemoteEventPayload);
+  return 'opened';
+}

@@ -48,6 +48,8 @@ interface AppContextType {
   loadEventBySlug: (slug: string) => Promise<WeddingEvent | null>;
   /** Open the album a host just signed in to, read from the server (N-110). */
   openSignedInAlbum: (signedIn: RemoteEventPayload) => Promise<void>;
+  /** Open an album the signed-in host owns, if the one shown is not (N-119, N-120). */
+  ensureOwnAlbum: (hostUserId: string) => Promise<'kept' | 'opened' | 'none'>;
 
   // Actions
   updateEvent: (updates: Partial<WeddingEvent>) => void;
@@ -243,6 +245,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const openSignedInAlbum = useCallback((signedIn: RemoteEventPayload) => storageService.openSignedInAlbum(signedIn), []);
+  const ensureOwnAlbum = useCallback((hostUserId: string) => storageService.ensureOwnAlbum(hostUserId), []);
 
   const updateEvent = useCallback((updates: Partial<WeddingEvent>) => {
     storageService.updateEvent(updates);
@@ -358,6 +361,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           navigateGuestTab,
           loadEventBySlug,
           openSignedInAlbum,
+          ensureOwnAlbum,
           updateEvent,
           upgradePlanTier,
           refreshEventDetails,

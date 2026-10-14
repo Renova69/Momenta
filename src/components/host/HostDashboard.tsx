@@ -20,6 +20,7 @@ import { ModerationQueue } from './ModerationQueue';
 import { QRCanvasStudio } from './QRCanvasStudio';
 import { PhotographerIngestPanel } from './PhotographerIngestPanel';
 import { eventsApi } from '../../api/eventsApi';
+import { storageService } from '../../services/storageService';
 import { i18n } from '../../i18n';
 import { isFeatureUnlocked } from '../../config/tierGating';
 import { LockedFeatureCard } from '../common/LockedFeatureBadge';
@@ -92,7 +93,9 @@ export const HostDashboard: React.FC<HostDashboardProps> = ({
     try {
       const { photosDeleted } = await eventsApi.remove(event.id, deleteConfirmText);
       window.alert(i18n.t('host.delete_event_done', { count: photosDeleted }));
-      window.location.href = '/';
+      // N-120 — or the studio opens the deleted album again from the cache.
+      storageService.forgetEvent(event.id);
+      window.location.href = '/host';
     } catch (err) {
       window.alert(err instanceof Error ? err.message : i18n.t('common.save_failed'));
       setIsDeletingEvent(false);

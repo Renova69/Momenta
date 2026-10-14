@@ -325,6 +325,15 @@ class WedStorageService {
     return eventService.openSignedInAlbum(this.ctx, signedIn);
   }
 
+  public async ensureOwnAlbum(hostUserId: string): Promise<'kept' | 'opened' | 'none'> {
+    return eventService.ensureOwnAlbum(this.ctx, hostUserId);
+  }
+
+  public forgetEvent(eventId: string): void {
+    eventService.forgetEvent(eventId);
+    this.ctx.notify();
+  }
+
   public resetToDefaults(): void {
     syncService.resetToDefaults(this.ctx);
   }

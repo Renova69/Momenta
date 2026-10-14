@@ -64,11 +64,10 @@ export const HostEventsList: React.FC<HostEventsListProps> = ({
     eventsApi.listMine()
       .then((mine) => {
         if (cancelled) return;
-        const merged = Array.isArray(mine) ? [...mine] : [];
-        if (!merged.some((e) => e.id === currentEvent.id)) {
-          merged.unshift(currentEvent);
-        }
-        setEvents(merged);
+        // N-116 — only what the server says is this host's. The album open in
+        // this browser was added when missing, and it can be one the host does
+        // not own: the demo wedding was listed as theirs and "Активна".
+        setEvents(Array.isArray(mine) ? mine : []);
       })
       .catch((err) => {
         if (!cancelled) setErrorMsg(i18n.t('events.load_failed') + ((err instanceof Error ? err.message : '') || ''));

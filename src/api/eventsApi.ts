@@ -1,4 +1,5 @@
 import { apiFetch } from './apiClient';
+import { normalizeEvent, RemoteEventPayload } from '../services/eventNormalization';
 
 export interface ExportTicket {
   token: string;
@@ -32,8 +33,11 @@ export const eventsApi = {
   },
 
   // List the authenticated host's events (multi-event dashboard)
+  // N-116 — the server answers with raw rows; read as-is, every album in the
+  // switcher showed only its title.
   listMine: async (): Promise<WeddingEvent[]> => {
-    return apiFetch<WeddingEvent[]>('/api/events');
+    const rows = await apiFetch<RemoteEventPayload[]>('/api/events');
+    return Array.isArray(rows) ? rows.map(normalizeEvent) : [];
   },
 
   // Create a new event (requires auth)

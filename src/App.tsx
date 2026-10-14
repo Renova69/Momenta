@@ -106,6 +106,7 @@ function WeddingAppContent() {
     navigateGuestTab,
     loadEventBySlug,
     openSignedInAlbum,
+    ensureOwnAlbum,
     refreshEventDetails,
     updateEvent,
     upgradePlanTier,
@@ -174,12 +175,30 @@ function WeddingAppContent() {
   };
 
   // [FIX C-8] Load the selected event by slug instead of overwriting current event
-  const handleSelectEvent = (selectedEvent: WeddingEvent) => {
+  // N-116 — the switcher is the host's: choosing an album opens its studio.
+  // It opened the guest view, which then asked the host to join as a guest.
+  const handleSelectEvent = async (selectedEvent: WeddingEvent) => {
     if (selectedEvent.slug) {
-      loadEventBySlug(selectedEvent.slug);
+      await loadEventBySlug(selectedEvent.slug);
     }
-    navigateView('guest');
+    navigateView('host');
   };
+
+  // N-119, N-120 — the studio drew whatever album this browser had cached:
+  // the demo wedding after "reset local data", or one the host had just
+  // deleted. Open one of their own instead, or their albums if they have none.
+  useEffect(() => {
+    if (activeView !== 'host' || !currentHostUser?.id || event.hostUserId === currentHostUser.id) return;
+    let cancelled = false;
+    ensureOwnAlbum(currentHostUser.id)
+      .then((outcome) => {
+        if (!cancelled && outcome === 'none') setIsEventsListOpen(true);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [activeView, currentHostUser?.id, event.id, event.hostUserId, ensureOwnAlbum]);
 
   // Create event via API, then load it and navigate to the host view.
   const handleCreateEvent = async (newEventData: Partial<WeddingEvent>) => {

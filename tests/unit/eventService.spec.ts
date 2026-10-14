@@ -7,6 +7,8 @@ import {
   refreshEventDetails,
   loadEventBySlug,
   openSignedInAlbum,
+  forgetEvent,
+  ensureOwnAlbum,
 } from '../../src/services/eventService';
 import { eventsApi } from '../../src/api/eventsApi';
 import { subscriptionsApi } from '../../src/api/subscriptionsApi';
@@ -471,5 +473,76 @@ describe('opening the album a host just signed in to (N-110)', () => {
     expect(adopted.venueName).toBe('Голяма зала');
     expect(updateEventSpy.mock.calls[0][1]).toBe(false);
     expect(update).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * N-119 and N-120 — the studio showed whatever album this browser had cached:
+ * the demo wedding after "reset local data", and an album the host had just
+ * deleted. Edits to either were refused with an English "Forbidden".
+ */
+describe('the album the studio opens (N-119, N-120)', () => {
+  const HOST = 'host-1111';
+  const own = (over: Record<string, unknown> = {}) => ({
+    id: 'dddddddd-4444-4555-8666-777788889999',
+    slug: 'own-album',
+    title: 'Own',
+    host_name: 'Own Couple',
+    host_user_id: HOST,
+    ...over,
+  });
+
+  it('keeps an album the host owns', async () => {
+    storeEvent({ id: EVENT_ID, slug: 'mine', hostUserId: HOST });
+    const { ctx } = makeContext();
+    const listMine = vi.spyOn(eventsApi, 'listMine');
+
+    expect(await ensureOwnAlbum(ctx, HOST)).toBe('kept');
+    expect(listMine).not.toHaveBeenCalled();
+  });
+
+  it("opens the host's latest album instead of one they do not own", async () => {
+    storeEvent({ ...INITIAL_EVENT });
+    const { ctx, updateEventSpy } = makeContext();
+    vi.spyOn(eventsApi, 'listMine').mockResolvedValue([{ id: own().id, slug: 'own-album', hostUserId: HOST } as never]);
+    vi.spyOn(eventsApi, 'getBySlug').mockResolvedValue(own() as never);
+
+    expect(await ensureOwnAlbum(ctx, HOST)).toBe('opened');
+    expect(updateEventSpy.mock.calls[0][0].hostName).toBe('Own Couple');
+  });
+
+  it('keeps the album shown when the server lists it as the host\'s, even without an owner cached', async () => {
+    storeEvent({ id: EVENT_ID, slug: 'mine-old-cache' });
+    const { ctx } = makeContext();
+    vi.spyOn(eventsApi, 'listMine').mockResolvedValue([
+      { id: 'newer', slug: 'newer' } as never,
+      { id: EVENT_ID, slug: 'mine-old-cache' } as never,
+    ]);
+    const getBySlug = vi.spyOn(eventsApi, 'getBySlug').mockResolvedValue({ id: EVENT_ID, slug: 'mine-old-cache' } as never);
+
+    await ensureOwnAlbum(ctx, HOST);
+
+    expect(getBySlug).toHaveBeenCalledWith('mine-old-cache');
+  });
+
+  it('says so when the host has no album at all', async () => {
+    storeEvent({ ...INITIAL_EVENT });
+    const { ctx } = makeContext();
+    vi.spyOn(eventsApi, 'listMine').mockResolvedValue([]);
+
+    expect(await ensureOwnAlbum(ctx, HOST)).toBe('none');
+  });
+
+  it('forgets a deleted album, so nothing opens it from the cache', () => {
+    storeEvent({ id: EVENT_ID, slug: 'gone' });
+    localStorage.setItem(STORAGE_KEYS.PHOTOS(EVENT_ID), '[]');
+    localStorage.setItem(STORAGE_KEYS.QR_CANVAS(EVENT_ID), '{}');
+
+    forgetEvent(EVENT_ID);
+
+    expect(localStorage.getItem(STORAGE_KEYS.EVENT(EVENT_ID))).toBeNull();
+    expect(localStorage.getItem(STORAGE_KEYS.PHOTOS(EVENT_ID))).toBeNull();
+    expect(localStorage.getItem(STORAGE_KEYS.QR_CANVAS(EVENT_ID))).toBeNull();
+    expect(localStorage.getItem(STORAGE_KEYS.ACTIVE_EVENT_ID)).toBeNull();
   });
 });

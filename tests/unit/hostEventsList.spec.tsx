@@ -47,7 +47,11 @@ describe('HostEventsList', () => {
     expect(container).toBeEmptyDOMElement();
   });
 
-  it('lists the host\'s events and always includes the current one even if the server omitted it', async () => {
+  // N-116 — this used to assert that the album open in this browser was
+  // always added to the list. That album can be one the host does not own (the
+  // demo wedding, or another host's after a shared device), and it was shown
+  // as theirs and "Активна". The list is the host's albums, as the server has them.
+  it("lists only the albums the server says are the host's", async () => {
     const other = makeEvent({ id: 'e2', hostName: 'Elena & Dimitar' });
     vi.spyOn(eventsApi, 'listMine').mockResolvedValue([other]);
 
@@ -56,7 +60,35 @@ describe('HostEventsList', () => {
     );
 
     await waitFor(() => expect(screen.getByText('Elena & Dimitar')).toBeInTheDocument());
-    expect(screen.getByText('Monika & Alexander')).toBeInTheDocument();
+    expect(screen.queryByText('Monika & Alexander')).toBeNull();
+  });
+
+  it("shows each album's couple, date and venue as the server sends them (N-116)", async () => {
+    // GET /api/events answers with raw rows. Read as-is, every album in the
+    // Pro Planner switcher showed its title and nothing else.
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify([
+          {
+            id: 'e3',
+            slug: 'iva-i-petar',
+            title: 'Сватбата на Ива и Петър',
+            host_name: 'Ива и Петър',
+            event_date: '2027-06-12T16:30:00.000Z',
+            venue_name: 'Хотел Тест',
+          },
+        ]),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
+      )
+    );
+
+    render(
+      <HostEventsList isOpen onClose={vi.fn()} currentEvent={CURRENT} onSelectEvent={vi.fn()} onCreateEvent={vi.fn()} onOpenPricing={vi.fn()} />
+    );
+
+    await waitFor(() => expect(screen.getByText('Ива и Петър')).toBeInTheDocument());
+    expect(screen.getByText('Хотел Тест')).toBeInTheDocument();
+    expect(screen.getByText('12.06.2027')).toBeInTheDocument();
   });
 
   it('shows a load error instead of silently showing an empty list', async () => {
