@@ -438,10 +438,11 @@ describe('Cross-tenant security regressions (SEC-A1, SEC-M1, SEC-D3)', () => {
     });
 
     it('offers no route to claim a quest for an event-B guestId, or anyone', async () => {
-      const questsRes = await fetch(`${BASE_URL}/api/events/${eventAId}/quests`);
-      const quests = await questsRes.json();
-      expect(quests.length).toBeGreaterThan(0);
-      const questId = quests[0].id;
+      // Read from the table: since N-123 a free album's quests are not listed,
+      // and what is under test here is the claim route, not the listing.
+      const quests = await query<{ id: string }>('SELECT id FROM scavenger_quests WHERE event_id = $1', [eventAId]);
+      expect(quests.rows.length).toBeGreaterThan(0);
+      const questId = quests.rows[0].id;
 
       const res = await fetch(`${BASE_URL}/api/quests/${questId}/complete`, {
         method: 'POST',

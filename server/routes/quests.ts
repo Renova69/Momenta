@@ -4,7 +4,7 @@ import { pool } from '../lib/db';
 import { requireAuth } from '../middleware/auth';
 import { validateBody } from '../middleware/validate';
 import { requireUuidParams } from '../middleware/uuid';
-import { requireEventTier } from '../middleware/tierGate';
+import { requireEventTier, getEffectiveTierForEvent, meetsTier } from '../middleware/tierGate';
 import { wsManager } from '../ws/wsServer';
 import { errorLabel } from '../lib/errors';
 import { getQuestLeaderboard } from '../lib/questLeaderboard';
@@ -34,6 +34,14 @@ questsRouter.get('/events/:id/quests', requireUuidParams('id'), async (req, res)
   const { id } = req.params;
 
   try {
+    // N-123 — quests are a Celebration Pass feature. Registration seeds them
+    // into every album, and on a free one guests could see and complete them
+    // while the host could not manage them and the leaderboard was refused.
+    // They are not offered below the tier, and stay put for an upgrade.
+    if (!meetsTier(await getEffectiveTierForEvent(String(id)), 'celebration_pass')) {
+      return res.json([]);
+    }
+
     const query = `
       SELECT 
         sq.id,

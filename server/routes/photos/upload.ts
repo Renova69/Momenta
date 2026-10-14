@@ -25,7 +25,7 @@ import { decodeDataUrl, toAbsoluteUrl } from '../../lib/storage';
 import { buildDerivatives } from '../../lib/images';
 import { validateBody } from '../../middleware/validate';
 import { uploadLimiter, uploadIpLimiter } from '../../middleware/rateLimit';
-import { getUploadContext, checkUploadAllowance } from '../../middleware/tierGate';
+import { getUploadContext, checkUploadAllowance, meetsTier } from '../../middleware/tierGate';
 import { savePhotoVariants, insertPhotoUnderQuota, broadcastPhotoAdded, SavedPhotoFiles } from '../../lib/photoWrite';
 import { issueGuestToken } from '../../lib/guestAuth';
 import { wsManager } from '../../ws/wsServer';
@@ -581,7 +581,10 @@ photosRouter.post(
       // express.static has no concept of "pending."
       const needsQuarantine = initialStatus === 'pending' || isLocked;
 
-      const scopedQuestId = await resolveEventQuestId(eventId, questId);
+      // N-123 — no quest completes below the tier that sells quests.
+      const scopedQuestId = meetsTier(context.tier, 'celebration_pass')
+        ? await resolveEventQuestId(eventId, questId)
+        : null;
 
       const files = await persistPhotoFiles(eventId, images, needsQuarantine);
       const urls = {
