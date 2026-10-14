@@ -497,3 +497,44 @@ describe('the shutter', () => {
     expect(click).toHaveBeenCalled();
   });
 });
+
+describe('reviewing a photo when the camera is unavailable (N-108)', () => {
+  // The warning that the camera could not start covers the whole modal. It
+  // was hidden only by the live shutter, so a photo picked from the gallery,
+  // or taken with the phone's own camera app, reached the review screen
+  // underneath it: Send, the filters, the quest and the caption could not be
+  // tapped, and a guest who had refused the camera could not send anything.
+  function galleryInput(container: HTMLElement): HTMLInputElement {
+    return container.querySelector('input[type="file"]') as HTMLInputElement;
+  }
+
+  it('takes the warning away once a photo is chosen after a refusal', async () => {
+    denyCamera();
+    stubFileReader();
+    const { container } = renderModal();
+    expect(await screen.findByText(i18n.t('camera.permission_required'))).toBeTruthy();
+
+    fireEvent.change(galleryInput(container), { target: { files: [imageFile('a.jpg')] } });
+
+    await waitFor(() => expect(screen.queryByText(i18n.t('camera.permission_required'))).toBeNull());
+    expect(screen.queryByText(i18n.t('camera.open_phone_cam'))).toBeNull();
+  });
+
+  it('takes the warning away once a photo is chosen when the camera is busy', async () => {
+    Object.defineProperty(navigator, 'mediaDevices', {
+      configurable: true,
+      value: {
+        getUserMedia: vi
+          .fn()
+          .mockRejectedValue(Object.assign(new Error('Camera already in use'), { name: 'NotReadableError' })),
+      },
+    });
+    stubFileReader();
+    const { container } = renderModal();
+    expect(await screen.findByText('Camera already in use')).toBeTruthy();
+
+    fireEvent.change(galleryInput(container), { target: { files: [imageFile('a.jpg')] } });
+
+    await waitFor(() => expect(screen.queryByText('Camera already in use')).toBeNull());
+  });
+});

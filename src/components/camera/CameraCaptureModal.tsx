@@ -513,8 +513,12 @@ export const CameraCaptureModal: React.FC<CameraCaptureModalProps> = ({
             on the tick the guest presses. */}
         {flash && <div className="absolute inset-0 bg-white pointer-events-none" />}
 
-        {/* Permission / inaccessible camera fallback. */}
-        {(permissionState === 'denied' || permissionState === 'unsupported' || cameraError) && !isCaptured && (
+        {/* Permission / inaccessible camera fallback. Gone as soon as there is
+            a photo to review, whichever way it arrived (N-108): it covers the
+            whole modal, and hiding it only for the live shutter left a photo
+            from the gallery or the phone's own camera app under it, with Send
+            out of reach. */}
+        {(permissionState === 'denied' || permissionState === 'unsupported' || cameraError) && !isCaptured && !capturedRawUrl && (
           <div className="absolute inset-0 p-6 flex flex-col items-center justify-center text-center bg-noir-950/95 text-cream-100 z-30 space-y-4">
             <div className="w-14 h-14 rounded-full bg-gold-400/10 border border-gold-400/30 flex items-center justify-center text-gold-400">
               <ShieldAlert className="w-7 h-7" />
