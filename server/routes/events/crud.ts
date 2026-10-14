@@ -13,7 +13,7 @@ import { requireUuidParams } from '../../middleware/uuid';
 import { wsManager } from '../../ws/wsServer';
 import { cleanSlug } from '../../lib/storage';
 import { SLUG_MAX_LENGTH } from '../../../shared/transliterate';
-import { requireAuth } from '../../middleware/auth';
+import { requireAuth, optionalAuth } from '../../middleware/auth';
 import { getEffectiveTierForEvent, getEffectiveTierForUser, meetsTier, acquireUserEventCreationLock } from '../../middleware/tierGate';
 import { computeExpiry, purgeEventMedia, markEventDeleting, clearDeletionMark } from '../../lib/retention';
 import { errorLabel, isUniqueViolation } from '../../lib/errors';
@@ -37,13 +37,18 @@ import {
 const eventsRouter = Router();
 export { eventsRouter as crudRouter };
 
-// GET /api/events/slug/:slug — public endpoint, returns safe columns only
-eventsRouter.get('/slug/:slug', async (req, res) => {
+// GET /api/events/slug/:slug — public endpoint. Everyone gets the projection
+// the room broadcast already sends every guest (`toPublicEvent`); the signed-in
+// owner gets the album in full. N-110 — this returned the narrower public
+// columns only, and the host studio reads its album here: every setting came
+// back missing, and the studio drew moderation, the public showcase and
+// disposable mode as off while they were on.
+eventsRouter.get('/slug/:slug', optionalAuth, async (req, res) => {
   try {
     const { slug } = req.params;
     // [FIX H-6] Never fall back to another event — return 404 on miss
     const { rows } = await pool.query(
-      `SELECT ${PUBLIC_EVENT_COLUMNS} FROM events WHERE slug = $1 LIMIT 1`,
+      `SELECT ${HOST_EVENT_COLUMNS} FROM events WHERE slug = $1 LIMIT 1`,
       [slug]
     );
     if (rows.length === 0) {
@@ -53,7 +58,8 @@ eventsRouter.get('/slug/:slug', async (req, res) => {
     // Expose the authoritative plan tier (derived from the host subscription) so
     // the client does not fabricate a default and can gate the UI correctly.
     event.planTier = await getEffectiveTierForEvent(event.id);
-    res.json(event);
+    const isOwner = !!req.user?.userId && req.user.userId === event.host_user_id;
+    res.json(isOwner ? event : toPublicEvent(event));
   } catch (err: unknown) {
     const errorMsg = err instanceof Error ? err.message : String(err);
     console.error('[Events] slug lookup error:', errorMsg);

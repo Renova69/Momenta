@@ -12,6 +12,7 @@ import {
   ActiveView,
   PlanTier
 } from '../types';
+import type { RemoteEventPayload } from '../services/eventNormalization';
 import { storageService } from '../services/storageService';
 import { offlineQueue } from '../services/offlineQueueService';
 import { router, RouteState } from '../router';
@@ -45,6 +46,8 @@ interface AppContextType {
   navigateView: (view: ActiveView, tab?: 'feed' | 'quests' | 'audio') => void;
   navigateGuestTab: (tab: 'feed' | 'quests' | 'audio') => void;
   loadEventBySlug: (slug: string) => Promise<WeddingEvent | null>;
+  /** Open the album a host just signed in to, read from the server (N-110). */
+  openSignedInAlbum: (signedIn: RemoteEventPayload) => Promise<void>;
 
   // Actions
   updateEvent: (updates: Partial<WeddingEvent>) => void;
@@ -239,6 +242,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
   };
 
+  const openSignedInAlbum = useCallback((signedIn: RemoteEventPayload) => storageService.openSignedInAlbum(signedIn), []);
+
   const updateEvent = useCallback((updates: Partial<WeddingEvent>) => {
     storageService.updateEvent(updates);
   }, []);
@@ -352,6 +357,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           navigateView,
           navigateGuestTab,
           loadEventBySlug,
+          openSignedInAlbum,
           updateEvent,
           upgradePlanTier,
           refreshEventDetails,

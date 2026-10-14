@@ -19,6 +19,7 @@ import { RealtimeSocket } from './realtimeSocket';
 import { RealtimeMessage, applyRealtimeMessage } from './realtimeMessages';
 import { ReactionKind, LiveReaction, ReactionListener } from './reactionTypes';
 
+import type { RemoteEventPayload } from './eventNormalization';
 import * as eventService from './eventService';
 import * as guestService from './guestService';
 import * as photoService from './photoService';
@@ -318,6 +319,10 @@ class WedStorageService {
 
   public async loadEventBySlug(slug: string): Promise<WeddingEvent | null> {
     return eventService.loadEventBySlug(this.ctx, slug);
+  }
+
+  public async openSignedInAlbum(signedIn: RemoteEventPayload): Promise<void> {
+    return eventService.openSignedInAlbum(this.ctx, signedIn);
   }
 
   public resetToDefaults(): void {

@@ -70,6 +70,7 @@ const PhotographerIngestPortal = lazy(() =>
 import { isFeatureUnlocked } from './config/tierGating';
 import { useQuestLeaderboard } from './hooks/useQuestLeaderboard';
 import { useCheckoutReturn } from './hooks/useCheckoutReturn';
+import type { RemoteEventPayload } from './services/eventNormalization';
 import { LockedFeatureCard } from './components/common/LockedFeatureBadge';
 import {
   Heart,
@@ -104,6 +105,7 @@ function WeddingAppContent() {
     navigateView,
     navigateGuestTab,
     loadEventBySlug,
+    openSignedInAlbum,
     refreshEventDetails,
     updateEvent,
     upgradePlanTier,
@@ -478,13 +480,12 @@ function WeddingAppContent() {
               />
             ) : (
               <HostAuthPage
-                onSuccess={(_user, newEvent) => {
-                  if (newEvent && (newEvent.slug || newEvent.id)) {
-                    updateEvent(newEvent);
-                    navigateView('host');
-                  } else {
-                    navigateView('host');
-                  }
+                onSuccess={async (_user, newEvent) => {
+                  // N-110 — read from the server, never merged in raw: the
+                  // sign-in answer's row kept a cached album's (or the demo's)
+                  // couple, date, venue and settings on screen.
+                  if (newEvent?.slug) await openSignedInAlbum(newEvent as RemoteEventPayload);
+                  navigateView('host');
                 }}
                 onCancel={() => navigateView('guest')}
               />

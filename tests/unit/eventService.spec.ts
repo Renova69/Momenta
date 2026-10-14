@@ -6,6 +6,7 @@ import {
   refreshEventFromBackend,
   refreshEventDetails,
   loadEventBySlug,
+  openSignedInAlbum,
 } from '../../src/services/eventService';
 import { eventsApi } from '../../src/api/eventsApi';
 import { subscriptionsApi } from '../../src/api/subscriptionsApi';
@@ -412,5 +413,63 @@ describe('loadEventBySlug', () => {
     vi.spyOn(eventsApi, 'getBySlug').mockRejectedValue(new TypeError('NetworkError'));
 
     await expect(loadEventBySlug(ctx, 'real-wedding')).rejects.toThrow('NetworkError');
+  });
+});
+
+/**
+ * N-110 — after signing in, the studio showed the demo wedding's data.
+ *
+ * The sign-in answer's raw row (snake_case) was merged over whatever album
+ * this browser had cached, so the camelCase fields the studio reads kept the
+ * cached values — on a fresh browser, the demo couple, a past date and their
+ * venue — and the merge was then PUT back to the server on every sign-in.
+ */
+describe('opening the album a host just signed in to (N-110)', () => {
+  const signedIn = {
+    id: 'cccccccc-3333-4444-8555-666677778888',
+    slug: 'iva-i-petar-2026',
+    title: "Ива и Петър's Wedding",
+    host_name: 'Ива и Петър',
+    event_date: '2026-11-13T05:20:48.173Z',
+    venue_name: 'Голяма зала',
+  };
+
+  beforeEach(() => storeEvent({ ...INITIAL_EVENT }));
+
+  it('reads the album from the server, without writing anything back', async () => {
+    const { ctx, updateEventSpy, joinEventRoom } = makeContext();
+    const getBySlug = vi.spyOn(eventsApi, 'getBySlug').mockResolvedValue({
+      ...signedIn,
+      is_moderation_enabled: true,
+      is_public: true,
+    } as never);
+    const update = vi.spyOn(eventsApi, 'update');
+
+    await openSignedInAlbum(ctx, signedIn);
+
+    expect(getBySlug).toHaveBeenCalledWith('iva-i-petar-2026');
+    const adopted = updateEventSpy.mock.calls[0][0];
+    expect(adopted.hostName).toBe('Ива и Петър');
+    expect(adopted.eventDate).toBe('2026-11-13T05:20:48.173Z');
+    expect(adopted.isModerationEnabled).toBe(true);
+    expect(adopted.isPublic).toBe(true);
+    expect(updateEventSpy.mock.calls[0][1]).toBe(false);
+    expect(joinEventRoom).toHaveBeenCalledWith(signedIn.id);
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it('falls back to the sign-in answer, read properly, when the album cannot be fetched', async () => {
+    const { ctx, updateEventSpy } = makeContext();
+    vi.spyOn(eventsApi, 'getBySlug').mockRejectedValue(new Error('offline'));
+    const update = vi.spyOn(eventsApi, 'update');
+
+    await openSignedInAlbum(ctx, signedIn);
+
+    const adopted = updateEventSpy.mock.calls[0][0];
+    expect(adopted.id).toBe(signedIn.id);
+    expect(adopted.hostName).toBe('Ива и Петър');
+    expect(adopted.venueName).toBe('Голяма зала');
+    expect(updateEventSpy.mock.calls[0][1]).toBe(false);
+    expect(update).not.toHaveBeenCalled();
   });
 });

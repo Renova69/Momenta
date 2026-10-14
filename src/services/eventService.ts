@@ -149,3 +149,25 @@ export async function loadEventBySlug(ctx: ServiceContext, slug: string): Promis
   }
   return null;
 }
+
+/**
+ * Open the album a host has just signed in to, or registered (N-110).
+ *
+ * The sign-in answer carries the album as a raw row, and it used to be passed
+ * straight to `updateEvent`: merged over whatever album this browser had
+ * cached, so every field the studio reads kept the cached value — on a fresh
+ * browser the demo wedding's couple, date and venue — with the settings left
+ * at their defaults, and the merge PUT back to the server. The album is read
+ * from the server instead, in full now that the owner is signed in; offline,
+ * the sign-in answer is read properly and nothing is written back.
+ */
+export async function openSignedInAlbum(ctx: ServiceContext, signedIn: RemoteEventPayload): Promise<void> {
+  if (!signedIn?.slug) return;
+  let loaded: WeddingEvent | null = null;
+  try {
+    loaded = await loadEventBySlug(ctx, signedIn.slug);
+  } catch {
+    // Offline or a server error: fall through to what sign-in returned.
+  }
+  if (!loaded) ctx.updateEvent(normalizeEvent(signedIn), false);
+}
