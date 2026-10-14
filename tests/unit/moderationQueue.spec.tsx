@@ -141,3 +141,49 @@ describe('ModerationQueue', () => {
     expect(screen.getByText(i18n.t('moderation.pending_count', { count: 2 }))).toBeInTheDocument();
   });
 });
+
+/**
+ * N-121 — a rejected photo vanished from every host screen. It was in neither
+ * the queue nor the gallery, so a host who rejected one by mistake could not
+ * bring it back, and could not delete one they wanted gone for good.
+ */
+describe('photos the host rejected (N-121)', () => {
+  it('are listed in their own section', () => {
+    render(
+      <ModerationQueue
+        photos={[photo({ status: 'rejected' }), photo({ status: 'rejected' }), photo({ status: 'approved' })]}
+        onSetStatus={vi.fn()}
+        onDeletePhoto={vi.fn()}
+      />
+    );
+
+    expect(screen.getByText(`${i18n.t('host.rejected_title')} (2)`)).toBeTruthy();
+  });
+
+  it('can be put back in the album', () => {
+    const onSetStatus = vi.fn();
+    const hidden = photo({ status: 'rejected' });
+    render(<ModerationQueue photos={[hidden]} onSetStatus={onSetStatus} onDeletePhoto={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole('button', { name: i18n.t('host.restore') }));
+
+    expect(onSetStatus).toHaveBeenCalledWith(hidden.id, 'approved');
+  });
+
+  it('can be deleted for good, after asking', () => {
+    const onDeletePhoto = vi.fn();
+    const hidden = photo({ status: 'rejected' });
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    render(<ModerationQueue photos={[hidden]} onSetStatus={vi.fn()} onDeletePhoto={onDeletePhoto} />);
+
+    const section = screen.getByText(`${i18n.t('host.rejected_title')} (1)`).closest('section')!;
+    fireEvent.click(Array.from(section.querySelectorAll('button')).find((b) => b.textContent?.includes(i18n.t('host.delete')))!);
+
+    expect(onDeletePhoto).toHaveBeenCalledWith(hidden.id);
+  });
+
+  it('is not shown when nothing has been rejected', () => {
+    render(<ModerationQueue photos={[photo({ status: 'approved' })]} onSetStatus={vi.fn()} onDeletePhoto={vi.fn()} />);
+    expect(screen.queryByText(new RegExp(i18n.t('host.rejected_title')))).toBeNull();
+  });
+});

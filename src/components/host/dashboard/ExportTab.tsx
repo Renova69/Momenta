@@ -39,7 +39,7 @@ export const ExportTab: React.FC = () => {
             <div className="text-sm">{isExportingZip ? i18n.t('host.zip_downloading') : i18n.t('host.zip_download')}</div>
             <div className="text-xs font-normal opacity-85">
               {i18n.t('host.archive_contents', {
-                photos: photos.length,
+                photos: photos.filter((p) => p.status !== 'rejected').length,
                 audio: audioEntries.length,
               })}
             </div>

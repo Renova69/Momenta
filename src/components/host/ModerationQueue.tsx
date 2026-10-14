@@ -11,7 +11,8 @@ import {
   Trash2,
   ListChecks,
   CheckSquare,
-  Square
+  Square,
+  RotateCcw
 } from 'lucide-react';
 
 interface ModerationQueueProps {
@@ -28,6 +29,9 @@ export const ModerationQueue: React.FC<ModerationQueueProps> = ({
   const pendingPhotos = photos.filter((p) => p.status === 'pending');
   const approvedPhotos = photos.filter((p) => p.status === 'approved');
   const featuredPhotos = photos.filter((p) => p.status === 'featured');
+  // N-121 — rejected photos had no screen at all: a mistaken rejection could
+  // not be undone, and an unwanted photo could not be deleted for good.
+  const rejectedPhotos = photos.filter((p) => p.status === 'rejected');
 
   const [isSelecting, setIsSelecting] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -248,6 +252,44 @@ export const ModerationQueue: React.FC<ModerationQueueProps> = ({
           })}
         </div>
       </div>
+
+      {rejectedPhotos.length > 0 && (
+        <section className="space-y-3">
+          <div>
+            <h3 className="text-sm font-semibold text-cream-200">
+              {i18n.t('host.rejected_title')} ({rejectedPhotos.length})
+            </h3>
+            <p className="text-[11px] text-cream-400/70">{i18n.t('host.rejected_hint')}</p>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-3">
+            {rejectedPhotos.map((photo) => (
+              <div key={photo.id} className="rounded-xl overflow-hidden border border-cream-400/10 bg-noir-800">
+                <img
+                  src={photo.thumbnailUrl || photo.fullUrl}
+                  alt={photo.caption || photo.guestName}
+                  className="w-full aspect-square object-cover opacity-60"
+                />
+                <div className="flex gap-1 p-1.5">
+                  <button
+                    onClick={() => onSetStatus(photo.id, 'approved')}
+                    className="flex-1 py-1 rounded bg-sage-500/20 hover:bg-sage-500/30 text-sage-300 border border-sage-400/40 text-[10px] font-semibold flex items-center justify-center gap-1"
+                  >
+                    <RotateCcw className="w-3 h-3" />
+                    <span>{i18n.t('host.restore')}</span>
+                  </button>
+                  <button
+                    onClick={() => handleSingleDelete(photo.id)}
+                    className="flex-1 py-1 rounded bg-rosewood-600/80 hover:bg-rosewood-600 text-white text-[10px] flex items-center justify-center gap-1"
+                  >
+                    <Trash2 className="w-3 h-3" />
+                    <span>{i18n.t('host.delete')}</span>
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
     </div>
   );
 };

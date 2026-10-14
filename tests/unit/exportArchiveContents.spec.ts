@@ -147,6 +147,15 @@ beforeAll(async () => {
   await insert(foreign, null, '2026-01-01T00:00:03Z');
   await insert(missing, null, '2026-01-01T00:00:04Z');
 
+  // N-121 — a photo the host rejected, and one still waiting for review.
+  const rejected = await saveFile(mine.eventId, 'hidden-by-host.jpg');
+  const pending = await saveFile(mine.eventId, 'awaiting-review.jpg');
+  await pool.query(
+    `INSERT INTO photos (event_id, guest_id, storage_path, full_url, status, created_at)
+     VALUES ($1, $2, $3, $3, 'rejected', '2026-01-01T00:00:05Z'), ($1, $2, $4, $4, 'pending', '2026-01-01T00:00:06Z')`,
+    [mine.eventId, guest, rejected, pending]
+  );
+
   // Local audio is stored as an absolute URL; R2 audio is a CDN URL that
   // carries no /uploads/ segment at all. Both shapes reach the same code.
   const localAudio = await storageAdapter.save(
@@ -179,6 +188,16 @@ afterAll(async () => {
 describe('what the export archive contains', () => {
   it('produces a zip', () => {
     expect(archive.subarray(0, 2).toString('latin1')).toBe('PK');
+  });
+
+  it('leaves out a photo the host rejected (N-121)', () => {
+    // The keepsake archive included every photo, so one a host had hidden
+    // as inappropriate came back in the ZIP they share with the family.
+    expect(archive.toString('latin1')).not.toContain('hidden-by-host.jpg');
+  });
+
+  it('keeps a photo still waiting for review rather than dropping it unseen', () => {
+    expect(archive.toString('latin1')).toContain('awaiting-review.jpg');
   });
 
   it('leaves out a file belonging to a different album', () => {

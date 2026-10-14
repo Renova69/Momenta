@@ -134,10 +134,13 @@ eventsRouter.get(
 
     // Prefer the untouched original; fall back to the display copy for photos
     // captured before originals were retained (migration 007).
+    // N-121 — not a photo the host rejected: the archive is the keepsake they
+    // share, and one hidden as inappropriate came back in it. A photo still
+    // waiting for review stays; it was never turned down.
     const photosQuery = await pool.query(
       `SELECT id, COALESCE(original_storage_path, storage_path) AS storage_path,
               original_storage_path IS NOT NULL AS has_original
-         FROM photos WHERE event_id = $1 ORDER BY created_at ASC`,
+         FROM photos WHERE event_id = $1 AND status <> 'rejected' ORDER BY created_at ASC`,
       [id]
     );
     const audioQuery = await pool.query(
