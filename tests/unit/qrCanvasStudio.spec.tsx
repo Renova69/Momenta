@@ -4,6 +4,7 @@ import React from 'react';
 import { QRCanvasStudio } from '../../src/components/host/QRCanvasStudio';
 import * as pdfPrintService from '../../src/services/pdfPrintService';
 import { WeddingEvent, QRCanvasConfig } from '../../src/types';
+import { ENV } from '../../src/config/env';
 
 /**
  * The QR poster studio.
@@ -108,15 +109,25 @@ describe('the QR target', () => {
   // inspectable from the DOM. What is observable is which target the host
   // picked, and that is the choice that decides whether a scan at the venue
   // resolves at all.
-  it('offers both the LAN address and the public domain', () => {
+  // N-118 — the public domain was a hardcoded https://wedmoments.app; it is
+  // configured now (VITE_PUBLIC_APP_URL), and offered only when it is set.
+  const configured = 'https://snimki.example.bg';
+  const original = ENV.PUBLIC_APP_URL;
+  afterEach(() => {
+    ENV.PUBLIC_APP_URL = original;
+  });
+
+  it('offers both this address and the configured public domain', () => {
+    ENV.PUBLIC_APP_URL = configured;
     const { container } = renderStudio();
-    expect(container.textContent).toContain('wedmoments.app');
+    expect(container.textContent).toContain('snimki.example.bg');
   });
 
   it('switches the selected target when the host picks the public domain', () => {
+    ENV.PUBLIC_APP_URL = configured;
     const { container } = renderStudio();
     const cloud = Array.from(container.querySelectorAll('button')).find((b) =>
-      b.textContent?.includes('wedmoments.app')
+      b.textContent?.includes('snimki.example.bg')
     );
 
     const before = cloud!.className;

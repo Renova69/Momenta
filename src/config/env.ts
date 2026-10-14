@@ -37,4 +37,11 @@ export const ENV = {
   API_URL: defaultApiUrl(),
   WS_URL: defaultWsUrl(),
   IS_PROD: !!metaEnv.PROD,
+  /**
+   * The album's public address, for QR codes printed from somewhere else —
+   * a host preparing posters on the venue's LAN, say (N-118). Empty when not
+   * configured: a QR code then points at the page it was made on, which in
+   * production is that address already.
+   */
+  PUBLIC_APP_URL: (metaEnv.VITE_PUBLIC_APP_URL || '').replace(/\/+$/, ''),
 };

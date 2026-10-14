@@ -20,6 +20,7 @@ import {
   Sparkles,
 } from 'lucide-react';
 import { guestAvatarUrl } from '../../utils/avatar';
+import { ENV } from '../../config/env';
 
 // Emoji are built from code points so the source stays plain ASCII.
 const REACTION_GLYPHS: Record<ReactionKind, string> = {
@@ -258,7 +259,7 @@ export const LiveProjectorScreen: React.FC<LiveProjectorScreenProps> = ({
 
   const currentUrl = typeof window !== 'undefined'
     ? `${window.location.origin}/e/${event.slug}`
-    : `https://wedmoments.app/e/${event.slug}`;
+    : `${ENV.PUBLIC_APP_URL}/e/${event.slug}`;
 
   return (
     <div className="fixed inset-0 z-50 bg-black text-white flex flex-col justify-between overflow-hidden select-none animate-fade-in">

@@ -4,6 +4,7 @@ import { QRCodeSVG } from 'qrcode.react';
 import { i18n } from '../../i18n';
 import { centerIconDataUri } from '../../utils/qrCenterIcon';
 import { formatEuDateLong } from '../../utils/date';
+import { ENV } from '../../config/env';
 import {
   triggerVectorPrint,
   exportPosterPdf,
@@ -55,7 +56,6 @@ export const QRCanvasStudio: React.FC<QRCanvasStudioProps> = ({
   const [accentColor, setAccentColor] = useState(config.accentColor || '#D4AF37');
   const [centerIcon, setCenterIcon] = useState<QRCenterIcon>(config.centerIcon || 'heart');
   const [qrTargetMode, setQrTargetMode] = useState<'wifi' | 'cloud'>('wifi');
-  const [cloudDomain] = useState('https://wedmoments.app');
 
   useEffect(() => {
     if (config.frameStyle) setActiveFrame(config.frameStyle);
@@ -67,10 +67,19 @@ export const QRCanvasStudio: React.FC<QRCanvasStudioProps> = ({
   }, [config]);
 
   // Compute live event URL: current host origin for testing or Public Domain for real wedding printing
-  const origin = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:6500';
-  const currentUrl = qrTargetMode === 'wifi'
-    ? `${origin}/e/${event.slug}`
-    : `${cloudDomain.replace(/\/$/, '')}/e/${event.slug}`;
+  // N-118 — the public address is configured (VITE_PUBLIC_APP_URL), not the
+  // hardcoded https://wedmoments.app no deployment had; without one, or when
+  // it is this page's own, there is nothing to choose between.
+  const origin = typeof window !== 'undefined' ? window.location.origin : ENV.PUBLIC_APP_URL;
+  const publicDomain = ENV.PUBLIC_APP_URL && ENV.PUBLIC_APP_URL !== origin ? ENV.PUBLIC_APP_URL : null;
+  const hostOf = (url: string) => {
+    try {
+      return new URL(url).host;
+    } catch {
+      return url;
+    }
+  };
+  const currentUrl = `${qrTargetMode === 'cloud' && publicDomain ? publicDomain : origin}/e/${event.slug}`;
 
   const [exporting, setExporting] = useState<'pdf' | 'png' | null>(null);
   const [exportError, setExportError] = useState<string | null>(null);
@@ -270,6 +279,7 @@ export const QRCanvasStudio: React.FC<QRCanvasStudioProps> = ({
           </div>
 
           {/* QR Destination Link Mode */}
+          {publicDomain && (
           <div className="bg-noir-800 rounded-2xl p-4 border border-cream-400/10 space-y-3">
             <label className="text-xs font-bold text-cream-200 uppercase tracking-wider block">
               {i18n.t('canvas.qr_dest_label')}
@@ -284,7 +294,7 @@ export const QRCanvasStudio: React.FC<QRCanvasStudioProps> = ({
                 }`}
               >
                 <span className="font-bold block text-cream-100">{i18n.t('ui.q_r_canvas_studio.1')}</span>
-                <span className="text-[10px] text-cream-400/70">192.168.0.35:6500</span>
+                <span className="text-[10px] text-cream-400/70">{hostOf(origin)}</span>
               </button>
 
               <button
@@ -296,10 +306,11 @@ export const QRCanvasStudio: React.FC<QRCanvasStudioProps> = ({
                 }`}
               >
                 <span className="font-bold block text-cream-100">{i18n.t('ui.q_r_canvas_studio.2')}</span>
-                <span className="text-[10px] text-cream-400/70">wedmoments.app</span>
+                <span className="text-[10px] text-cream-400/70">{hostOf(publicDomain)}</span>
               </button>
             </div>
           </div>
+          )}
 
           {/* Headline & Subtext Customization */}
           <div className="bg-noir-800 rounded-2xl p-4 border border-cream-400/10 space-y-3">
