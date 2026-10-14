@@ -54,6 +54,13 @@ export function updateEvent(ctx: ServiceContext, updates: Partial<WeddingEvent>,
         // answer used to be discarded, so the QR studio, projector and PDFs
         // kept printing the address that was asked for: someone else's
         // album, or nothing.
+        // N-109 — the server sets the disposable reveal itself (on, off, or a
+        // wedding moved past it), so the studio takes it from the answer.
+        const savedRow = saved as { reveal_at?: string | null } | undefined;
+        if (('isDisposableMode' in updates || 'eventDate' in updates) && savedRow && 'reveal_at' in savedRow) {
+          ctx.updateEvent({ revealAt: savedRow.reveal_at ?? null }, false);
+        }
+
         const storedSlug = (saved as Partial<WeddingEvent> | undefined)?.slug;
         if ('slug' in updates && storedSlug && storedSlug !== updated.slug) {
           ctx.updateEvent({ slug: storedSlug }, false);

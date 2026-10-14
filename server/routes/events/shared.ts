@@ -133,6 +133,17 @@ export const TIER_GATED_EVENT_FIELDS: Record<string, BackendPlanTier> = {
   revealAt: 'deluxe_keepsake',
 };
 
+/**
+ * When a disposable album reveals by default: 09:00 the morning after the
+ * wedding, in Sofia (N-109) — what the host's toggle tells them. `dateSql`
+ * is the wedding's timestamptz as SQL (a column or a parameter); the answer
+ * is a timestamptz too. Migration 034 backfills with the same expression.
+ */
+export const DISPOSABLE_REVEAL_TIMEZONE = 'Europe/Sofia';
+export function morningAfterSql(dateSql: string): string {
+  return `((date_trunc('day', (${dateSql}) AT TIME ZONE '${DISPOSABLE_REVEAL_TIMEZONE}') + INTERVAL '1 day 9 hours') AT TIME ZONE '${DISPOSABLE_REVEAL_TIMEZONE}')`;
+}
+
 export const DEFAULT_THEME = 'champagne_gold';
 
 export const CreateEventSchema = z.object({

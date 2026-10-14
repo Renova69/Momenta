@@ -15,6 +15,7 @@ import { transliterateBg, SLUG_MAX_LENGTH, SLUG_MIN_LENGTH } from '../../../util
 import { router } from '../../../router';
 import { StorageMeter } from '../StorageMeter';
 import { maskDateInput, maskTimeInput } from './dateFields';
+import { RevealTimeField } from './RevealTimeField';
 import { ThemePalette } from '../../../types';
 import { isFeatureUnlocked } from '../../../config/tierGating';
 import { useHostDashboard } from './context';
@@ -274,6 +275,10 @@ export const OverviewTab: React.FC = () => {
               />
             </button>
           </div>
+
+          {event.isDisposableMode && (
+            <RevealTimeField revealAt={event.revealAt} onCommit={(revealAt) => onUpdateEvent({ revealAt })} />
+          )}
 
           {/* Photo Limit */}
           <div>

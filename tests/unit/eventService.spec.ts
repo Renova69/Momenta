@@ -193,6 +193,32 @@ describe('updateEvent', () => {
     expect(notifyError).not.toHaveBeenCalled();
   });
 
+  // N-109 — switching disposable mode on is when the server sets the reveal,
+  // so the answer carries it and the studio has to take it from there.
+  it('adopts the reveal time the server set when disposable mode is switched on', async () => {
+    const { ctx, updateEventSpy } = makeContext();
+    vi.spyOn(eventsApi, 'update').mockResolvedValue({
+      id: EVENT_ID,
+      slug: 'ivan-and-maria',
+      reveal_at: '2027-06-13T06:00:00.000Z',
+    } as never);
+
+    updateEvent(ctx, { isDisposableMode: true });
+    await vi.waitFor(() => expect(updateEventSpy).toHaveBeenCalled());
+
+    expect(updateEventSpy).toHaveBeenCalledWith({ revealAt: '2027-06-13T06:00:00.000Z' }, false);
+  });
+
+  it('adopts a cleared reveal when disposable mode is switched off', async () => {
+    const { ctx, updateEventSpy } = makeContext();
+    vi.spyOn(eventsApi, 'update').mockResolvedValue({ id: EVENT_ID, slug: 'ivan-and-maria', reveal_at: null } as never);
+
+    updateEvent(ctx, { isDisposableMode: false });
+    await vi.waitFor(() => expect(updateEventSpy).toHaveBeenCalled());
+
+    expect(updateEventSpy).toHaveBeenCalledWith({ revealAt: null }, false);
+  });
+
   it('rolls back a refused rename by asking for the album at its old address', async () => {
     const { ctx } = makeContext();
     vi.spyOn(eventsApi, 'update').mockRejectedValue(new Error('slug too short'));

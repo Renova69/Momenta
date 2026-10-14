@@ -26,6 +26,7 @@ import {
   DEFAULT_THEME,
   CreateEventSchema,
   DeleteEventSchema,
+  morningAfterSql,
 } from './shared';
 
 /**
@@ -444,11 +445,31 @@ eventsRouter.put('/:id', requireAuth, requireUuidParams('id'), validateBody(Upda
     const updateRecord = updates as Record<string, string | number | boolean | null | undefined>;
     let slugValueIndex = -1;
 
+    let eventDateSql = 'event_date';
     for (const [key, col] of Object.entries(fieldMap)) {
       if (key in updateRecord) {
         values.push(updateRecord[key] ?? null);
         setClauses.push(`${col} = $${values.length}`);
         if (key === 'slug') slugValueIndex = values.length - 1;
+        if (key === 'eventDate') eventDateSql = `$${values.length}::timestamptz`;
+      }
+    }
+
+    // N-109 — the reveal the disposable toggle promises. Nothing ever set
+    // `reveal_at`, and every check that hides a locked photo asks whether it
+    // is still ahead, so with it NULL the album counted as already revealed
+    // and published every "locked" photo. A reveal the host sends is kept.
+    if (!('revealAt' in updateRecord)) {
+      const morningAfter = morningAfterSql(eventDateSql);
+      if (updateRecord.isDisposableMode === true) {
+        setClauses.push(`reveal_at = COALESCE(reveal_at, ${morningAfter})`);
+      } else if (updateRecord.isDisposableMode === false) {
+        setClauses.push('reveal_at = NULL');
+      } else if ('eventDate' in updateRecord) {
+        // A wedding moved past its own reveal would reveal before it happened.
+        setClauses.push(
+          `reveal_at = CASE WHEN is_disposable_mode AND reveal_at <= ${eventDateSql} THEN ${morningAfter} ELSE reveal_at END`
+        );
       }
     }
 
