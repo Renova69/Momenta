@@ -53,6 +53,14 @@ export const CameraCaptureModal: React.FC<CameraCaptureModalProps> = ({
   const [capturedRawUrl, setCapturedRawUrl] = useState<string | null>(null);
   const [processedUrl, setProcessedUrl] = useState<string | null>(null);
   const [selectedFilter, setSelectedFilter] = useState<PhotoFilter>('golden_glow');
+  // N-126 — the golden default is the live camera's look. A photo chosen
+  // from the gallery or the phone's own camera app is a finished photo, and
+  // starts as itself unless the guest has picked a filter.
+  const filterChosenRef = useRef(false);
+  const chooseFilter = useCallback((filter: PhotoFilter) => {
+    filterChosenRef.current = true;
+    setSelectedFilter(filter);
+  }, []);
   const [caption, setCaption] = useState('');
   const [selectedQuestId, setSelectedQuestId] = useState<string>(initialQuestId || '');
   const [isProcessing, setIsProcessing] = useState(false);
@@ -304,12 +312,15 @@ export const CameraCaptureModal: React.FC<CameraCaptureModalProps> = ({
     // multi-photo selection lives in handleConfirmUpload's per-file loop,
     // which is what actually decodes every photo in the batch sequentially —
     // this single preview thumbnail for file[0] was never that risk.
+    const filter: PhotoFilter = filterChosenRef.current ? selectedFilter : 'original';
+    if (filter !== selectedFilter) setSelectedFilter(filter);
+
     const reader = new FileReader();
     reader.onload = (event) => {
       if (event.target?.result) {
         const rawUrl = event.target.result as string;
         setCapturedRawUrl(rawUrl);
-        applyFilterToCaptured(rawUrl, selectedFilter);
+        applyFilterToCaptured(rawUrl, filter);
         stopCamera();
       }
     };
@@ -581,7 +592,7 @@ export const CameraCaptureModal: React.FC<CameraCaptureModalProps> = ({
         <CaptureReview
           filter={selectedFilter}
           filters={FILTERS}
-          onSelectFilter={setSelectedFilter}
+          onSelectFilter={chooseFilter}
           quests={quests}
           selectedQuestId={selectedQuestId}
           onSelectQuest={setSelectedQuestId}
@@ -597,7 +608,7 @@ export const CameraCaptureModal: React.FC<CameraCaptureModalProps> = ({
         <CameraViewfinder
           filter={selectedFilter}
           filters={FILTERS}
-          onSelectFilter={setSelectedFilter}
+          onSelectFilter={chooseFilter}
           onShutter={() => {
             if (streamRef.current && videoRef.current && liveCameraAvailable) {
               snapPhotoFromVideo();

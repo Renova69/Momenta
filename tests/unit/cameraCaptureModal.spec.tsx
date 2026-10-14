@@ -556,3 +556,37 @@ describe('reviewing a photo when the camera is unavailable (N-108)', () => {
     await waitFor(() => expect(screen.queryByText(i18n.t('camera.error_busy'))).toBeNull());
   });
 });
+
+/**
+ * N-126 — a photo picked from the gallery, or taken with the phone's own
+ * camera app, was tinted with "Golden glow" unless the guest found and chose
+ * "Original": the live camera's default filter applied to a finished photo.
+ */
+describe('the filter on a chosen photo (N-126)', () => {
+  function galleryInput(container: HTMLElement): HTMLInputElement {
+    return container.querySelector('input[type="file"]') as HTMLInputElement;
+  }
+
+  it('starts as the photo itself', async () => {
+    stubFileReader();
+    const { container } = renderModal();
+
+    fireEvent.change(galleryInput(container), { target: { files: [imageFile('a.jpg')] } });
+
+    await waitFor(() => expect(compressionService.compressAndFilterImage).toHaveBeenCalled());
+    const options = vi.mocked(compressionService.compressAndFilterImage).mock.calls[0][1];
+    expect(options?.filter).toBe('original');
+  });
+
+  it('keeps a filter the guest chose before picking', async () => {
+    stubFileReader();
+    const { container } = renderModal();
+    fireEvent.click(screen.getByRole('button', { name: i18n.t('filter.black_white') }));
+
+    fireEvent.change(galleryInput(container), { target: { files: [imageFile('a.jpg')] } });
+
+    await waitFor(() => expect(compressionService.compressAndFilterImage).toHaveBeenCalled());
+    const options = vi.mocked(compressionService.compressAndFilterImage).mock.calls[0][1];
+    expect(options?.filter).toBe('black_white');
+  });
+});
