@@ -450,25 +450,25 @@ describe('guest rows are not minted per request (H8)', () => {
       expect(rows[0].table_number).toBeNull();
     }, 20_000);
 
-    it('keeps the avatar the guest chose', async () => {
-      // A selfie this server stored for the album (N-107 —
-      // `POST /api/guests/:id/avatar` writes one of these).
-      const chosen = `${CONFIG.PUBLIC_BASE_URL}/uploads/events/${joinHost.eventId}/avatar-1-ana.jpg`;
-      const { body } = await join({
-        name: 'Ana',
-        avatarUrl: chosen,
-        deviceFingerprint: `avatar-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-      });
+    it('keeps the picture already on record when the guest edits their profile', async () => {
+      // Since N-107 a picture is set only by POST /api/guests/:id/avatar; this
+      // route ignores one sent with it. What must survive is the one on record.
+      const fingerprint = `avatar-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+      const first = await join({ name: 'Ana', deviceFingerprint: fingerprint });
+      const stored = `${CONFIG.PUBLIC_BASE_URL}/uploads/events/${joinHost.eventId}/avatar-1-abcdef.jpg`;
+      await query('UPDATE guests SET avatar_url = $1 WHERE id = $2', [stored, first.body.id]);
 
-      expect(body.avatarUrl).toBe(chosen);
+      const { body } = await join({ name: 'Ana Petrova', deviceFingerprint: fingerprint });
+
+      expect(body.id).toBe(first.body.id);
+      expect(body.avatarUrl).toBe(stored);
     }, 20_000);
 
-    it('drops an avatar on another host instead of storing it', async () => {
+    it('ignores a picture sent with the join', async () => {
       // This test used to store `https://example.com/ana.png`. Every device
       // rendering the feed fetches a guest's avatar, so an address on another
       // host told that host who was at the wedding — the leak N-30 closed for
-      // generated avatars, left open for chosen ones. Since N-107 a selfie is
-      // uploaded and stored here, so a picture elsewhere is never the guest's.
+      // generated avatars, left open for chosen ones.
       const { status, body } = await join({
         name: 'Ana',
         avatarUrl: 'https://example.com/ana.png',

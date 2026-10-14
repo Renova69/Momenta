@@ -135,9 +135,8 @@ export async function registerGuest(
       eventId: event.id,
       name: localGuest.name,
       tableNumber: localGuest.tableNumber,
-      // Never the picture itself (N-107) — that is stored below, once the
-      // server has said who this guest is.
-      avatarUrl: isInlinePicture(localGuest.avatarUrl) ? undefined : localGuest.avatarUrl,
+      // No picture (N-107): the server keeps the one on record and ignores any
+      // sent here. A new one is stored below, once it has said who this is.
       deviceFingerprint,
     });
     if (serverGuest && serverGuest.id) {

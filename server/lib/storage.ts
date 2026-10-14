@@ -532,27 +532,30 @@ export function storagePathBelongsToEvent(storagePath: string | null | undefined
   return storagePath.toLowerCase().includes(`/events/${eventId.toLowerCase()}/`);
 }
 
+/** The name `saveBuffer(…, 'avatar', '.jpg', …)` gives a stored selfie. */
+const AVATAR_FILENAME = /^avatar-\d+-[a-z0-9]+\.jpg$/;
+
 /**
- * True when `url` names a public object this server stored for `eventId`.
+ * True when `url` names a selfie the avatar route stored for `eventId` (N-107).
  *
- * The only kind of picture a guest row may point at (N-107). A selfie is
- * uploaded to `POST /api/guests/:id/avatar`, which stores it and writes the
- * URL; anything else a client sends as an avatar is dropped. That covers both
- * shapes that reached the column before: a `data:` URL, which overflowed it and
- * refused the guest, and an address on another host, which every device
- * rendering the feed would then fetch — the same leak N-30 closed.
+ * Only `POST /api/guests/:id/avatar` writes a guest's avatar, and only a file
+ * this matches is ever deleted as one — when a selfie is replaced, or the album
+ * purged. Anything else in the column (a value written before the route
+ * existed) is left alone. The first version checked only that the URL lay
+ * under the album's folder, and registration accepted any such URL as an
+ * avatar, so a guest could name another guest's photo as theirs and have it
+ * deleted by setting a selfie (found by the security review of 677fb6f).
  *
- * A prefix match against the exact bases the adapters write, not the
- * substring test {@link storagePathBelongsToEvent} uses, because this value
- * comes from the client: `https://elsewhere/events/<id>/x.jpg` contains the
- * segment and is not ours.
+ * A prefix match against the exact bases the adapters write, then exactly one
+ * file name of the avatar shape: no further path, nothing of unbounded length.
  */
-export function isStoredUrlForEvent(url: unknown, eventId: string): url is string {
-  if (typeof url !== 'string' || url.includes('..')) return false;
+export function isStoredAvatarUrl(url: unknown, eventId: string): url is string {
+  if (typeof url !== 'string' || url.length > 512) return false;
   const id = eventId.toLowerCase();
   const prefixes = [`${CONFIG.PUBLIC_BASE_URL}/uploads/events/${id}/`, `/uploads/events/${id}/`];
   if (CONFIG.R2_PUBLIC_URL) prefixes.push(`${CONFIG.R2_PUBLIC_URL}/events/${id}/`);
-  return prefixes.some((prefix) => url.startsWith(prefix));
+  const prefix = prefixes.find((candidate) => url.startsWith(candidate));
+  return !!prefix && AVATAR_FILENAME.test(url.slice(prefix.length));
 }
 
 /**

@@ -177,6 +177,30 @@ describe('a guest who adds a selfie can still use the album (N-107)', () => {
     expect(feed[0].guestAvatar).toBe(avatarUrl);
   });
 
+  it('answers and broadcasts the picture on record, not the one the upload carried', async () => {
+    // The upload's answer is also the PHOTO_ADDED broadcast every guest in the
+    // room receives, and it echoed whatever the client sent as guestAvatar —
+    // an address on another host, fetched by every phone at the wedding.
+    const eventId = await registerHost();
+    const guest = await joinWithToken(eventId);
+    const { avatarUrl } = await (await setAvatar(guest.id, { eventId, guestToken: guest.guestToken, image: jpegDataUrl })).json();
+
+    const upload = await fetch(`${BASE_URL}/api/photos`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        eventId,
+        guestId: guest.id,
+        guestToken: guest.guestToken,
+        guestName: 'Avatar Spec Guest',
+        guestAvatar: 'https://tracker.example/pixel.gif',
+        fullUrl: jpegDataUrl,
+      }),
+    });
+
+    expect((await upload.json()).guestAvatar).toBe(avatarUrl);
+  });
+
   it('removes the previous selfie when the guest replaces it', async () => {
     const eventId = await registerHost();
     const guest = await joinWithToken(eventId);
@@ -214,6 +238,66 @@ describe('a guest who adds a selfie can still use the album (N-107)', () => {
     });
 
     expect(res.status).toBe(400);
+  });
+
+  it("cannot be pointed at another guest's photo to have that photo deleted", async () => {
+    // Found by the security review of 677fb6f. Registration accepted any URL
+    // this server stored for the album as the guest's avatar, and replacing an
+    // avatar deletes the previous file — so a guest could name someone else's
+    // photo as their avatar, then set a selfie, and the photo's file was gone.
+    const eventId = await registerHost();
+    const photoRes = await fetch(`${BASE_URL}/api/photos`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        eventId,
+        guestName: 'Photo Owner',
+        deviceFingerprint: `owner-${Math.random().toString(36).slice(2, 10)}`,
+        fullUrl: jpegDataUrl,
+      }),
+    });
+    const photo = await photoRes.json();
+    const photoFile = fileFor(photo.fullUrl);
+    expect(fs.existsSync(photoFile)).toBe(true);
+
+    const attacker = await (await join(eventId, { avatarUrl: photo.fullUrl })).json();
+    expect(attacker.avatarUrl).toBeNull();
+    await setAvatar(attacker.id, { eventId, guestToken: attacker.guestToken, image: jpegDataUrl });
+
+    expect(fs.existsSync(photoFile)).toBe(true);
+  });
+
+  it("leaves another file alone even when an older row already points at it", async () => {
+    // A row written before this change could hold any value. Only a file the
+    // avatar route itself wrote is ever removed.
+    const eventId = await registerHost();
+    const photoRes = await fetch(`${BASE_URL}/api/photos`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        eventId,
+        guestName: 'Photo Owner',
+        deviceFingerprint: `owner-${Math.random().toString(36).slice(2, 10)}`,
+        fullUrl: jpegDataUrl,
+      }),
+    });
+    const photo = await photoRes.json();
+    const guest = await joinWithToken(eventId);
+    await query('UPDATE guests SET avatar_url = $1 WHERE id = $2', [photo.fullUrl, guest.id]);
+
+    const res = await setAvatar(guest.id, { eventId, guestToken: guest.guestToken, image: jpegDataUrl });
+
+    expect(res.status).toBe(200);
+    expect(fs.existsSync(fileFor(photo.fullUrl))).toBe(true);
+  });
+
+  it('ignores an avatar sent with the registration, so only the avatar route sets one', async () => {
+    const eventId = await registerHost();
+    const stored = `${CONFIG.PUBLIC_BASE_URL}/uploads/events/${eventId}/avatar-1-abcdef.jpg`;
+
+    const guest = await (await join(eventId, { avatarUrl: stored })).json();
+
+    expect(guest.avatarUrl).toBeNull();
   });
 
   it('deletes stored selfies when the album is purged', async () => {

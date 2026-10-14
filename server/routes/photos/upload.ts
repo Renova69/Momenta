@@ -21,7 +21,7 @@
 import { Router, Request, Response } from 'express';
 import type { Pool, PoolClient } from 'pg';
 import { pool } from '../../lib/db';
-import { decodeDataUrl, isStoredUrlForEvent, toAbsoluteUrl } from '../../lib/storage';
+import { decodeDataUrl, toAbsoluteUrl } from '../../lib/storage';
 import { buildDerivatives } from '../../lib/images';
 import { validateBody } from '../../middleware/validate';
 import { uploadLimiter, uploadIpLimiter } from '../../middleware/rateLimit';
@@ -87,7 +87,6 @@ interface UploaderFields {
   guestId?: string;
   guestToken?: string;
   guestName?: string;
-  guestAvatar?: string;
   guestTable?: string;
   deviceFingerprint?: string;
 }
@@ -140,7 +139,7 @@ async function resolveGuestForUpload(eventId: string, body: UploaderFields): Pro
 
   // The write semantics are this route's own: it may rename a guest and must
   // always produce one, neither of which the comment path is allowed to do.
-  const { guestName, guestAvatar, guestTable, deviceFingerprint } = body;
+  const { guestName, guestTable, deviceFingerprint } = body;
   const guestInsert = await pool.query(
     `INSERT INTO guests (event_id, name, avatar_url, table_number, device_fingerprint)
      VALUES ($1, $2, $3, $4, $5)
@@ -150,7 +149,8 @@ async function resolveGuestForUpload(eventId: string, body: UploaderFields): Pro
     [
       eventId,
       guestName || 'Guest',
-      isStoredUrlForEvent(guestAvatar, eventId) ? guestAvatar : null,
+      // N-107 — a guest's picture is set only by POST /api/guests/:id/avatar.
+      null,
       guestTable || null,
       deviceFingerprint || null,
     ]
@@ -486,7 +486,6 @@ photosRouter.post(
     const {
       eventId,
       guestName,
-      guestAvatar,
       guestTable,
       fullUrl,
       originalUrl,
@@ -623,6 +622,15 @@ photosRouter.post(
       const { row: created, hostUserId } = inserted.value;
 
       await recordQuestCompletion(eventId, scopedQuestId, guest.guestId, created.id);
+
+      // N-107 — the picture on record, never the one this request carried:
+      // this object is the PHOTO_ADDED broadcast every guest in the room
+      // receives, and it used to echo the client's value to all of them.
+      const avatarRow = await pool.query<{ avatar_url: string | null }>(
+        'SELECT avatar_url FROM guests WHERE id = $1',
+        [guest.guestId]
+      );
+      const guestAvatar = avatarRow.rows[0]?.avatar_url ?? null;
 
       const newPhoto = {
         id: created.id,

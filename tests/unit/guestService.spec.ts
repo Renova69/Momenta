@@ -367,7 +367,7 @@ describe('a selfie (N-107)', () => {
 
     const result = await registerGuest(ctx, 'Ana Petrova');
 
-    expect(register.mock.calls[0][0].avatarUrl).toBe(STORED);
+    expect(register.mock.calls[0][0].avatarUrl).toBeUndefined();
     expect(setAvatar).not.toHaveBeenCalled();
     expect(result.avatarUrl).toBe(STORED);
   });

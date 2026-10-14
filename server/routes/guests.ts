@@ -9,7 +9,7 @@ import { errorLabel } from '../lib/errors';
 import { RESERVED_DEVICE_FINGERPRINTS, issueGuestToken } from '../lib/guestAuth';
 import { verifyGuestOwnership } from '../lib/guestIdentity';
 import { buildAvatar } from '../lib/images';
-import { decodeDataUrl, isStoredUrlForEvent, saveBuffer, storageAdapter, toAbsoluteUrl, toStoragePath } from '../lib/storage';
+import { decodeDataUrl, isStoredAvatarUrl, saveBuffer, storageAdapter, toAbsoluteUrl, toStoragePath } from '../lib/storage';
 
 export const guestsRouter = Router();
 
@@ -18,11 +18,11 @@ const RegisterGuestSchema = z.object({
   eventId: z.string().uuid('A valid eventId is required'),
   name: z.string().min(1, 'name is required').max(100),
   tableNumber: z.string().max(50).optional(),
-  // N-107 — no length cap. The onboarding modal sent the selfie itself here, as
-  // a data: URL, and a 1,000-character cap refused the whole registration: the
-  // guest was never created and every later action failed. Only a picture this
-  // server stored is kept (`isStoredUrlForEvent`); anything else is dropped, so
-  // the length decides nothing and the body limit bounds it.
+  // N-107 — accepted and ignored. The onboarding modal sent the selfie itself
+  // here, as a data: URL, and a 1,000-character cap refused the whole
+  // registration: the guest was never created and every later action failed.
+  // A guest's picture is now set only by POST /:id/avatar, so an old client
+  // still sending one joins without it rather than being refused.
   avatarUrl: z.string().optional(),
   deviceFingerprint: z.string().max(200).optional(),
 }).refine((data) => !data.deviceFingerprint || !RESERVED_DEVICE_FINGERPRINTS.has(data.deviceFingerprint), {
@@ -38,7 +38,9 @@ const LookupGuestQuerySchema = z.object({
 // 1. POST /api/guests — [FIX H-3] Added rate limiting
 guestsRouter.post('/', uploadLimiter, validateBody(RegisterGuestSchema), async (req, res) => {
   const { eventId, name, tableNumber, deviceFingerprint } = req.body;
-  const avatarUrl = isStoredUrlForEvent(req.body.avatarUrl, eventId) ? req.body.avatarUrl : null;
+  // Never the client's (N-107): only the avatar route writes a picture. NULL
+  // here leaves a returning guest's stored one in place (the COALESCE below).
+  const avatarUrl = null;
 
   try {
     let guest;
@@ -217,7 +219,7 @@ guestsRouter.post(
 
       // Best-effort: the row already names the new picture, so a file left
       // behind here costs a few kilobytes and is swept with the album.
-      if (previous && previous !== avatarUrl && isStoredUrlForEvent(previous, eventId)) {
+      if (previous && previous !== avatarUrl && isStoredAvatarUrl(previous, eventId)) {
         await storageAdapter
           .delete(toStoragePath(previous) ?? previous)
           .catch((err) => console.warn('[Guests] could not remove a replaced avatar:', errorLabel(err)));

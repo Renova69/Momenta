@@ -1,6 +1,6 @@
 import { Pool, PoolClient } from 'pg';
 import { pool } from './db';
-import { isStoredUrlForEvent, storageAdapter, toStoragePath } from './storage';
+import { isStoredAvatarUrl, storageAdapter, toStoragePath } from './storage';
 import { limitsFor } from './planLimits';
 import { errorLabel } from './errors';
 import { BackendPlanTier, acquireEventUploadLock } from '../middleware/tierGate';
@@ -358,9 +358,9 @@ export async function purgeEventMedia(
     'SELECT audio_url, storage_bytes FROM audio_guestbook WHERE event_id = $1',
     [eventId]
   );
-  // N-107 — guests' selfies are stored under the album too. Only a picture
-  // this server stored is a file to delete; anything else in the column is an
-  // address on another host, and not ours to touch.
+  // N-107 — guests' selfies are stored under the album too. Only a file the
+  // avatar route wrote is deleted as one; anything else in the column is not
+  // a selfie, and a photo's file is deleted through the photo's own row.
   const { rows: guests } = await pool.query<{ avatar_url: string | null }>(
     'SELECT avatar_url FROM guests WHERE event_id = $1 AND avatar_url IS NOT NULL',
     [eventId]
@@ -441,7 +441,7 @@ export async function purgeEventMedia(
   }
 
   for (const guest of guests) {
-    if (!isStoredUrlForEvent(guest.avatar_url, eventId)) continue;
+    if (!isStoredAvatarUrl(guest.avatar_url, eventId)) continue;
     const path = toStoragePath(guest.avatar_url);
     if (path) await deleteObject(path);
   }
