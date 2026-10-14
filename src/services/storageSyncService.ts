@@ -86,9 +86,18 @@ async function fetchAllPhotos(eventId: string): Promise<Photo[]> {
 }
 
 // Scoped sync from backend strictly using targetEventId
+/** True when `eventId` is only the built-in demo album standing in for none. */
+export function isDemoFallback(eventId: string | undefined): boolean {
+  return eventId === INITIAL_EVENT.id && !localStorage.getItem(STORAGE_KEYS.ACTIVE_EVENT_ID);
+}
+
 export async function syncFromBackend(ctx: ServiceContext, eventIdOverride?: string): Promise<void> {
   const targetEventId = eventIdOverride || ctx.getEvent()?.id;
   if (!targetEventId) return;
+  // N-127 — with no album open, "the current album" is the demo one, and a
+  // first-time guest's phone asked for its photos, quests, voice messages and
+  // poster before loading their own.
+  if (!eventIdOverride && isDemoFallback(targetEventId)) return;
 
   try {
     // 1. Photos for this specific event ONLY — every page of them.

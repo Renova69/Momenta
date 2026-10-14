@@ -409,3 +409,31 @@ describe('resetToDefaults', () => {
     expect(ctx.notify).toHaveBeenCalled();
   });
 });
+
+/**
+ * N-127 — on a browser with no album open, the app's start-up sync asked the
+ * server for the demo wedding's photos, quests, voice messages and poster —
+ * four requests from every first-time guest, before their own album loaded —
+ * because "the current album" fell back to the demo one.
+ */
+describe('a browser with no album open (N-127)', () => {
+  it('asks the server for nothing', async () => {
+    const list = vi.spyOn(photosApi, 'list').mockResolvedValue([]);
+
+    await syncFromBackend(context({ getEvent: () => ({ id: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11' }) as never }));
+
+    expect(list).not.toHaveBeenCalled();
+    expect(questsApi.list).not.toHaveBeenCalled();
+    expect(audioApi.list).not.toHaveBeenCalled();
+    expect(eventsApi.getQRConfig).not.toHaveBeenCalled();
+  });
+
+  it('syncs the album that is open', async () => {
+    localStorage.setItem(STORAGE_KEYS.ACTIVE_EVENT_ID, EVENT);
+    const list = vi.spyOn(photosApi, 'list').mockResolvedValue([]);
+
+    await syncFromBackend(context());
+
+    expect(list.mock.calls[0][0]).toBe(EVENT);
+  });
+});

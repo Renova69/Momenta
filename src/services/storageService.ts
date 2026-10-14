@@ -54,7 +54,8 @@ class WedStorageService {
   private reactionListeners: Set<ReactionListener> = new Set();
 
   private readonly realtimeSocket = new RealtimeSocket(ENV.WS_URL, {
-    getActiveEventId: () => this.getEvent().id,
+    // N-127 — no room to join while no album is open; the demo one stood in.
+    getActiveEventId: () => (syncService.isDemoFallback(this.getEvent().id) ? '' : this.getEvent().id),
     onMessage: (data) => this.handleRealtimeEvent(data as RealtimeMessage),
     // N-68 — photos, approvals and deletions broadcast while the socket was
     // down never arrive. Reload what a page load would.
