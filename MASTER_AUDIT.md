@@ -8,6 +8,7 @@
 **Security review, partial:** 2026-09-25 to 26, recorded 2026-10-04 (§3f). **All 25 findings fixed.**
 **Remaining five domains:** reviewed 2026-10-05 (§3g). **All 36 findings fixed.**
 **Review of the §3g fixes:** 2026-10-10 (§3h). **All 12 findings fixed.**
+**Running-app feature pass:** 2026-10-14 (§3i). **26 findings, none fixed yet** (1 Critical, 4 High).
 
 > **Read this first.** The audit below is preserved as written — each finding
 > still describes the code as it was on 2026-09-15, because a finding rewritten
@@ -988,6 +989,87 @@ and N-74, N-103 of N-75, N-104 of N-62.
 | **N-104** | Since N-62 the album address is saved on leaving the field, but the address bar follows each keystroke: a reload before then opens an address that does not exist. A cleared field is never saved and leaves the field and bar empty. | Low | `src/components/host/dashboard/OverviewTab.tsx`, `src/components/host/HostDashboard.tsx` | Yes | `b75af02` |
 | **N-105** | The portal's translated batch-failure message quotes the server's English reason, and the client's own fallbacks ("Network error", "Not a supported image file") are English too. | Low | `src/components/ingest/PhotographerIngestPortal.tsx`, `src/api/ingestApi.ts` | Yes | `a99b6f3` |
 | **N-106** | A failed advisory unlock on the reveal promotion's shared connection returns that connection to the pool still holding a photo's move lock; every later approve or delete of that photo then waits for ever. | Low | `server/lib/photoQuarantine.ts` | Yes | `bee1ce3` |
+
+---
+
+## 3i. The Running-App Feature Pass (2026-10-14)
+
+**26 findings, none fixed yet.**
+
+Every review since §3c has read code. This one ran it: the API on local
+storage, Vite, Postgres, a desktop host browser, phone-sized guest browsers,
+a Chrome with a fake camera and microphone, the TV wall, the photographer
+portal, and a real Stripe sandbox checkout paid with the 4242 test card. The
+webhook cannot reach localhost, so the purchased tier was applied with
+`applyTierUpgrade`, the same function the webhook calls. Each feature was
+followed from the screen to the row it wrote and back to a second device.
+Numbered N-107 onwards.
+
+The four most serious findings all passed their unit tests, because each one
+lives where two parts meet: the onboarding modal and the guest schema, the
+camera's error overlay and its review screen, the disposable toggle and the
+reveal time nothing sets, and the sign-in response and the dashboard that
+reads it. The same lesson as §3b: these were found by using the app, not by
+reading it.
+
+| ID | Finding | Severity | Files | Verified | Fixed |
+|---|---|---|---|---|---|
+| **N-107** | **A guest who adds the optional selfie cannot upload anything.** `GuestOnboardingModal` sends the selfie as a `data:` URL in `avatarUrl`, and `POST /api/guests` caps that field at 1,000 characters, which every image exceeds. The request is refused with 400 and the modal closes silently. The guest stays local only, with an id like `guest-<timestamp>` and no token. Every later action is then refused: a like gets 400 "Invalid photoId or guestId format", and each photo upload gets 400 "guestAvatar … <=500 characters", retried and refused again. Adding a selfie to an existing profile fails the same way, and the picture shows only on the guest's own phone. The cap has been there since the baseline commit. The selfie is offered on the first screen every guest sees. | Critical | `src/components/guest/GuestOnboardingModal.tsx`, `src/services/guestService.ts`, `server/routes/guests.ts`, `server/routes/photos/upload.ts` | Yes | — |
+| **N-108** | **With no working camera, a guest cannot send a photo.** If `getUserMedia` fails (permission denied, no camera, or camera in use), an error overlay covers the whole capture modal at `z-30`. Its condition is `!isCaptured`, and `isCaptured` is set only by the live shutter. A photo picked from Gallery or taken with the phone's own camera app reaches the review screen, but the overlay stays on top of it. Send, the filters, the quest picker and the caption cannot be tapped: `elementFromPoint` at the Send button returns the overlay, and a real tap sent nothing. This came in with the camera rewrite, `e24c2cf`. | High | `src/components/camera/CameraCaptureModal.tsx` | Yes | — |
+| **N-109** | **Disposable camera mode, a Deluxe feature, reveals every photo immediately.** The toggle writes `is_disposable_mode` only. No client code ever sends `revealAt`, so `reveal_at` stays NULL. Uploads are still marked `is_locked`, and the guest is told the photo will be revealed the morning after. But the feed's `disposableLocked` requires `reveal_at`, so `promoteEligiblePhotos` publishes the photo, and the showcase filter (`reveal_at IS NOT NULL`) lets it through too. Verified: after a host approval, a second guest, the TV wall and the public landing showcase all showed the "locked" photo, with `isLocked:false`, while the uploader's card still said it was locked. | High | `src/components/host/dashboard/OverviewTab.tsx`, `server/routes/events/crud.ts`, `server/routes/photos/feed.ts` | Yes | — |
+| **N-110** | **After sign-in or registration, the host studio shows the demo wedding's data.** On success, `App.tsx` passes the server's raw snake_case row to `updateEvent`, which merges it over `INITIAL_EVENT` or whatever album was cached. The camelCase fields keep the demo values: Моника и Александър, 18.09.2026 and Резиденция Бояна, София. The login response also omits every settings column. On a fresh device after login, the QR studio poster printed "Моника и Александър / Резиденция Бояна, София • 18 септември 2026 г.". The moderation, public-showcase and disposable toggles all showed off, and the palette showed champagne, while the database had all three on and `rose_blush`. A host is told the album is private while it is on the landing page. The saved QR headline was not loaded either. The same call PUTs the raw row back to the server on every sign-in. The state corrects itself only when something later calls `loadEventBySlug`, such as the post-checkout poll. | High | `src/App.tsx`, `src/services/eventService.ts`, `server/routes/auth.ts` | Yes | — |
+| **N-111** | **The landing page and pricing modal still sell things that do not exist.** This is H-1 by another route: `PLANS` was corrected, but the landing page has its own copy. (a) The Pro card says "Персонализиран брандинг" / "Custom branding", which is white-label, U-3. (b) The Deluxe card says "Доживотен архив" (lifetime archive), but the plan keeps albums for 1 year. (c) The hero and step 2 promise guests can share "снимки, видео и гласови пожелания", but there is no video upload. (d) "Пълна сигурност и безсрочен архив" (an indefinite archive), and FAQ 4 says the ZIP can be downloaded "at any time after the wedding", but albums expire and the ZIP is a paid feature. (e) FAQ 5 promises a moderator the couple can appoint, such as a кум or шаферка, but only the host account can moderate. (f) The pricing modal's Deluxe card says "Приоритетна облачна обработка през Cloudflare CDN", but no tier changes how photos are processed. | High | `src/i18n/translations/bg.ts`, `src/i18n/translations/en.ts` (`ui.landing_home_page.*`, `landing.*`, `plan.deluxe.f6`) | Yes | — |
+| **N-112** | The landing page shows fabricated social proof: "4.9 / 5 от младоженци в България", "Защо стотици младоженци избират WedMoments?", and six sample weddings labelled "Активен албум" with photo and guest counts, under the heading "Истински спомени от нашите младоженци" (real memories from our couples). | Medium | `src/i18n/translations/*.ts`, `src/components/home/PublicWeddingsShowcase.tsx` | Yes | — |
+| **N-113** | The lightbox keeps a copy of the photo taken when it opened (`activeLightboxPhoto`). A like, reaction or comment made inside it reaches the server but never re-renders the dialog. A posted comment appears only after the dialog is closed and reopened, which invites duplicate comments. | Medium | `src/App.tsx`, `src/components/gallery/LightboxModal.tsx` | Yes | — |
+| **N-114** | The lightbox's Download button builds `<a download>` to `fullUrl`, which is on another origin: `:6501` in development and `r2.dev` in production. The browser ignores `download` across origins, so the guest's tab navigates away from the album to the raw JPEG. It is also the filtered display copy, not the original. | Medium | `src/components/gallery/LightboxModal.tsx` | Yes | — |
+| **N-115** | The "Присъстващи гости" (guests attending) figure counts the guests in the current device's localStorage and is never synced. The host dashboard showed 0 while the server counted 3, as the showcase feed reported. Guests see 0 or 1. | Medium | `src/context/AppContext.tsx`, `src/components/host/dashboard/OverviewTab.tsx`, `src/components/layout/WeddingHero.tsx` | Yes | — |
+| **N-116** | The "My events" switcher, which is the Pro Planner multi-event dashboard, has three problems. `GET /api/events` returns raw rows, and the list reads `hostName`, `eventDate` and `venueName`, so every real album shows only its title. The locally cached event is added to the list even when the host does not own it; the demo album was shown as "Активна". And choosing an album opens the guest view, not the studio, and shows the host the guest-profile prompt. | Medium | `src/components/host/HostEventsList.tsx`, `src/App.tsx` | Yes | — |
+| **N-117** | With no saved QR config, the server returns English defaults: "Capture the Love" and "Scan the QR code…". The client uses those in place of its translated defaults, so every Bulgarian poster printed English text, as the exported PNG showed. The INSERT's `COALESCE` default and the migration 001 column default are English too. | Medium | `server/routes/events/qr.ts`, `database/migrations/001_initial_schema.sql`, `src/components/host/QRCanvasStudio.tsx` | Yes | — |
+| **N-118** | The QR studio's "Публичен домейн" target is hardcoded to `https://wedmoments.app` and is not read from configuration. Its "Локална Wi-Fi мрежа" option is `window.location.origin`, which in production is the real public domain. | Medium | `src/components/host/QRCanvasStudio.tsx`, `src/components/projector/LiveProjectorScreen.tsx` | Yes | — |
+| **N-119** | "Нулирай" (reset local data), in the ZIP tab, clears localStorage. The signed-in host's studio then shows the demo album (`monika-and-alexander-2026`) as theirs, and every edit fails with "Forbidden: You do not own this event", shown in English inside the Bulgarian toast. | Medium | `src/services/storageSyncService.ts`, `src/components/host/HostDashboard.tsx` | Yes | — |
+| **N-120** | After an album is deleted, `active_event_id` still points at it, and "Студио за младоженци" opens the deleted album from the local cache. | Medium | `src/components/host/dashboard/OverviewTab.tsx`, `src/services/eventService.ts` | Yes | — |
+| **N-121** | Rejected photos disappear from every host screen: they are in neither the queue nor the gallery. The host cannot restore or delete them. They stay in storage, and the ZIP includes them with pending photos ("Всички 4 снимки" exported two rejected photos). | Medium | `src/components/host/ModerationQueue.tsx`, `server/routes/events/export.ts` | Yes | — |
+| **N-122** | There is no way to reset or change a password, and no way to delete an account. `authRouter` has only `/register`, `/login`, `/me` and `/logout`. A paying host who forgets their password loses the album. | Medium | `server/routes/auth.ts`, `src/components/host/HostAuthPage.tsx` | Yes | — |
+| **N-123** | Free albums are seeded with five quests that guests can see and complete, because uploads record completions on any tier. But the host's quest tab is locked, so the host cannot delete them, and the leaderboard returns 403. | Low | `server/routes/auth.ts`, `server/routes/photos/upload.ts` | Yes | — |
+| **N-124** | Camera errors other than a denied permission show the browser's raw English message, for example "Requested device not found". A missing microphone is reported as a denied permission. The voice guestbook's re-record button says "Снимай отново", which is photo wording. | Low | `src/components/camera/CameraCaptureModal.tsx`, `src/components/audio/AudioGuestbook.tsx` | Yes | — |
+| **N-125** | English or untranslated text remains in the Bulgarian app. The default album title is "`<name>`'s Wedding". The "Photographer Ingest" tab label appears twice. The fallback guest name is "Guest". The portal says "N image(s) selected", which N-105 said was localized, and the default photographer name is "Official Photographer". Tier refusals embed raw ids ("изисква план \"celebration_pass\""). Event-save failure toasts show the server's English text. In EN mode the date placeholders stay "ДД.ММ.ГГГГ" and "ЧЧ:ММ". Ingest-key dates use the US format ("10/14/2026"). Album dates render as "13 Ноември 2026 Г.", with a capital month and "Г.". | Low | `server/routes/auth.ts`, `src/components/host/dashboard/TabNav.tsx`, `src/App.tsx`, `src/components/ingest/PhotographerIngestPortal.tsx`, `server/middleware/tierGate.ts`, `src/services/eventService.ts` | Yes | — |
+| **N-126** | A photo picked from the gallery gets the "Златен блясък" (golden glow) filter by default (`useState('golden_glow')`), so a guest's own picture is tinted unless they choose "Оригинал". | Low | `src/components/camera/CameraCaptureModal.tsx` | Yes | — |
+| **N-127** | A first-time visitor to `/e/<slug>` first fetches the demo album's photos, quests, audio and QR config (`a0eebc99…`) before the slug resolves. | Low | `src/services/defaultEvent.ts`, `src/context/AppContext.tsx` | Yes | — |
+| **N-128** | After a quest photo is rejected, the quest still lists the guest as having completed it, both in the guest's tick and in the host's "1 завършено", while the leaderboard correctly gives 0 points. Moderation cards do not say which quest a photo was entered for. | Low | `server/routes/quests.ts`, `src/components/host/ModerationQueue.tsx` | Yes | — |
+| **N-129** | The photographer portal says "Изпратени към живия екран: 2" (sent to the live screen) while the photos wait in moderation. The ingest tab shows operator instructions to couples: `npm run ingest:watch` and the `FTP_ENABLED`, `FTP_PASV_URL` and `FTP_TLS_*` variables, with the FTP block shown while FTP is off. Revoking a key asks for no confirmation. | Low | `src/components/ingest/PhotographerIngestPortal.tsx`, `src/components/host/dashboard/*` | Yes | — |
+| **N-130** | The PNG sold as "300 dpi" carries a 72 dpi `pHYs` tag, so print software opens it at 1.75 m wide. It is 4960×7022 px, against 4961×7016 for A2 at 300 dpi. The PDF is exact: 1190.55×1683.78 pt. | Low | `src/services/qrCanvasService.ts` | Yes | — |
+| **N-131** | An album without a cover hotlinks `images.unsplash.com` from every guest's device. `normalizeEvent` defaults to it, and new albums store an Unsplash URL. This is a third-party request, like N-33. | Low | `src/services/eventNormalization.ts`, `src/components/host/HostEventsList.tsx` | Yes | — |
+| **N-132** | Smaller problems found on the way. Registration refusals say only "check your data", not that the password is under 6 characters. "Създай безплатен сватбен албум" opens the sign-in tab. Plan names differ between the landing page and the pricing modal (Безплатен старт / Безплатен тест, Celebration Pass / Сватбен пропуск "Празник", Pro Planner / Сватбен агент & Диджей). The "My events" overlay is not a dialog: it has no role, Escape does not close it, and its close button has no name, so A-1 missed it. Re-joining after a guest-session reset creates a new guest id, which splits "Моите снимки" and quest progress from the old one. | Low | various | Yes | — |
+
+**Checked and found working, recorded so they are not re-tested:**
+registration and login (apart from N-110); Stripe sandbox checkout, the return
+banner and the poll that flips it once the tier lands; every server tier gate
+probed on a free album (quests, moderation, disposable, palette, export,
+leaderboard, QR config, audio), the Deluxe one-album limit, a lower-tier
+purchase refused as already included, and the Free downgrade confirmation;
+moderation approve, reject and feature; photo delete, removing the row and the
+files; likes, reactions and comments, with comment HTML shown as text; quest
+create and delete, the prize, the TV leaderboard, and live reactions on the
+wall; voice recording, playback and save on a real `MediaRecorder`; the live
+camera shutter; the offline queue, which held a photo in IndexedDB and sent it
+with 201 on reconnect; the PDF poster at exact A2; QR config persistence; the
+ZIP export of originals and audio; ingest key generation and revocation, portal
+uploads with the photographer's name, priority and caption, and the translated
+refusal for a revoked key; slug rename, transliteration and the variant for a
+taken slug; album delete with media purge; guest-session reset, after which
+guests get 401 and are asked to join again; and the public showcase opt-in.
+`retention:report` and `notify:report` both ran clean. The EN interface is
+clean apart from N-125.
+
+**Not covered:** Stripe webhooks against a reachable endpoint (V-1), R2
+storage (this run used local storage), FTP from a real camera (V-3), and a
+screen reader.
+
+**A note on this run.** At 05:31 a person uploaded one photo of keys through
+the visible guest browser window. It was not part of the test. It was rejected
+in moderation and removed with the test data. All test accounts used
+`@example.com` and were removed with `npm run db:purge-test-data`, which also
+deleted their files.
 
 ---
 ## 4. Confirmed Low
