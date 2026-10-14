@@ -126,3 +126,10 @@ describe('normalizePartialEvent', () => {
     expect(normalizePartialEvent({})).toEqual({});
   });
 });
+
+describe('the guest count (N-115)', () => {
+  it('is read from the album and from a live update', () => {
+    expect(normalizePartialEvent({ id: 'x', guest_count: 4 } as never).guestCount).toBe(4);
+    expect(normalizePartialEvent({ id: 'x', slug: 's' }).guestCount).toBeUndefined();
+  });
+});

@@ -10,6 +10,7 @@ import { z } from 'zod';
 import { BackendPlanTier } from '../../middleware/tierGate';
 import { QUEST_PRIZE_MAX_LENGTH } from '../../../shared/eventLimits';
 import { SLUG_MAX_LENGTH, SLUG_MIN_LENGTH } from '../../../shared/transliterate';
+import { RESERVED_DEVICE_FINGERPRINTS } from '../../lib/guestAuth';
 
 /**
  * M2 — a slug is not free text. It addresses the event in a URL that QR codes
@@ -116,6 +117,7 @@ export function toPublicEvent(event: Record<string, unknown>) {
     reveal_at: event.reveal_at,
     quest_prize: event.quest_prize,
     show_tv_leaderboard: event.show_tv_leaderboard,
+    guest_count: event.guest_count,
     created_at: event.created_at,
     updated_at: event.updated_at,
     planTier: event.planTier,
@@ -142,6 +144,17 @@ export const TIER_GATED_EVENT_FIELDS: Record<string, BackendPlanTier> = {
 export const DISPOSABLE_REVEAL_TIMEZONE = 'Europe/Sofia';
 export function morningAfterSql(dateSql: string): string {
   return `((date_trunc('day', (${dateSql}) AT TIME ZONE '${DISPOSABLE_REVEAL_TIMEZONE}') + INTERVAL '1 day 9 hours') AT TIME ZONE '${DISPOSABLE_REVEAL_TIMEZONE}')`;
+}
+
+/**
+ * How many guests have joined an album, as SQL over `alias`'s `id` (N-115).
+ * The photographer's ingest identity and other reserved devices are not
+ * guests at the wedding. A guest who rejoined after a session reset is a new
+ * row, and counted again — the same identity split that reset describes.
+ */
+export function guestCountSql(alias: string): string {
+  const reserved = [...RESERVED_DEVICE_FINGERPRINTS].map((fp) => `'${fp}'`).join(', ');
+  return `(SELECT COUNT(*)::int FROM guests g WHERE g.event_id = ${alias}.id AND (g.device_fingerprint IS NULL OR g.device_fingerprint NOT IN (${reserved})))`;
 }
 
 export const DEFAULT_THEME = 'champagne_gold';

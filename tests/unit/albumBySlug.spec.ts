@@ -1,9 +1,11 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest';
 import { createServer } from 'http';
 import express from 'express';
 
 import { authRouter } from '../../server/routes/auth';
 import { eventsRouter } from '../../server/routes/events';
+import { guestsRouter } from '../../server/routes/guests';
+import { wsManager } from '../../server/ws/wsServer';
 import { query } from '../../server/lib/db';
 import { deleteEventFixtures } from '../helpers/cleanup';
 
@@ -60,6 +62,7 @@ beforeAll(async () => {
   app.use(express.json());
   app.use('/api/auth', authRouter);
   app.use('/api/events', eventsRouter);
+  app.use('/api/guests', guestsRouter);
   await new Promise<void>((resolve) => server.listen(TEST_PORT, () => resolve()));
 });
 
@@ -107,5 +110,58 @@ describe('reading an album by its address (N-110)', () => {
     expect(album.host_user_id).toBe(host.userId);
     expect(album.host_email).toMatch(/@test\.com$/);
     expect(album.planTier).toBe('free');
+  });
+});
+
+/**
+ * N-115 — "guests attending" counted the guests this device had stored, which
+ * on a host's phone is none and on a guest's is themselves. The host's
+ * dashboard showed 0 at an album the server knew 3 guests had joined.
+ */
+describe('how many guests have joined (N-115)', () => {
+  function join(eventId: string, fingerprint: string) {
+    return fetch(`${BASE_URL}/api/guests`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ eventId, name: 'Count Spec Guest', deviceFingerprint: fingerprint }),
+    });
+  }
+
+  it('is counted on the server and carried with the album', async () => {
+    const host = await registerHost();
+    await join(host.eventId, `count-a-${Date.now()}`);
+    await join(host.eventId, `count-b-${Date.now()}`);
+    // The photographer's ingest identity is not a guest at the wedding.
+    await query(
+      `INSERT INTO guests (event_id, name, device_fingerprint) VALUES ($1, 'Studio', 'photographer')`,
+      [host.eventId]
+    );
+
+    const album = await (await bySlug(host.slug)).json();
+
+    expect(album.guest_count).toBe(2);
+  });
+
+  it('is announced to the room when a guest joins', async () => {
+    const host = await registerHost();
+    const broadcast = vi.spyOn(wsManager, 'broadcastToEvent');
+
+    await join(host.eventId, `count-live-${Date.now()}`);
+
+    const sent = broadcast.mock.calls.find(([eventId, type]) => eventId === host.eventId && type === 'EVENT_UPDATED');
+    expect(sent?.[2]).toMatchObject({ id: host.eventId, guest_count: 1 });
+    broadcast.mockRestore();
+  });
+
+  it('is not announced again when a guest only edits their name', async () => {
+    const host = await registerHost();
+    const fingerprint = `count-edit-${Date.now()}`;
+    await join(host.eventId, fingerprint);
+    const broadcast = vi.spyOn(wsManager, 'broadcastToEvent');
+
+    await join(host.eventId, fingerprint);
+
+    expect(broadcast.mock.calls.filter(([, type]) => type === 'EVENT_UPDATED')).toHaveLength(0);
+    broadcast.mockRestore();
   });
 });

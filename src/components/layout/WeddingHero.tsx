@@ -153,7 +153,7 @@ export const WeddingHero: React.FC<WeddingHeroProps> = ({
           <div className="p-2 sm:p-3 rounded-xl sm:rounded-2xl bg-noir-900/60 border border-cream-400/10 backdrop-blur-xs">
             <div className="flex items-center justify-center gap-1 text-gold-400 mb-0.5">
               <Users className="w-3.5 h-3.5" />
-              <span className="font-serif text-lg sm:text-2xl font-bold">{guests.length}</span>
+              <span className="font-serif text-lg sm:text-2xl font-bold">{event.guestCount ?? guests.length}</span>
             </div>
             <span className="text-[9px] sm:text-[11px] text-cream-300 uppercase tracking-wider block truncate">{i18n.t('hero.guests_joined')}</span>
           </div>

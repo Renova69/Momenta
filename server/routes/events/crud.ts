@@ -27,6 +27,7 @@ import {
   CreateEventSchema,
   DeleteEventSchema,
   morningAfterSql,
+  guestCountSql,
 } from './shared';
 
 /**
@@ -48,7 +49,7 @@ eventsRouter.get('/slug/:slug', optionalAuth, async (req, res) => {
     const { slug } = req.params;
     // [FIX H-6] Never fall back to another event — return 404 on miss
     const { rows } = await pool.query(
-      `SELECT ${HOST_EVENT_COLUMNS} FROM events WHERE slug = $1 LIMIT 1`,
+      `SELECT ${HOST_EVENT_COLUMNS}, ${guestCountSql('events')} AS guest_count FROM events WHERE slug = $1 LIMIT 1`,
       [slug]
     );
     if (rows.length === 0) {

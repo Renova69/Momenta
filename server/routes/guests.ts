@@ -8,10 +8,29 @@ import { acquireEventUploadLock } from '../middleware/tierGate';
 import { errorLabel } from '../lib/errors';
 import { RESERVED_DEVICE_FINGERPRINTS, issueGuestToken } from '../lib/guestAuth';
 import { verifyGuestOwnership } from '../lib/guestIdentity';
+import { wsManager } from '../ws/wsServer';
+import { guestCountSql } from './events/shared';
 import { buildAvatar } from '../lib/images';
 import { decodeDataUrl, isStoredAvatarUrl, saveBuffer, storageAdapter, toAbsoluteUrl, toStoragePath } from '../lib/storage';
 
 export const guestsRouter = Router();
+
+/**
+ * Tell the room how many guests have joined (N-115). A partial EVENT_UPDATED,
+ * which the client folds in field by field. Best-effort: a count that fails to
+ * go out is corrected the next time the album is loaded.
+ */
+async function announceGuestCount(eventId: string): Promise<void> {
+  try {
+    const { rows } = await pool.query<{ guest_count: number }>(
+      `SELECT ${guestCountSql('e')} AS guest_count FROM events e WHERE e.id = $1`,
+      [eventId]
+    );
+    if (rows[0]) wsManager.broadcastToEvent(eventId, 'EVENT_UPDATED', { id: eventId, guest_count: rows[0].guest_count });
+  } catch (err) {
+    console.warn('[Guests] could not announce the guest count:', errorLabel(err));
+  }
+}
 
 // [FIX M-1] Added max-length to all fields
 const RegisterGuestSchema = z.object({
@@ -94,6 +113,10 @@ guestsRouter.post('/', uploadLimiter, validateBody(RegisterGuestSchema), async (
       );
       guest = inserted.rows[0];
     }
+
+    // N-115 — a new guest changes the count every phone and the host's
+    // dashboard show. A returning guest editing their name does not.
+    if (identityProven) await announceGuestCount(eventId);
 
     res.status(201).json({
       ...guest,

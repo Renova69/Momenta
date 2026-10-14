@@ -70,7 +70,8 @@ export const OverviewTab: React.FC = () => {
             <span>{i18n.t('hero.guests_joined')}</span>
             <Users className="w-4 h-4 text-gold-400" />
           </div>
-          <div className="font-serif text-2xl font-bold text-cream-100">{guests.length}</div>
+          {/* N-115 — the server's count; this device's stored guests are only a fallback. */}
+          <div className="font-serif text-2xl font-bold text-cream-100">{event.guestCount ?? guests.length}</div>
         </div>
 
         <div className="p-4 rounded-2xl bg-noir-800/90 border border-cream-400/10">

@@ -297,3 +297,28 @@ describe('HostDashboard host-name edit and the derived title', () => {
     );
   });
 });
+
+describe('guests attending (N-115)', () => {
+  it('shows the count the server keeps, not the guests this device has stored', () => {
+    render(
+      <HostDashboard
+        event={{ ...mockEvent, guestCount: 3 }}
+        guests={[]}
+        photos={[]}
+        quests={[]}
+        audioEntries={[]}
+        qrConfig={mockQrConfig}
+        onUpdateEvent={vi.fn()}
+        onUpdateQRConfig={vi.fn()}
+        onSetPhotoStatus={vi.fn()}
+        onDeletePhoto={vi.fn()}
+        onAddQuest={vi.fn()}
+        onDeleteQuest={vi.fn()}
+        onResetData={vi.fn()}
+      />
+    );
+
+    const label = screen.getByText(i18n.t('hero.guests_joined'));
+    expect(label.parentElement?.parentElement?.textContent).toContain('3');
+  });
+});
