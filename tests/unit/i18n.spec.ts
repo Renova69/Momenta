@@ -222,3 +222,35 @@ describe('server error codes', () => {
     expect(new Set(keys).size).toBe(keys.length);
   });
 });
+
+/**
+ * N-111 — the landing page sold things the product does not have.
+ *
+ * H-1 took three unbuilt capabilities off the plan catalogue, but the landing
+ * page has its own copy and kept selling one of them, alongside others: video
+ * uploads, a lifetime archive on a plan that keeps albums a year, a moderator
+ * the couple can appoint, and priority processing no tier has. Every string a
+ * person can read is checked here, in both languages, so a claim withdrawn
+ * from one place cannot survive in another — or come back.
+ */
+describe('sales claims (N-111)', () => {
+  const UNBUILT: [RegExp, string][] = [
+    [/видео|\bvideo\b/i, 'video uploads — guests share photos and voice messages only'],
+    [/брандинг|branding|white.?label/i, 'custom branding — not built (U-3)'],
+    [/доживот|безсроч|lifetime archive|indefinite/i, 'a permanent archive — albums are kept 7 days to a year'],
+    [/модератор|moderator|nominate|best man/i, 'a moderator besides the host — only the host account moderates'],
+    [/приоритетна облачна|priority cloud|\bCDN\b/i, 'priority processing — every tier shares one pipeline'],
+  ];
+
+  it('advertises nothing the product does not do, in either language', () => {
+    const found: string[] = [];
+    for (const lang of ['bg', 'en'] as const) {
+      for (const [key, text] of Object.entries(TRANSLATIONS[lang] || {})) {
+        for (const [pattern, why] of UNBUILT) {
+          if (pattern.test(String(text))) found.push(`${lang}:${key} — ${why}`);
+        }
+      }
+    }
+    expect(found).toEqual([]);
+  });
+});

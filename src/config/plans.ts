@@ -79,12 +79,13 @@ export const PLANS: Record<PlanTier, PlanDetails> = {
     price: '89 €',
     period: 'plan.celebration.period',
     description: 'plan.deluxe.tagline',
+    // f6 ("priority cloud processing over the Cloudflare CDN") was removed:
+    // every tier's photos go through the same pipeline and CDN (N-111).
     features: [
       'plan.deluxe.f1',
       'plan.deluxe.f2',
       'plan.deluxe.f3',
       'plan.deluxe.f5',
-      'plan.deluxe.f6',
       'plan.deluxe.f7'
     ],
     maxPhotos: 'plan.celebration.limit_photos',
