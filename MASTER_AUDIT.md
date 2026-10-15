@@ -9,7 +9,7 @@
 **Remaining five domains:** reviewed 2026-10-05 (§3g). **All 36 findings fixed.**
 **Review of the §3g fixes:** 2026-10-10 (§3h). **All 12 findings fixed.**
 **Running-app feature pass:** 2026-10-14 (§3i). **25 of 27 fixed; N-112 and N-122 on hold by the owner.**
-**Follow-up on the production build (speed, keyboard, screen reader):** 2026-10-15 (§3j). **14 of 16 fixed; N-139 and N-149 are the owner's call.**
+**Follow-up on the production build (speed, keyboard, screen reader):** 2026-10-15 (§3j). **All 16 fixed** (N-139 and N-149 after the owner's decision).
 
 > **Read this first.** The audit below is preserved as written — each finding
 > still describes the code as it was on 2026-09-15, because a finding rewritten
@@ -1084,7 +1084,7 @@ deleted their files.
 
 ## 3j. Follow-up on the Production Build (2026-10-15)
 
-**16 findings: 14 fixed, 2 for the owner to decide (N-139, N-149).**
+**16 findings, all fixed.** N-139 and N-149 were left to the owner first; on 2026-10-15 the owner asked for the recommended cover feature and a typeface with proper Cyrillic.
 
 The two items §3e and §3d had left open: the album's first paint, and a
 keyboard and screen-reader pass. Both were done against the production build
@@ -1104,7 +1104,7 @@ free and for a Deluxe host. Numbered N-134 onwards.
 | **N-136** | **The album waited behind four requests made one after another.** The loading screen stayed up until the photos, quests, voice messages and poster layout had all arrived, each asked for only after the one before had answered: four more round trips, about 2.4 s on this profile, after the album's own record had already arrived. A failure in one also skipped every one after it. They now go out together, and the page waits only for the album's own record; the feed says the photos are on their way instead of inviting the guest to take the first one. | Medium | `src/services/storageSyncService.ts`, `src/context/AppContext.tsx`, `src/components/gallery/LiveFeed.tsx` | Yes | `87dd0c9` |
 | **N-137** | Before the loading screen, the first render showed the built-in demo album for a frame — another couple's names — and requested its stock cover from `images.unsplash.com`, which the production CSP then refused. | Low | `src/context/AppContext.tsx` | Yes | `87dd0c9` |
 | **N-138** | The lock badges showed each plan's pricing-page ribbon where the plan's name belongs: a lock reading "Requires Most popular with couples". On a free album's top section, "Най-предпочитан за младоженци" and "Пълно VIP изживяване" were too long for their tiles at 390 px, spilled over the next tile and pushed the Challenges label off its left edge. | Medium | `src/components/common/LockedFeatureBadge.tsx`, `src/config/plans.ts`, `src/components/layout/WeddingHero.tsx` | Yes | `db03ec3` |
-| **N-139** | **No screen sets a cover photo.** The album's top section is designed around one, `PUT /api/events/:id` accepts `coverImageUrl`, but nothing in the studio writes it, and since N-131 no album has a stock one. Every album's top section is the gradient alone. Building it is a product decision (pick from the album's photos, or upload one), so it is left to the owner. | Low | `src/components/host/dashboard/OverviewTab.tsx` | Yes | **Owner's call** |
+| **N-139** | **No screen sets a cover photo.** The album's top section is designed around one, `PUT /api/events/:id` accepts `coverImageUrl`, but nothing in the studio writes it, and since N-131 no album has a stock one. Every album's top section is the gradient alone. Built as recommended to the owner: an "album cover" card in the studio's settings to upload a photo (the case before the wedding, when the album is empty), choose an album photo guests can already see, or remove it, on every plan. `POST /api/events/:id/cover` stores the server's own display-size copy under the album, so deleting the photo later keeps the cover and a pending or reveal-locked photo cannot leak through it; the general create and update no longer take a cover URL at all. | Low | `server/routes/events/cover.ts`, `src/components/host/dashboard/CoverPhotoField.tsx` | Yes | `98473d3` |
 | **N-140** | The dialog focus trap counted controls that are not on screen, such as the camera's file inputs, kept with `display:none`. Tab from the last button a guest could see then fell out of the camera onto the page. | Medium | `src/hooks/useDialog.ts` | Yes | `1ff5a99` |
 | **N-141** | The camera announced as "dialog" with no name: the full-screen rewrite (`e24c2cf`) dropped the heading its `aria-labelledby` pointed at. | Medium | `src/components/camera/CameraCaptureModal.tsx` | Yes | `1ff5a99` |
 | **N-142** | Tabbing down the feed on a phone left the focused reaction buttons under the fixed bottom bar: focused and out of sight (WCAG 2.4.11). | Medium | `src/index.css` | Yes | `1ff5a99` |
@@ -1114,7 +1114,7 @@ free and for a Deluxe host. Numbered N-134 onwards.
 | **N-146** | A failed sign-in appeared on screen and nowhere else: with a screen reader, a wrong password produced silence. | Medium | `src/components/host/HostAuthPage.tsx` | Yes | `9498d3e` |
 | **N-147** | axe, in the browser: the lightbox's "no comments yet" line was under the contrast minimum; the lock badge on the studio's selected (gold) section button was gold on gold; and a locked feature's card titled itself h3 straight under the page's h1. | Low | `src/components/gallery/LightboxModal.tsx`, `src/components/common/LockedFeatureBadge.tsx` | Yes | `9498d3e` |
 | **N-148** | **A returning visitor saw the album as it was on their last visit.** With the album already in the browser, the page took the record from the cache and never asked for it again. A guest reopening the link saw the old title and names after the host had changed them; a host who had bought a plan elsewhere opened the studio to find every paid section still locked. The same held for the moderation, reveal and disposable settings that decide what a guest's phone does. Found when the studio of a host upgraded for this pass stayed locked. | High | `src/services/storageService.ts`, `src/services/eventService.ts`, `src/context/AppContext.tsx` | Yes | `3f9b82a` |
-| **N-149** | **Plus Jakarta Sans has no basic Cyrillic** (`@fontsource` ships latin, latin-ext, cyrillic-ext and vietnamese; Google Fonts the same), so in Bulgarian, the default language, all body text has always been the phone's system font. Only the headings, in Cormorant Garamond, render as designed. A typeface decision, left to the owner. | Low | `tailwind.config.js`, `src/main.tsx` | Yes | **Owner's call** |
+| **N-149** | **Plus Jakarta Sans has no basic Cyrillic** (`@fontsource` ships latin, latin-ext, cyrillic-ext and vietnamese; Google Fonts the same), so in Bulgarian, the default language, all body text has always been the phone's system font. Only the headings, in Cormorant Garamond, render as designed. The body typeface is now Sofia Sans, by the Bulgarian foundry Lettersoup: full Cyrillic, and with `lang="bg"` the Bulgarian letterforms, as Cormorant Garamond already had; checked in the browser against the same words set with `lang="ru"`. One variable file per script, 25.6 kB for Cyrillic. | Low | `tailwind.config.js`, `src/main.tsx` | Yes | `d8df85b` |
 
 **Numbers**, same profile, production build, median of three:
 
@@ -1129,15 +1129,17 @@ free and for a Deluxe host. Numbered N-134 onwards.
 | Host-only chunks on the guest page | 0 (already fixed in `664f80a`) | 0 |
 
 On a second visit all twelve hashed files now come from the browser cache
-without a request. The cover-image half of the old LCP chain no longer
-applies: since N-131 no album has a cover unless one is set through the API
-(N-139).
+without a request. The numbers above are for an album without a cover. Since
+N-139 a host can set one; it is stored at display size (1600 px, JPEG) and
+requested with `fetchpriority="high"`, but it still waits for the album's
+record, so an album with a cover paints it after the title.
 
 **Seen and left as they are:** axe flags the small "Сватбен албум на живо"
 line on the QR poster preview for contrast. That is the poster's print
 design, chosen per template, not interface text. The font files for the
 Latin subsets still download on a Bulgarian page, for the Latin characters
-in it ("WedMoments", digits); about 20 kB each, after the text is shown.
+in it ("WedMoments", digits), after the text is shown; since N-149 that is
+one variable Sofia Sans file (40 kB) rather than five Plus Jakarta Sans ones.
 
 **Not covered:** listening with an actual screen reader (NVDA, VoiceOver,
 TalkBack), which still needs a person; a real phone on a real venue's
