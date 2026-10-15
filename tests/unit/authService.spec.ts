@@ -185,6 +185,22 @@ describe('Auth Service Client Spec', () => {
       expect(result.error).toBe(i18n.t('auth.too_many_attempts'));
     });
 
+    // N-132 — a password under six characters was refused with only "check
+    // your details", and the field's hint had gone with the first keystroke.
+    it('says the password is too short when that is why it was refused', async () => {
+      global.fetch = vi.fn().mockResolvedValue(
+        createMockResponse(
+          { error: 'Validation failed', details: [{ field: 'password', message: 'Password must be at least 6 characters' }] },
+          400,
+          false
+        )
+      );
+
+      const result = await authService.register('host@example.com', 'Host', 'abc12');
+
+      expect(result.error).toBe(i18n.t('auth.password_too_short'));
+    });
+
     it('asks to check the details when a registration is refused as invalid', async () => {
       global.fetch = vi.fn().mockResolvedValue(createMockResponse({ error: 'Validation failed' }, 400, false));
 

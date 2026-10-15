@@ -76,3 +76,10 @@ describe('HostAuthPage', () => {
     expect(demoSpy).toHaveBeenCalledWith(DEMO_HOST_USERS[0]);
   });
 });
+
+describe('arriving to create an album (N-132)', () => {
+  it('starts on the sign-up form, not sign-in', () => {
+    render(<HostAuthPage onSuccess={vi.fn()} initialTab="signup" />);
+    expect(screen.getByRole('button', { name: i18n.t('host.signup_btn') })).toBeInTheDocument();
+  });
+});

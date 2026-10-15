@@ -11,6 +11,7 @@ import {
   ArrowRight,
   X
 } from 'lucide-react';
+import { useDialog } from '../../hooks/useDialog';
 
 interface HostEventsListProps {
   isOpen: boolean;
@@ -45,6 +46,9 @@ export const HostEventsList: React.FC<HostEventsListProps> = ({
 }) => {
   // One id per field, so each visible label points at the control it names.
   const fieldIds = useId();
+  // N-132 — a dialog like the app's other overlays (A-1): role, Escape, focus.
+  const titleId = useId();
+  const { dialogRef, dialogProps } = useDialog({ onClose, labelledBy: titleId, enabled: isOpen });
   const [isCreating, setIsCreating] = useState(false);
   const [title, setTitle] = useState('');
   const [hostName, setHostName] = useState('');
@@ -118,11 +122,16 @@ export const HostEventsList: React.FC<HostEventsListProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/90 backdrop-blur-md animate-fade-in">
+    <div
+      ref={dialogRef}
+      {...dialogProps}
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/90 backdrop-blur-md animate-fade-in"
+    >
       <div className="relative w-full max-w-2xl bg-noir-900 rounded-3xl border border-gold-400/30 shadow-2xl p-6 sm:p-8 overflow-hidden max-h-[90vh] flex flex-col">
         
         <button
           onClick={onClose}
+          aria-label={i18n.t('common.close')}
           className="absolute top-4 right-4 p-2 rounded-full bg-noir-800 text-cream-300 hover:text-white"
         >
           <X className="w-5 h-5" />
@@ -130,7 +139,7 @@ export const HostEventsList: React.FC<HostEventsListProps> = ({
 
         <div className="flex items-center justify-between mb-6">
           <div>
-            <h3 className="font-serif text-2xl font-bold text-cream-100 flex items-center gap-2">
+            <h3 id={titleId} className="font-serif text-2xl font-bold text-cream-100 flex items-center gap-2">
               <Calendar className="w-6 h-6 text-gold-400" />
               <span>{i18n.t('host.my_events')}</span>
             </h3>

@@ -215,3 +215,28 @@ describe('HostEventsList', () => {
     expect(onClose).not.toHaveBeenCalled();
   });
 });
+
+/**
+ * N-132 — "My events" covered the page but was not a dialog: no role, Escape
+ * did nothing, and its close button had no name. A-1 made the app's other
+ * overlays dialogs and missed this one.
+ */
+describe('"My events" as a dialog (N-132)', () => {
+  it('is announced as a dialog named by its heading', async () => {
+    vi.spyOn(eventsApi, 'listMine').mockResolvedValue([]);
+    render(<HostEventsList isOpen onClose={vi.fn()} currentEvent={CURRENT} onSelectEvent={vi.fn()} onCreateEvent={vi.fn()} onOpenPricing={vi.fn()} />);
+
+    expect(screen.getByRole('dialog', { name: i18n.t('host.my_events') })).toBeInTheDocument();
+  });
+
+  it('closes on Escape, and from a named close button', async () => {
+    vi.spyOn(eventsApi, 'listMine').mockResolvedValue([]);
+    const onClose = vi.fn();
+    render(<HostEventsList isOpen onClose={onClose} currentEvent={CURRENT} onSelectEvent={vi.fn()} onCreateEvent={vi.fn()} onOpenPricing={vi.fn()} />);
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+    fireEvent.click(screen.getByRole('button', { name: i18n.t('common.close') }));
+
+    expect(onClose).toHaveBeenCalledTimes(2);
+  });
+});

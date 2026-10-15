@@ -14,12 +14,14 @@ import {
 interface HostAuthPageProps {
   onSuccess: (user: HostUser, event?: Partial<WeddingEvent>) => void;
   onCancel?: () => void;
+  /** N-132 — "create a free album" lands on sign-up, not sign-in. */
+  initialTab?: 'signin' | 'signup';
 }
 
-export const HostAuthPage: React.FC<HostAuthPageProps> = ({ onSuccess }) => {
+export const HostAuthPage: React.FC<HostAuthPageProps> = ({ onSuccess, initialTab = 'signin' }) => {
   // One id per field, so each visible label points at the control it names.
   const fieldIds = useId();
-  const [activeTab, setActiveTab] = useState<'signin' | 'signup' | 'demo'>('signin');
+  const [activeTab, setActiveTab] = useState<'signin' | 'signup' | 'demo'>(initialTab);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [fullName, setFullName] = useState('');

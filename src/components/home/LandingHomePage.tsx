@@ -23,6 +23,7 @@ import {
   Users,
   Smartphone
 } from 'lucide-react';
+import { PLANS } from '../../config/plans';
 
 interface LandingHomePageProps {
   onSelectWedding: (slug: string) => void;
@@ -359,7 +360,7 @@ export const LandingHomePage: React.FC<LandingHomePageProps> = ({
           {/* Free */}
           <div className="p-5 rounded-2xl bg-noir-800/80 border border-cream-400/15 flex flex-col justify-between space-y-4">
             <div className="space-y-2">
-              <h3 className="font-serif text-base font-bold text-cream-100">{i18n.t('ui.landing_home_page.30')}</h3>
+              <h3 className="font-serif text-base font-bold text-cream-100">{i18n.t(PLANS.free.name)}</h3>
               <div className="text-2xl font-bold text-cream-100 font-serif">0 €</div>
               <p className="text-xs text-cream-400/70">{i18n.t('ui.landing_home_page.31')}</p>
               <ul className="text-xs text-cream-300/80 space-y-2 pt-2 border-t border-cream-400/10">
@@ -382,7 +383,7 @@ export const LandingHomePage: React.FC<LandingHomePageProps> = ({
               {i18n.t('ui.landing_home_page.36')}
             </span>
             <div className="space-y-2">
-              <h3 className="font-serif text-base font-bold text-cream-100">Celebration Pass</h3>
+              <h3 className="font-serif text-base font-bold text-cream-100">{i18n.t(PLANS.celebration_pass.name)}</h3>
               <div className="text-2xl font-bold text-gold-300 font-serif">49 €</div>
               <p className="text-xs text-cream-400/70">{i18n.t('ui.landing_home_page.37')}</p>
               <ul className="text-xs text-cream-200 space-y-2 pt-2 border-t border-cream-400/10">
@@ -404,7 +405,7 @@ export const LandingHomePage: React.FC<LandingHomePageProps> = ({
           {/* Deluxe Keepsake */}
           <div className="p-5 rounded-2xl bg-noir-800/80 border border-cream-400/15 flex flex-col justify-between space-y-4">
             <div className="space-y-2">
-              <h3 className="font-serif text-base font-bold text-cream-100">Deluxe Keepsake</h3>
+              <h3 className="font-serif text-base font-bold text-cream-100">{i18n.t(PLANS.deluxe_keepsake.name)}</h3>
               <div className="text-2xl font-bold text-cream-100 font-serif">89 €</div>
               <p className="text-xs text-cream-400/70">{i18n.t('ui.landing_home_page.44')}</p>
               <ul className="text-xs text-cream-300/80 space-y-2 pt-2 border-t border-cream-400/10">
@@ -425,7 +426,7 @@ export const LandingHomePage: React.FC<LandingHomePageProps> = ({
           {/* Pro Planner */}
           <div className="p-5 rounded-2xl bg-noir-800/80 border border-cream-400/15 flex flex-col justify-between space-y-4">
             <div className="space-y-2">
-              <h3 className="font-serif text-base font-bold text-cream-100">Pro Planner</h3>
+              <h3 className="font-serif text-base font-bold text-cream-100">{i18n.t(PLANS.pro_planner.name)}</h3>
               <div className="text-2xl font-bold text-cream-100 font-serif">49 €<span className="text-xs font-normal">{i18n.t('ui.landing_home_page.50')}</span></div>
               <p className="text-xs text-cream-400/70">{i18n.t('ui.landing_home_page.51')}</p>
               <ul className="text-xs text-cream-300/80 space-y-2 pt-2 border-t border-cream-400/10">

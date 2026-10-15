@@ -28,8 +28,13 @@ const AUTH_STATUS_KEYS: Record<number, string> = {
  * read first, then the status, then the caller's general message.
  */
 async function refusalMessage(res: Response, fallbackKey: string): Promise<string> {
-  const body = (await res.json().catch(() => ({}))) as { code?: unknown };
+  const body = (await res.json().catch(() => ({}))) as { code?: unknown; details?: unknown };
   const code = typeof body.code === 'string' ? body.code : '';
+  // N-132 — a password under six characters said only "check your details",
+  // and the field's hint had gone with the first keystroke.
+  if (res.status === 400 && Array.isArray(body.details) && body.details.some((d) => d?.field === 'password')) {
+    return i18n.t('auth.password_too_short');
+  }
   return i18n.t(ERROR_CODE_KEYS[code] || AUTH_STATUS_KEYS[res.status] || fallbackKey);
 }
 

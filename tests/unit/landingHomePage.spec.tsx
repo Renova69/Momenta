@@ -56,3 +56,14 @@ describe('LandingHomePage', () => {
     expect(screen.getByText(i18n.t('showcase.badge'))).toBeInTheDocument();
   });
 });
+
+describe('the plan names on the landing page (N-132)', () => {
+  it('are the names the pricing modal and checkout use', async () => {
+    const { PLANS } = await import('../../src/config/plans');
+    render(<LandingHomePage onSelectWedding={vi.fn()} onOpenCreateEvent={vi.fn()} onOpenPricing={vi.fn()} />);
+
+    for (const plan of Object.values(PLANS)) {
+      expect(screen.getByRole('heading', { name: i18n.t(plan.name) })).toBeInTheDocument();
+    }
+  });
+});

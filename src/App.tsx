@@ -134,6 +134,9 @@ function WeddingAppContent() {
   const [isGuestProfileOpen, setIsGuestProfileOpen] = useState(false);
   const [isPricingOpen, setIsPricingOpen] = useState(false);
   const [isEventsListOpen, setIsEventsListOpen] = useState(false);
+  // N-132 — which form the host studio opens on: the landing page's "create
+  // a free album" buttons mean sign-up.
+  const [hostAuthTab, setHostAuthTab] = useState<'signin' | 'signup'>('signin');
   const [isHostProfileOpen, setIsHostProfileOpen] = useState(false);
   // Stripe redirects the browser back here after a real checkout. The plan is
   // granted by the webhook, not by this redirect, so the banner says what is
@@ -373,7 +376,10 @@ function WeddingAppContent() {
                 onSelectWedding={(slug) => {
                   loadEventBySlug(slug);
                 }}
-                onOpenCreateEvent={() => navigateView('host')}
+                onOpenCreateEvent={() => {
+                  setHostAuthTab('signup');
+                  navigateView('host');
+                }}
                 onOpenPricing={() => setIsPricingOpen(true)}
               />
             ) : (
@@ -500,6 +506,8 @@ function WeddingAppContent() {
               />
             ) : (
               <HostAuthPage
+                key={hostAuthTab}
+                initialTab={hostAuthTab}
                 onSuccess={async (_user, newEvent) => {
                   // N-110 — read from the server, never merged in raw: the
                   // sign-in answer's row kept a cached album's (or the demo's)
