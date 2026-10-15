@@ -590,3 +590,24 @@ describe('the filter on a chosen photo (N-126)', () => {
     expect(options?.filter).toBe('black_white');
   });
 });
+
+/**
+ * N-133 — found while re-checking N-108. With the camera unavailable, the
+ * warning (z-30) lay over the viewfinder's own controls (z-20): the close
+ * button, the filters, the shutter and the gallery shortcut. Its background
+ * class does not exist, so the controls stayed visible, but a tap landed on
+ * the warning: a guest with no camera could not close the camera screen. jsdom
+ * cannot hit-test, so this pins the layering the fix depends on.
+ */
+describe('the camera warning and the viewfinder controls (N-133)', () => {
+  const zOf = (el: Element | null) => Number((el?.className.toString().match(/\bz-(\d+)\b/) || [])[1]);
+
+  it('lies under the controls, so close, shutter and filters stay tappable', async () => {
+    denyCamera('NotFoundError');
+    renderModal();
+    const warning = (await screen.findByText(i18n.t('camera.error_not_found'))).closest('div.absolute.inset-0');
+    const closeBar = screen.getByRole('button', { name: i18n.t('common.close') }).closest('div.absolute');
+
+    expect(zOf(warning)).toBeLessThan(zOf(closeBar));
+  });
+});

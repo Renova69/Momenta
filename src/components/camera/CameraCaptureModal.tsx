@@ -532,7 +532,9 @@ export const CameraCaptureModal: React.FC<CameraCaptureModalProps> = ({
             from the gallery or the phone's own camera app under it, with Send
             out of reach. */}
         {(permissionState === 'denied' || permissionState === 'unsupported' || cameraError) && !isCaptured && !capturedRawUrl && (
-          <div className="absolute inset-0 p-6 flex flex-col items-center justify-center text-center bg-noir-950/95 text-cream-100 z-30 space-y-4">
+          /* N-133 — under the viewfinder's controls (z-20), not over them: at z-30
+             it took every tap meant for close, the filters and the shutter. */
+          <div className="absolute inset-0 p-6 flex flex-col items-center justify-center text-center bg-noir-950/95 text-cream-100 z-10 space-y-4">
             <div className="w-14 h-14 rounded-full bg-gold-400/10 border border-gold-400/30 flex items-center justify-center text-gold-400">
               <ShieldAlert className="w-7 h-7" />
             </div>
