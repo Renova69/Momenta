@@ -120,6 +120,14 @@ describe('what is selected, for a screen reader', () => {
     expect(sectionButton('host.overview')).not.toHaveAttribute('aria-current');
   });
 
+  // N-139 — the cover field sits in the overview, wired to the app's actions.
+  it('offers the album cover in the overview', () => {
+    renderDashboard({ planTier: 'free' });
+
+    expect(screen.getByText(i18n.t('host.cover_title'))).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: i18n.t('host.cover_pick') })).toBeInTheDocument();
+  });
+
   it('marks the palette the album has', () => {
     renderDashboard({ planTier: 'deluxe_keepsake' });
 

@@ -26,6 +26,7 @@ import {
   PhotoStatus,
   PlanTier,
 } from '../../../types';
+import type { CoverSource } from '../../../api/eventsApi';
 
 export type HostTab = 'overview' | 'moderation' | 'canvas' | 'quests' | 'export' | 'ingest';
 
@@ -47,6 +48,9 @@ export interface HostDashboardValue {
   onDeleteQuest: (questId: string) => void;
   onResetData: () => void;
   onOpenPricing?: () => void;
+  /** Set or remove the album's cover through its own route (N-139). */
+  onSetCover: (source: CoverSource) => Promise<void>;
+  onRemoveCover: () => Promise<void>;
 
   // ——— Derived once, read by several tabs ———
   /** Photos awaiting host approval; drives the moderation tab's badge count. */

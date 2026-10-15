@@ -187,7 +187,7 @@ function slugVariant(slug: string, attempt: number): string {
 
 // POST /api/events — create a new event for the authenticated host (multi-event management)
 eventsRouter.post('/', requireAuth, validateBody(CreateEventSchema), async (req, res) => {
-  const { title, hostName, slug, eventDate, venueName, themePalette, welcomeMessage, coverImageUrl } = req.body;
+  const { title, hostName, slug, eventDate, venueName, themePalette, welcomeMessage } = req.body;
 
   try {
     const userId = req.user!.userId;
@@ -285,8 +285,8 @@ eventsRouter.post('/', requireAuth, validateBody(CreateEventSchema), async (req,
         await lockClient.query('SAVEPOINT slug_attempt');
         try {
           const insert = await lockClient.query(
-            `INSERT INTO events (title, slug, host_name, host_email, host_user_id, plan_tier, event_date, venue_name, theme_palette, welcome_message, cover_image_url, expires_at)
-             VALUES ($1, $2, $3, $4, $5, 'free', $6, $7, $8, $9, $10, $11)
+            `INSERT INTO events (title, slug, host_name, host_email, host_user_id, plan_tier, event_date, venue_name, theme_palette, welcome_message, expires_at)
+             VALUES ($1, $2, $3, $4, $5, 'free', $6, $7, $8, $9, $10)
              RETURNING ${HOST_EVENT_COLUMNS}`,
             [
               title || `${hostName.trim()}'s Wedding`,
@@ -298,7 +298,6 @@ eventsRouter.post('/', requireAuth, validateBody(CreateEventSchema), async (req,
               venueName?.trim() || 'Голяма зала за тържества',
               themePalette || 'champagne_gold',
               welcomeMessage || 'Добре дошли на нашия сватбен ден! Сканирайте QR кода, снимайте весели и неподправени моменти и ни помогнете да запечатаме всеки миг заедно.',
-              coverImageUrl || null,
               expiry,
             ]
           );
@@ -435,7 +434,6 @@ eventsRouter.put('/:id', requireAuth, requireUuidParams('id'), validateBody(Upda
       hostEmail: 'host_email',
       eventDate: 'event_date',
       venueName: 'venue_name',
-      coverImageUrl: 'cover_image_url',
       themePalette: 'theme_palette',
       welcomeMessage: 'welcome_message',
       isModerationEnabled: 'is_moderation_enabled',

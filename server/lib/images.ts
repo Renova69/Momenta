@@ -127,3 +127,19 @@ export async function buildAvatar(original: Buffer): Promise<Buffer> {
     .jpeg({ quality: AVATAR_QUALITY, mozjpeg: true })
     .toBuffer();
 }
+
+const COVER_QUALITY = 78;
+
+/**
+ * Build the stored copy of an album's cover (N-139): the photo at display
+ * size. It sits behind the couple's names, softened, and is the first image a
+ * guest's phone loads, so there is nothing to gain from more pixels than a
+ * phone screen and a good deal to lose. Same decode rules as a photo.
+ */
+export async function buildCover(original: Buffer): Promise<Buffer> {
+  return sharp(original, { failOn: 'truncated', limitInputPixels: MAX_INPUT_PIXELS })
+    .rotate()
+    .resize({ width: DISPLAY_MAX_EDGE, height: DISPLAY_MAX_EDGE, fit: 'inside', withoutEnlargement: true })
+    .jpeg({ quality: COVER_QUALITY, mozjpeg: true })
+    .toBuffer();
+}

@@ -1,5 +1,5 @@
 import { WeddingEvent, PlanTier } from '../types';
-import { eventsApi } from '../api/eventsApi';
+import { eventsApi, type CoverSource } from '../api/eventsApi';
 import { subscriptionsApi } from '../api/subscriptionsApi';
 import { INITIAL_EVENT } from './defaultEvent';
 import { STORAGE_KEYS } from './storageKeys';
@@ -80,6 +80,21 @@ export function updateEvent(ctx: ServiceContext, updates: Partial<WeddingEvent>,
   }
 
   return updated;
+}
+
+/**
+ * Set the album's cover through its own route (N-139), which stores the
+ * picture and answers with its URL; the album is then updated here without a
+ * save of its own. Refusals reach the caller, which says why.
+ */
+export async function setCover(ctx: ServiceContext, source: CoverSource): Promise<void> {
+  const { coverImageUrl } = await eventsApi.setCover(getEvent().id, source);
+  ctx.updateEvent({ coverImageUrl }, false);
+}
+
+export async function removeCover(ctx: ServiceContext): Promise<void> {
+  await eventsApi.removeCover(getEvent().id);
+  ctx.updateEvent({ coverImageUrl: '' }, false);
 }
 
 /**

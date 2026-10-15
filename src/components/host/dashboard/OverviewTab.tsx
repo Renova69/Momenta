@@ -16,6 +16,7 @@ import { router } from '../../../router';
 import { StorageMeter } from '../StorageMeter';
 import { maskDateInput, maskTimeInput } from './dateFields';
 import { RevealTimeField } from './RevealTimeField';
+import { CoverPhotoField } from './CoverPhotoField';
 import { ThemePalette } from '../../../types';
 import { isFeatureUnlocked } from '../../../config/tierGating';
 import { useHostDashboard } from './context';
@@ -26,7 +27,7 @@ export const OverviewTab: React.FC = () => {
   const {
     commitEventDateTime, deleteConfirmText, event, eventDateText, eventTimeText,
     guests, handleDeleteEvent, handleResetGuestSessions, hostNameDraft,
-    isDeletingEvent, isResettingGuests, onOpenPricing, onUpdateEvent,
+    isDeletingEvent, isResettingGuests, onOpenPricing, onUpdateEvent, onSetCover, onRemoveCover,
     pendingPhotos, photos, quests, setDeleteConfirmText, setEventDateText,
     setEventTimeText, setHostNameDraft, setSlugDraft, flushSlugDraft, setTitleDraft,
     setVenueNameDraft, setWelcomeMessageDraft, slugDraft, titleDraft,
@@ -102,6 +103,14 @@ export const OverviewTab: React.FC = () => {
             <Settings className="w-5 h-5 text-gold-400" />
             <span>{i18n.t('host.settings')}</span>
           </h2>
+
+          {/* N-139 — the album's cover; on every plan. */}
+          <CoverPhotoField
+            coverImageUrl={event.coverImageUrl}
+            photos={photos}
+            onSetCover={onSetCover}
+            onRemoveCover={onRemoveCover}
+          />
 
           {/* Theme Palette Selector — anything but the default is a paid feature. */}
           <div>

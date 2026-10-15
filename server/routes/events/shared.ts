@@ -37,7 +37,9 @@ export const UpdateEventSchema = z.object({
   hostEmail: z.string().email().max(254).optional(),
   eventDate: z.string().optional(),
   venueName: z.string().max(200).optional(),
-  coverImageUrl: z.string().url().max(500).optional(),
+  // No coverImageUrl (N-139): the cover is set only by POST /:id/cover, which
+  // stores its own copy. A URL sent here is dropped with the other unknown
+  // keys, so it can no longer point every guest's phone at a third party.
   themePalette: z.string().max(50).optional(),
   welcomeMessage: z.string().max(1000).optional(),
   isModerationEnabled: z.boolean().optional(),
@@ -167,7 +169,7 @@ export const CreateEventSchema = z.object({
   venueName: z.string().max(200).optional(),
   themePalette: z.string().max(50).optional(),
   welcomeMessage: z.string().max(1000).optional(),
-  coverImageUrl: z.string().url().max(500).optional(),
+  // No coverImageUrl: see UpdateEventSchema (N-139).
 });
 
 export const DeleteEventSchema = z.object({

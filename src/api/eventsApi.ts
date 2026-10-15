@@ -21,6 +21,9 @@ export interface EventUsage {
 }
 import { WeddingEvent, QRCanvasConfig } from '../types';
 
+/** Where a new cover comes from: a `data:image/` upload, or an album photo. */
+export type CoverSource = { image: string } | { photoId: string };
+
 export const eventsApi = {
   // Get event by slug
   getBySlug: async (slug: string): Promise<WeddingEvent | null> => {
@@ -54,6 +57,21 @@ export const eventsApi = {
       method: 'PUT',
       body: JSON.stringify(updates),
     });
+  },
+
+  /**
+   * Set the album's cover (N-139), from a photo the host uploads or one of the
+   * album's own. The server stores its own copy and answers with its URL.
+   */
+  setCover: async (id: string, source: CoverSource): Promise<{ coverImageUrl: string }> => {
+    return apiFetch<{ coverImageUrl: string }>(`/api/events/${id}/cover`, {
+      method: 'POST',
+      body: JSON.stringify(source),
+    });
+  },
+
+  removeCover: async (id: string): Promise<{ coverImageUrl: null }> => {
+    return apiFetch<{ coverImageUrl: null }>(`/api/events/${id}/cover`, { method: 'DELETE' });
   },
 
   // Get QR canvas config

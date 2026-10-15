@@ -11,7 +11,7 @@ import {
   PlanTier
 } from '../types';
 import { ENV } from '../config/env';
-import { eventsApi } from '../api/eventsApi';
+import { eventsApi, type CoverSource } from '../api/eventsApi';
 import { offlineQueue, QueuedUpload } from './offlineQueueService';
 import { i18n } from '../i18n';
 import { ServiceContext } from './storageServiceContext';
@@ -244,6 +244,15 @@ class WedStorageService {
 
   public async upgradePlanTier(tier: PlanTier): Promise<void> {
     await eventService.upgradePlanTier(this.ctx, tier);
+  }
+
+  /** The album's cover, through its own route (N-139). See eventService.setCover. */
+  public setCover(source: CoverSource): Promise<void> {
+    return eventService.setCover(this.ctx, source);
+  }
+
+  public removeCover(): Promise<void> {
+    return eventService.removeCover(this.ctx);
   }
 
   public setCurrentGuest(guest: Guest): void {

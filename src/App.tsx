@@ -106,6 +106,8 @@ function WeddingAppContent() {
     refreshEventDetails,
     updateEvent,
     upgradePlanTier,
+    setCover,
+    removeCover,
     updateQRConfig,
     registerGuest,
     addPhoto,
@@ -500,6 +502,8 @@ function WeddingAppContent() {
                 onDeleteQuest={deleteQuest}
                 onResetData={resetDefaults}
                 onOpenPricing={() => setIsPricingOpen(true)}
+                onSetCover={setCover}
+                onRemoveCover={removeCover}
               />
             ) : (
               <HostAuthPage

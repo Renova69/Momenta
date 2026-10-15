@@ -1,6 +1,6 @@
 import { Pool, PoolClient } from 'pg';
 import { pool } from './db';
-import { isStoredAvatarUrl, storageAdapter, toStoragePath } from './storage';
+import { isStoredAvatarUrl, isStoredCoverUrl, storageAdapter, toStoragePath } from './storage';
 import { limitsFor } from './planLimits';
 import { errorLabel } from './errors';
 import { BackendPlanTier, acquireEventUploadLock } from '../middleware/tierGate';
@@ -365,6 +365,11 @@ export async function purgeEventMedia(
     'SELECT avatar_url FROM guests WHERE event_id = $1 AND avatar_url IS NOT NULL',
     [eventId]
   );
+  // N-139 — and the album's cover, the copy the cover route stored.
+  const { rows: covers } = await pool.query<{ cover_image_url: string | null }>(
+    'SELECT cover_image_url FROM events WHERE id = $1',
+    [eventId]
+  );
 
   let freed = 0;
   const failedPaths: string[] = [];
@@ -443,6 +448,12 @@ export async function purgeEventMedia(
   for (const guest of guests) {
     if (!isStoredAvatarUrl(guest.avatar_url, eventId)) continue;
     const path = toStoragePath(guest.avatar_url);
+    if (path) await deleteObject(path);
+  }
+
+  const cover = covers[0]?.cover_image_url;
+  if (isStoredCoverUrl(cover, eventId)) {
+    const path = toStoragePath(cover);
     if (path) await deleteObject(path);
   }
 

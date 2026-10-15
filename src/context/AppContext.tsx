@@ -13,6 +13,7 @@ import {
   PlanTier
 } from '../types';
 import type { RemoteEventPayload } from '../services/eventNormalization';
+import type { CoverSource } from '../api/eventsApi';
 import { storageService } from '../services/storageService';
 import { offlineQueue } from '../services/offlineQueueService';
 import { router, RouteState } from '../router';
@@ -57,6 +58,9 @@ interface AppContextType {
   // Actions
   updateEvent: (updates: Partial<WeddingEvent>) => void;
   upgradePlanTier: (tier: PlanTier) => Promise<void>;
+  /** Set or remove the album's cover through its own route (N-139). */
+  setCover: (source: CoverSource) => Promise<void>;
+  removeCover: () => Promise<void>;
   /** Re-read the album record quietly: no loading screen, no navigation. */
   refreshEventDetails: () => Promise<void>;
   updateQRConfig: (updates: Partial<QRCanvasConfig>) => void;
@@ -281,6 +285,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     return storageService.upgradePlanTier(tier);
   }, []);
 
+  const setCover = useCallback((source: CoverSource) => storageService.setCover(source), []);
+  const removeCover = useCallback(() => storageService.removeCover(), []);
+
   const updateQRConfig = useCallback((updates: Partial<QRCanvasConfig>) => {
     storageService.updateQRCanvasConfig(updates);
   }, []);
@@ -389,6 +396,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           ensureOwnAlbum,
           updateEvent,
           upgradePlanTier,
+          setCover,
+          removeCover,
           refreshEventDetails,
           updateQRConfig,
           registerGuest,

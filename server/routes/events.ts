@@ -18,6 +18,7 @@ import { crudRouter } from './events/crud';
 import { exportRouter } from './events/export';
 import { reactionsRouter } from './events/reactions';
 import { qrRouter } from './events/qr';
+import { coverRouter } from './events/cover';
 
 export const eventsRouter = Router();
 
@@ -33,3 +34,6 @@ eventsRouter.use(reactionsRouter);
 
 // GET /:id/qr-config, PUT /:id/qr-config
 eventsRouter.use(qrRouter);
+
+// POST /:id/cover, DELETE /:id/cover
+eventsRouter.use(coverRouter);

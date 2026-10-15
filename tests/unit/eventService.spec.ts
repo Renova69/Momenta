@@ -5,6 +5,8 @@ import {
   upgradePlanTier,
   refreshEventFromBackend,
   refreshEventDetails,
+  setCover,
+  removeCover,
   loadEventBySlug,
   openSignedInAlbum,
   forgetEvent,
@@ -314,6 +316,32 @@ describe('refreshEventDetails (N-54)', () => {
 
     await expect(refreshEventDetails(ctx)).resolves.toBeUndefined();
     expect(updateEventSpy).not.toHaveBeenCalled();
+  });
+
+  // N-139 — the cover is set through its own route, which stores the picture;
+  // the album is then updated here without a save of its own.
+  it('sets a cover through the cover route, and shows it without another save', async () => {
+    const { ctx, updateEventSpy } = makeContext();
+    storeEvent({ id: EVENT_ID, slug: 'album-a' });
+    const setCoverSpy = vi.spyOn(eventsApi, 'setCover').mockResolvedValue({ coverImageUrl: 'https://cdn.example/cover-1-abc.jpg' });
+    const updateSpy = vi.spyOn(eventsApi, 'update');
+
+    await setCover(ctx, { photoId: 'p1' });
+
+    expect(setCoverSpy).toHaveBeenCalledWith(EVENT_ID, { photoId: 'p1' });
+    expect(updateEventSpy).toHaveBeenCalledWith({ coverImageUrl: 'https://cdn.example/cover-1-abc.jpg' }, false);
+    expect(updateSpy).not.toHaveBeenCalled();
+  });
+
+  it('removes a cover the same way', async () => {
+    const { ctx, updateEventSpy } = makeContext();
+    storeEvent({ id: EVENT_ID, slug: 'album-a' });
+    const removeSpy = vi.spyOn(eventsApi, 'removeCover').mockResolvedValue({ coverImageUrl: null });
+
+    await removeCover(ctx);
+
+    expect(removeSpy).toHaveBeenCalledWith(EVENT_ID);
+    expect(updateEventSpy).toHaveBeenCalledWith({ coverImageUrl: '' }, false);
   });
 
   // N-148 — it now also runs as the app starts, while a link to another album

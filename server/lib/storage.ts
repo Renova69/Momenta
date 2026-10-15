@@ -534,6 +534,22 @@ export function storagePathBelongsToEvent(storagePath: string | null | undefined
 
 /** The name `saveBuffer(…, 'avatar', '.jpg', …)` gives a stored selfie. */
 const AVATAR_FILENAME = /^avatar-\d+-[a-z0-9]+\.jpg$/;
+/** The name `saveBuffer(…, 'cover', '.jpg', …)` gives a stored album cover. */
+const COVER_FILENAME = /^cover-\d+-[a-z0-9]+\.jpg$/;
+
+/**
+ * True when `url` is exactly one file named like `filename` directly under the
+ * album's folder, at one of the bases the adapters write. Nothing of unbounded
+ * length, no further path.
+ */
+function isStoredAlbumFile(url: unknown, eventId: string, filename: RegExp): url is string {
+  if (typeof url !== 'string' || url.length > 512) return false;
+  const id = eventId.toLowerCase();
+  const prefixes = [`${CONFIG.PUBLIC_BASE_URL}/uploads/events/${id}/`, `/uploads/events/${id}/`];
+  if (CONFIG.R2_PUBLIC_URL) prefixes.push(`${CONFIG.R2_PUBLIC_URL}/events/${id}/`);
+  const prefix = prefixes.find((candidate) => url.startsWith(candidate));
+  return !!prefix && filename.test(url.slice(prefix.length));
+}
 
 /**
  * True when `url` names a selfie the avatar route stored for `eventId` (N-107).
@@ -550,12 +566,16 @@ const AVATAR_FILENAME = /^avatar-\d+-[a-z0-9]+\.jpg$/;
  * file name of the avatar shape: no further path, nothing of unbounded length.
  */
 export function isStoredAvatarUrl(url: unknown, eventId: string): url is string {
-  if (typeof url !== 'string' || url.length > 512) return false;
-  const id = eventId.toLowerCase();
-  const prefixes = [`${CONFIG.PUBLIC_BASE_URL}/uploads/events/${id}/`, `/uploads/events/${id}/`];
-  if (CONFIG.R2_PUBLIC_URL) prefixes.push(`${CONFIG.R2_PUBLIC_URL}/events/${id}/`);
-  const prefix = prefixes.find((candidate) => url.startsWith(candidate));
-  return !!prefix && AVATAR_FILENAME.test(url.slice(prefix.length));
+  return isStoredAlbumFile(url, eventId, AVATAR_FILENAME);
+}
+
+/**
+ * True when `url` names a cover the cover route stored for `eventId` (N-139).
+ * The same rule as a selfie: only a file of this shape is ever deleted as a
+ * cover, when it is replaced or removed, or the album purged.
+ */
+export function isStoredCoverUrl(url: unknown, eventId: string): url is string {
+  return isStoredAlbumFile(url, eventId, COVER_FILENAME);
 }
 
 /**

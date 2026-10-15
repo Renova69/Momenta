@@ -38,6 +38,7 @@ import {
 import { HostDashboardProvider, HostTab, HostDashboardValue } from './dashboard/context';
 import { formatDateDDMMYYYY, formatTime24h, parseDateAndTime } from './dashboard/dateFields';
 import { TabNav } from './dashboard/TabNav';
+import type { CoverSource } from '../../api/eventsApi';
 import { OverviewTab } from './dashboard/OverviewTab';
 import { QuestsTab } from './dashboard/QuestsTab';
 import { ExportTab } from './dashboard/ExportTab';
@@ -57,7 +58,12 @@ interface HostDashboardProps {
   onDeleteQuest: (questId: string) => void;
   onResetData: () => void;
   onOpenPricing?: () => void;
+  /** Set or remove the album's cover (N-139). */
+  onSetCover?: (source: CoverSource) => Promise<void>;
+  onRemoveCover?: () => Promise<void>;
 }
+
+const NO_COVER_ACTION = async () => undefined;
 
 export const HostDashboard: React.FC<HostDashboardProps> = ({
   event,
@@ -74,6 +80,8 @@ export const HostDashboard: React.FC<HostDashboardProps> = ({
   onDeleteQuest,
   onResetData,
   onOpenPricing,
+  onSetCover = NO_COVER_ACTION,
+  onRemoveCover = NO_COVER_ACTION,
 }) => {
   // M10 — revoking guest sessions is destructive to guest *identities* (their
   // photos stay, their link to them does not), so it asks first and reports
@@ -237,6 +245,7 @@ export const HostDashboard: React.FC<HostDashboardProps> = ({
     event, guests, photos, quests, audioEntries, qrConfig,
     onUpdateEvent, onUpdateQRConfig, onSetPhotoStatus, onDeletePhoto,
     onAddQuest, onDeleteQuest, onResetData, onOpenPricing,
+    onSetCover, onRemoveCover,
     pendingPhotos, currentTier,
     activeTab, setActiveTab,
     hostNameDraft, setHostNameDraft,
