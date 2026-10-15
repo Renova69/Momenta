@@ -8,7 +8,7 @@
 **Security review, partial:** 2026-09-25 to 26, recorded 2026-10-04 (§3f). **All 25 findings fixed.**
 **Remaining five domains:** reviewed 2026-10-05 (§3g). **All 36 findings fixed.**
 **Review of the §3g fixes:** 2026-10-10 (§3h). **All 12 findings fixed.**
-**Running-app feature pass:** 2026-10-14 (§3i). **24 of 26 fixed; N-112 and N-122 on hold by the owner.**
+**Running-app feature pass:** 2026-10-14 (§3i). **25 of 27 fixed; N-112 and N-122 on hold by the owner.**
 
 > **Read this first.** The audit below is preserved as written — each finding
 > still describes the code as it was on 2026-09-15, because a finding rewritten
@@ -994,7 +994,7 @@ and N-74, N-103 of N-75, N-104 of N-62.
 
 ## 3i. The Running-App Feature Pass (2026-10-14)
 
-**26 findings: 24 fixed, 2 on hold by the owner (N-112, N-122).**
+**27 findings (N-133 found while re-checking the fixes): 25 fixed, 2 on hold by the owner (N-112, N-122).**
 
 Every review since §3c has read code. This one ran it: the API on local
 storage, Vite, Postgres, a desktop host browser, phone-sized guest browsers,
@@ -1040,6 +1040,7 @@ reading it.
 | **N-130** | The PNG sold as "300 dpi" carries a 72 dpi `pHYs` tag, so print software opens it at 1.75 m wide. It is 4960×7022 px, against 4961×7016 for A2 at 300 dpi. The PDF is exact: 1190.55×1683.78 pt. | Low | `src/services/qrCanvasService.ts` | Yes | `abe7a4b` |
 | **N-131** | An album without a cover hotlinks `images.unsplash.com` from every guest's device. `normalizeEvent` defaults to it, and new albums store an Unsplash URL. This is a third-party request, like N-33. | Low | `src/services/eventNormalization.ts`, `src/components/host/HostEventsList.tsx` | Yes | `843d04c` |
 | **N-132** | Smaller problems found on the way. Registration refusals say only "check your data", not that the password is under 6 characters. "Създай безплатен сватбен албум" opens the sign-in tab. Plan names differ between the landing page and the pricing modal (Безплатен старт / Безплатен тест, Celebration Pass / Сватбен пропуск "Празник", Pro Planner / Сватбен агент & Диджей). The "My events" overlay is not a dialog: it has no role, Escape does not close it, and its close button has no name, so A-1 missed it. Re-joining after a guest-session reset creates a new guest id, which splits "Моите снимки" and quest progress from the old one. | Low | various | Yes | `e097cf5` |
+| **N-133** | Found while re-checking N-108 in the running app. With the camera unavailable, its warning (`z-30`) lay over the viewfinder's own controls (`z-20`): the close button, the filters, the shutter and the gallery shortcut. Its background class, `bg-noir-950/95`, is not in the palette, so the controls stayed visible, but every tap landed on the warning: on a phone with no camera, or with the camera refused, a guest could not close the camera screen. | Medium | `src/components/camera/CameraCaptureModal.tsx` | Yes | `03b3697` |
 
 **Checked and found working, recorded so they are not re-tested:**
 registration and login (apart from N-110); Stripe sandbox checkout, the return
