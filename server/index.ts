@@ -21,6 +21,7 @@ import { startFtpServer, stopFtpServer } from './ftp/ftpServer';
 import { apiLimiter } from './middleware/rateLimit';
 import { runMigrations } from './lib/migrate';
 import { healthHandler } from './lib/health';
+import { builtClient } from './lib/builtClient';
 import { drainHttpServer } from './lib/httpDrain';
 
 const app = express();
@@ -128,13 +129,7 @@ app.get('/api/health', healthHandler());
 // 7. Serve Built Frontend in Production & Handle SPA Routing Fallback
 const DIST_DIR = path.join(process.cwd(), 'dist');
 if (fs.existsSync(DIST_DIR)) {
-  app.use(express.static(DIST_DIR));
-  app.use((req, res, next) => {
-    if (req.method === 'GET' && !req.path.startsWith('/api') && !req.path.startsWith('/uploads')) {
-      return res.sendFile(path.join(DIST_DIR, 'index.html'));
-    }
-    next();
-  });
+  app.use(builtClient(DIST_DIR));
 }
 
 // 8. Start Server — apply pending schema migrations first so a container that
