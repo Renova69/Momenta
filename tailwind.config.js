@@ -64,7 +64,8 @@ export default {
       },
       fontFamily: {
         serif: ['"Cormorant Garamond"', '"Playfair Display"', 'Georgia', 'serif'],
-        sans: ['"Plus Jakarta Sans"', 'Inter', 'system-ui', 'sans-serif'],
+        // Sofia Sans for Cyrillic and Latin alike (N-149): see src/main.tsx.
+        sans: ['"Sofia Sans Variable"', 'system-ui', 'sans-serif'],
       },
       boxShadow: {
         'wedding': '0 10px 30px -5px rgba(212, 175, 55, 0.15)',

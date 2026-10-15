@@ -11,11 +11,11 @@ import '@fontsource/cormorant-garamond/400.css';
 import '@fontsource/cormorant-garamond/400-italic.css';
 import '@fontsource/cormorant-garamond/600.css';
 import '@fontsource/cormorant-garamond/700.css';
-import '@fontsource/plus-jakarta-sans/300.css';
-import '@fontsource/plus-jakarta-sans/400.css';
-import '@fontsource/plus-jakarta-sans/500.css';
-import '@fontsource/plus-jakarta-sans/600.css';
-import '@fontsource/plus-jakarta-sans/700.css';
+// N-149 — the body typeface. Plus Jakarta Sans had no basic Cyrillic, so in
+// Bulgarian every line of body text fell back to the phone's system font.
+// Sofia Sans was drawn by a Bulgarian foundry (Lettersoup) with the Bulgarian
+// letterforms; one variable file per script covers every weight.
+import '@fontsource-variable/sofia-sans';
 import './index.css';
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
