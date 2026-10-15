@@ -22,6 +22,7 @@ import { LiveFeed } from './components/gallery/LiveFeed';
 import { CameraCaptureModal } from './components/camera/CameraCaptureModal';
 import { LightboxModal } from './components/gallery/LightboxModal';
 import { GuestOnboardingModal } from './components/guest/GuestOnboardingModal';
+import { HostDialogs, PricingPlansModal } from './components/host/HostDialogs';
 
 /**
  * Everything below is loaded when it is first needed, not before.
@@ -48,14 +49,8 @@ const HostDashboard = lazy(() =>
 const LiveProjectorScreen = lazy(() =>
   import('./components/projector/LiveProjectorScreen').then((m) => ({ default: m.LiveProjectorScreen }))
 );
-const PricingPlansModal = lazy(() =>
-  import('./components/host/PricingPlansModal').then((m) => ({ default: m.PricingPlansModal }))
-);
 const HostProfileModal = lazy(() =>
   import('./components/host/HostProfileModal').then((m) => ({ default: m.HostProfileModal }))
-);
-const HostEventsList = lazy(() =>
-  import('./components/host/HostEventsList').then((m) => ({ default: m.HostEventsList }))
 );
 const HostAuthPage = lazy(() =>
   import('./components/host/HostAuthPage').then((m) => ({ default: m.HostAuthPage }))
@@ -605,13 +600,20 @@ function WeddingAppContent() {
         onSaveGuest={registerGuest}
       />
 
-      {/* 4. SaaS Pricing & Subscription Modal */}
-      <PricingPlansModal
-        isOpen={isPricingOpen}
-        onClose={() => setIsPricingOpen(false)}
-        currentPlanTier={event.planTier || 'free'}
+      {/* 4. Pricing and the host's events switcher, fetched when first opened */}
+      <HostDialogs
+        event={event}
+        isPricingOpen={isPricingOpen}
+        onClosePricing={() => setIsPricingOpen(false)}
         onUpgradePlan={handleUpgradePlan}
-        eventSlug={event.slug}
+        isEventsListOpen={isEventsListOpen}
+        onCloseEventsList={() => setIsEventsListOpen(false)}
+        onSelectEvent={handleSelectEvent}
+        onCreateEvent={handleCreateEvent}
+        onOpenPricingFromList={() => {
+          setIsEventsListOpen(false);
+          setIsPricingOpen(true);
+        }}
       />
 
       {/* 4b. Host Account Profile Modal */}
@@ -626,19 +628,6 @@ function WeddingAppContent() {
             onSaveName={updateProfile}
           />
         )}
-
-        {/* 5. Host Events Switcher Modal */}
-        <HostEventsList
-          isOpen={isEventsListOpen}
-          onClose={() => setIsEventsListOpen(false)}
-          currentEvent={event}
-          onSelectEvent={handleSelectEvent}
-          onCreateEvent={handleCreateEvent}
-          onOpenPricing={() => {
-            setIsEventsListOpen(false);
-            setIsPricingOpen(true);
-          }}
-        />
       </Suspense>
 
       {/* Footer */}

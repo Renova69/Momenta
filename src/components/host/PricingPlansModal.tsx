@@ -44,8 +44,9 @@ export const PricingPlansModal: React.FC<PricingPlansModalProps> = ({
   const keepPlanRef = useRef<HTMLButtonElement>(null);
   const { dialogRef, dialogProps } = useDialog({ onClose, labelledBy: titleId, enabled: isOpen });
 
-  // The modal stays mounted while closed, so a question left open must not
-  // greet the host the next time they open it.
+  // Kept mounted while closed, a question left open must not greet the host
+  // the next time they open it. (App mounts it only while open, see
+  // HostDialogs, but the component does not rely on that.)
   useEffect(() => {
     if (!isOpen) {
       setConfirmingFree(false);
