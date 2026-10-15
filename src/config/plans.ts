@@ -13,6 +13,9 @@ export type { PlanTier };
 export interface PlanDetails {
   id: PlanTier;
   name: string;
+  /** The plan in a word or two, for a lock on a button (N-138). */
+  shortName: string;
+  /** The pricing page's ribbon: a selling line, not the plan's name. */
   badge: string;
   price: string;
   period: string;
@@ -29,6 +32,7 @@ export const PLANS: Record<PlanTier, PlanDetails> = {
   free: {
     id: 'free',
     name: 'plan.free.name',
+    shortName: 'plan.free.short',
     badge: 'plan.free.badge',
     price: '0 €',
     period: 'plan.free.period',
@@ -50,6 +54,7 @@ export const PLANS: Record<PlanTier, PlanDetails> = {
   celebration_pass: {
     id: 'celebration_pass',
     name: 'plan.celebration.name',
+    shortName: 'plan.celebration.short',
     badge: 'plan.celebration.badge',
     price: '49 €',
     period: 'plan.celebration.period',
@@ -75,6 +80,7 @@ export const PLANS: Record<PlanTier, PlanDetails> = {
   deluxe_keepsake: {
     id: 'deluxe_keepsake',
     name: 'plan.deluxe.name',
+    shortName: 'plan.deluxe.short',
     badge: 'plan.deluxe.badge',
     price: '89 €',
     period: 'plan.celebration.period',
@@ -95,6 +101,7 @@ export const PLANS: Record<PlanTier, PlanDetails> = {
   pro_planner: {
     id: 'pro_planner',
     name: 'plan.pro.name',
+    shortName: 'plan.pro.short',
     badge: 'plan.pro.badge',
     price: '49 €',
     period: 'plan.pro.period',

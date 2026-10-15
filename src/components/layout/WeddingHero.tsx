@@ -121,7 +121,7 @@ export const WeddingHero: React.FC<WeddingHeroProps> = ({
           <div className="grid grid-cols-2 sm:flex items-center gap-2 sm:gap-4">
             <button
               onClick={onOpenQuests}
-              className="flex items-center justify-center gap-1.5 px-3.5 py-2.5 sm:px-5 sm:py-3.5 rounded-2xl bg-noir-800/90 hover:bg-noir-700 text-cream-100 border border-gold-400/30 text-xs sm:text-sm font-medium hover:border-gold-400/60 transition-all shadow-md"
+              className="flex flex-wrap items-center justify-center gap-1.5 px-3.5 py-2.5 sm:px-5 sm:py-3.5 rounded-2xl bg-noir-800/90 hover:bg-noir-700 text-cream-100 border border-gold-400/30 text-xs sm:text-sm text-center font-medium hover:border-gold-400/60 transition-all shadow-md"
             >
               <Trophy className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-gold-400" />
               <span>{i18n.t('feed.quests')} ({completedQuestsCount}/{quests.length})</span>
@@ -132,7 +132,7 @@ export const WeddingHero: React.FC<WeddingHeroProps> = ({
 
             <button
               onClick={onOpenAudio}
-              className="flex items-center justify-center gap-1.5 px-3.5 py-2.5 sm:px-5 sm:py-3.5 rounded-2xl bg-noir-800/90 hover:bg-noir-700 text-cream-100 border border-gold-400/30 text-xs sm:text-sm font-medium hover:border-gold-400/60 transition-all shadow-md"
+              className="flex flex-wrap items-center justify-center gap-1.5 px-3.5 py-2.5 sm:px-5 sm:py-3.5 rounded-2xl bg-noir-800/90 hover:bg-noir-700 text-cream-100 border border-gold-400/30 text-xs sm:text-sm text-center font-medium hover:border-gold-400/60 transition-all shadow-md"
             >
               <Mic className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-gold-400" />
               <span>{i18n.t('hero.audio_toast')} ({audioEntries.length})</span>

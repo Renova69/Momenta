@@ -31,7 +31,7 @@ export const LockedFeatureBadge: React.FC<LockedFeatureBadgeProps> = ({
         className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-gold-400/15 border border-gold-400/40 text-gold-300 text-[9px] font-bold uppercase tracking-wider cursor-pointer hover:bg-gold-400/25 transition-colors"
       >
         <Lock className="w-2.5 h-2.5 text-gold-400" />
-        <span>{i18n.t(plan.badge)}</span>
+        <span>{i18n.t(plan.shortName)}</span>
       </span>
     );
   }
@@ -48,7 +48,7 @@ export const LockedFeatureBadge: React.FC<LockedFeatureBadgeProps> = ({
       className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-gold-400/10 border border-gold-400/30 text-gold-300 text-xs font-semibold hover:bg-gold-400/20 transition-all cursor-pointer shadow-sm group"
     >
       <Lock className="w-3 h-3 text-gold-400 group-hover:rotate-12 transition-transform" />
-      <span>{i18n.t('gate.requires')} {i18n.t(plan.badge)}</span>
+      <span>{i18n.t('gate.requires')} {i18n.t(plan.name)}</span>
     </button>
   );
 };

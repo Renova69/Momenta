@@ -137,7 +137,7 @@ describe('plan catalogue', () => {
     const missing: string[] = [];
 
     for (const [planId, plan] of Object.entries(PLANS)) {
-      for (const key of [plan.name, plan.badge, plan.description].filter(Boolean)) {
+      for (const key of [plan.name, plan.shortName, plan.badge, plan.description].filter(Boolean)) {
         for (const lang of ['bg', 'en'] as const) {
           if (!(key in (TRANSLATIONS[lang] || {}))) missing.push(`${planId}.${key} [${lang}]`);
         }

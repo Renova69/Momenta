@@ -207,6 +207,23 @@ describe('LockedFeatureBadge', () => {
     const { container } = render(<LockedFeatureBadge feature="zip_export" compact />);
     expect(container.firstChild).not.toBeNull();
   });
+
+  // N-138 — both badges showed the plan's pricing-page ribbon ("Most popular
+  // with couples") where the plan belongs: a lock reading "Requires Most
+  // popular with couples", and in the album's top section on a phone a
+  // ribbon too long for its tile, spilling over the next one.
+  it('names the plan briefly on a compact badge, not its pricing ribbon', () => {
+    render(<LockedFeatureBadge feature="scavenger_quests" compact />);
+
+    expect(screen.getByText(i18n.t('plan.celebration.short'))).toBeInTheDocument();
+    expect(screen.queryByText(i18n.t('plan.celebration.badge'))).not.toBeInTheDocument();
+  });
+
+  it('names the plan in full on the larger badge', () => {
+    render(<LockedFeatureBadge feature="audio_guestbook" />);
+
+    expect(screen.getByRole('button')).toHaveTextContent(`${i18n.t('gate.requires')} ${i18n.t('plan.deluxe.name')}`);
+  });
 });
 
 describe('ErrorBoundary', () => {
