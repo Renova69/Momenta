@@ -100,6 +100,8 @@ export const en: Record<string, string> = {
   'camera.flip': 'Switch camera',
   'camera.shutter': 'Take photo',
   'camera.captured_alt': 'The photo you just took',
+  'profile.selfie_alt': 'Your selfie',
+  'photo.alt_by': 'Photo by {{name}}',
   'camera.sent_count': '{{count}} sent to the album',
   'camera.phone_cam': 'Phone Cam',
   'camera.open_phone_cam': 'Open Mobile Camera',

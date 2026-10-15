@@ -12,6 +12,7 @@ import {
   Camera,
   Maximize2
 } from 'lucide-react';
+import { photoAlt } from '../../utils/photoAlt';
 
 interface PhotoCardProps {
   photo: Photo;
@@ -129,7 +130,7 @@ const PhotoCardComponent: React.FC<PhotoCardProps> = ({
         ) : previewUrl ? (
           <img
             src={previewUrl}
-            alt={photo.caption || 'Wedding moment'}
+            alt={photoAlt(photo)}
             loading="lazy"
             className="w-full h-full object-cover object-center group-hover:scale-105 transition-transform duration-500"
           />
@@ -278,6 +279,9 @@ const PhotoCardComponent: React.FC<PhotoCardProps> = ({
                   key={kind}
                   onClick={(e) => handleReactClick(e, kind)}
                   title={i18n.t(labelKey)}
+                  // N-144 — named in words, not by the emoji alone, and pressed or not.
+                  aria-label={i18n.t(labelKey)}
+                  aria-pressed={false}
                   className="w-7 h-7 rounded-full flex items-center justify-center text-sm opacity-40 hover:opacity-100 hover:bg-noir-700 transition-all"
                 >
                   {glyph}
@@ -289,6 +293,8 @@ const PhotoCardComponent: React.FC<PhotoCardProps> = ({
                 key={kind}
                 onClick={(e) => handleReactClick(e, kind)}
                 title={i18n.t(labelKey)}
+                aria-label={`${i18n.t(labelKey)} (${count})`}
+                aria-pressed={hasReacted}
                 className={`flex items-center gap-1 px-2 py-1 rounded-full text-xs transition-all ${
                   hasReacted
                     ? 'bg-gold-400/20 border border-gold-400/50 text-gold-300 font-bold'

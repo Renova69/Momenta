@@ -14,6 +14,7 @@ import {
   Square,
   RotateCcw
 } from 'lucide-react';
+import { photoAlt } from '../../utils/photoAlt';
 
 interface ModerationQueueProps {
   photos: Photo[];
@@ -111,7 +112,7 @@ export const ModerationQueue: React.FC<ModerationQueueProps> = ({
                 <div className="relative aspect-[4/3] bg-black">
                   <img
                     src={photo.thumbnailUrl || photo.fullUrl}
-                    alt="Pending review"
+                    alt={photoAlt(photo)}
                     className="w-full h-full object-cover"
                   />
                   <div className="absolute top-2 left-2 px-2 py-0.5 rounded-md bg-black/60 text-[10px] text-cream-300 font-medium">
@@ -219,7 +220,7 @@ export const ModerationQueue: React.FC<ModerationQueueProps> = ({
               >
                 <img
                   src={photo.thumbnailUrl || photo.fullUrl}
-                  alt="Approved"
+                  alt={photoAlt(photo)}
                   className="w-full h-full object-cover"
                 />
 
@@ -272,7 +273,7 @@ export const ModerationQueue: React.FC<ModerationQueueProps> = ({
               <div key={photo.id} className="rounded-xl overflow-hidden border border-cream-400/10 bg-noir-800">
                 <img
                   src={photo.thumbnailUrl || photo.fullUrl}
-                  alt={photo.caption || photo.guestName}
+                  alt={photoAlt(photo)}
                   className="w-full aspect-square object-cover opacity-60"
                 />
                 <div className="flex gap-1 p-1.5">

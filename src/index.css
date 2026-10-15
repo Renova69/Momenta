@@ -3,6 +3,21 @@
 @tailwind utilities;
 
 @layer base {
+  /*
+   * N-142 — a control reached with Tab is scrolled clear of the sticky header
+   * and, on a phone, of the fixed bottom bar. The browser scrolled just far
+   * enough to bring it into the window, which on the album page put the
+   * reaction buttons under the bottom bar: focused, and out of sight.
+   */
+  html {
+    scroll-padding-top: 4.5rem;
+  }
+  @media (max-width: 639px) {
+    html {
+      scroll-padding-bottom: 6rem;
+    }
+  }
+
   body {
     @apply antialiased overflow-x-hidden min-h-screen;
     background-color: #121214;

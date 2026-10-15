@@ -487,6 +487,11 @@ export const CameraCaptureModal: React.FC<CameraCaptureModalProps> = ({
       {...dialogProps}
       className="fixed inset-0 z-50 bg-black animate-fade-in overflow-hidden"
     >
+      {/* The dialog's name (N-141). The screen is the picture, so the title is
+          for screen readers only; without it this announced as "dialog". */}
+      <h2 id={titleId} className="sr-only">
+        {i18n.t('camera.title')}
+      </h2>
       {/*
         The picture is the screen. Everything else is over it.
 

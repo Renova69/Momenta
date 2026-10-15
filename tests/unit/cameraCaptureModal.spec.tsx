@@ -107,6 +107,13 @@ afterEach(() => {
 });
 
 describe('visibility', () => {
+  // N-141 — the full-screen rewrite (e24c2cf) dropped the heading the
+  // dialog's aria-labelledby pointed at, so it announced as "dialog" alone.
+  it('is a dialog with a name', () => {
+    renderModal();
+    expect(screen.getByRole('dialog', { name: i18n.t('camera.title') })).toBeInTheDocument();
+  });
+
   it('renders nothing when closed', () => {
     const { container } = renderModal({ isOpen: false });
     expect(container).toBeEmptyDOMElement();

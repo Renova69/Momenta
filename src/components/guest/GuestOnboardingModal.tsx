@@ -122,7 +122,7 @@ export const GuestOnboardingModal: React.FC<GuestOnboardingModalProps> = ({
               {avatarUrl ? (
                 <img
                   src={avatarUrl}
-                  alt="Guest avatar"
+                  alt={i18n.t('profile.selfie_alt')}
                   className="w-full h-full object-cover"
                 />
               ) : (

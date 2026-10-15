@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import { guestAvatarUrl } from '../../utils/avatar';
 import { ENV } from '../../config/env';
+import { photoAlt } from '../../utils/photoAlt';
 
 // Emoji are built from code points so the source stays plain ASCII.
 const REACTION_GLYPHS: Record<ReactionKind, string> = {
@@ -357,7 +358,7 @@ export const LiveProjectorScreen: React.FC<LiveProjectorScreenProps> = ({
                 <img
                   key={currentPhoto.id}
                   src={currentPhoto.fullUrl}
-                  alt={currentPhoto.caption || 'Wedding celebration'}
+                  alt={photoAlt(currentPhoto)}
                   className={`max-h-[70vh] w-auto object-contain will-change-transform ${kenBurnsClass}`}
                 />
 
@@ -478,7 +479,7 @@ export const LiveProjectorScreen: React.FC<LiveProjectorScreenProps> = ({
                 p.id === currentPhoto?.id ? 'border-gold-400 scale-105 shadow-glow' : 'border-transparent opacity-60 hover:opacity-100'
               }`}
             >
-              <img src={p.thumbnailUrl || p.fullUrl} alt="Thumbnail" className="w-full h-full object-cover" />
+              <img src={p.thumbnailUrl || p.fullUrl} alt={photoAlt(p)} className="w-full h-full object-cover" />
             </button>
           ))}
         </div>

@@ -111,6 +111,8 @@ export const bg: Record<string, string> = {
   'camera.flip': 'Смени камерата',
   'camera.shutter': 'Снимай',
   'camera.captured_alt': 'Снимката, която току-що направи',
+  'profile.selfie_alt': 'Вашето селфи',
+  'photo.alt_by': 'Снимка от {{name}}',
   'camera.sent_count': '{{count}} изпратени в албума',
   'camera.phone_cam': 'Камера на телефона',
   'camera.open_phone_cam': 'Отвори камерата на телефона',

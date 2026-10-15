@@ -40,6 +40,15 @@ const FOCUSABLE = [
   '[tabindex]:not([tabindex="-1"])',
 ].join(',');
 
+/**
+ * Whether the browser renders the element where focus could land. Where
+ * `checkVisibility` is missing (Safari before 17.4) everything counts, which
+ * is how the trap behaved before.
+ */
+function isOnScreen(el: HTMLElement): boolean {
+  return typeof el.checkVisibility === 'function' ? el.checkVisibility({ visibilityProperty: true }) : true;
+}
+
 export interface DialogOptions {
   /** Called on Escape, and whatever else the dialog uses to dismiss itself. */
   onClose: () => void;
@@ -69,8 +78,11 @@ export function useDialog({ onClose, labelledBy, closeOnEscape = true, enabled =
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
 
+  // Only what is on screen (N-140). The camera keeps its file inputs in the
+  // markup with display:none; counted, they made the last button a guest
+  // could see not the last one, and Tab from it fell out onto the page.
   const focusables = useCallback(
-    () => Array.from(dialogRef.current?.querySelectorAll<HTMLElement>(FOCUSABLE) ?? []),
+    () => Array.from(dialogRef.current?.querySelectorAll<HTMLElement>(FOCUSABLE) ?? []).filter(isOnScreen),
     []
   );
 

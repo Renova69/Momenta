@@ -6,8 +6,10 @@ import fs from 'fs';
 import path from 'path';
 
 import { LightboxModal } from '../../src/components/gallery/LightboxModal';
+import { PhotoCard } from '../../src/components/gallery/PhotoCard';
 import { GuestOnboardingModal } from '../../src/components/guest/GuestOnboardingModal';
 import { HostProfileModal } from '../../src/components/host/HostProfileModal';
+import { useDialog } from '../../src/hooks/useDialog';
 import { i18n } from '../../src/i18n';
 import { Guest, HostUser, Photo } from '../../src/types';
 
@@ -164,6 +166,103 @@ describe('the guest sign-in dialog', () => {
   it('passes an axe pass', async () => {
     const { container } = open();
     await expectNoViolations(container);
+  });
+});
+
+/**
+ * N-140 — the trap counted controls that are not on screen, such as the
+ * camera's file inputs, kept in the markup with display:none. Tab from the
+ * last control a guest could see was then not "the last one", so the trap let
+ * it through and focus fell out of the dialog onto the page.
+ */
+describe('the dialog focus trap', () => {
+  function TwoButtonsAndAHiddenInput() {
+    const { dialogRef, dialogProps } = useDialog({ onClose: () => undefined });
+    return (
+      <div ref={dialogRef} {...dialogProps}>
+        <button type="button">First</button>
+        <button type="button">Last one on screen</button>
+        <input type="file" data-testid="hidden-input" />
+      </div>
+    );
+  }
+
+  it('wraps from the last control on screen, skipping ones that are not', () => {
+    render(<TwoButtonsAndAHiddenInput />);
+    // jsdom lays nothing out; say what a browser would about display:none.
+    Object.assign(screen.getByTestId('hidden-input'), { checkVisibility: () => false });
+    screen.getByRole('button', { name: 'Last one on screen' }).focus();
+
+    fireEvent.keyDown(document, { key: 'Tab' });
+
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'First' }));
+  });
+});
+
+/**
+ * N-143 — every photo was announced as "Wedding moment", in English whatever
+ * the page's language, and the same for every photo: a screen-reader user
+ * walking the feed heard one phrase over and over.
+ */
+describe('a photo, read aloud', () => {
+  const card = (photo: Photo) =>
+    render(
+      <PhotoCard
+        photo={photo}
+        currentGuest={GUEST}
+        onLike={vi.fn()}
+        onReact={vi.fn()}
+        onOpenComments={vi.fn()}
+        onOpenLightbox={vi.fn()}
+      />
+    );
+  const lightbox = (photo: Photo) =>
+    render(
+      <LightboxModal photo={photo} onClose={vi.fn()} currentGuest={GUEST} onLike={vi.fn()} onReact={vi.fn()} onAddComment={vi.fn()} />
+    );
+  const byAna = i18n.t('photo.alt_by', { name: 'Ana Petrova' });
+
+  it('is named by who took it, in the feed and full screen', () => {
+    card({ ...PHOTO, caption: undefined } as Photo);
+    expect(screen.getByRole('img', { name: byAna })).toBeTruthy();
+    cleanup();
+
+    lightbox({ ...PHOTO, caption: undefined } as Photo);
+    expect(screen.getByRole('img', { name: byAna })).toBeTruthy();
+  });
+
+  it('is named by its caption when it has one', () => {
+    card({ ...PHOTO, caption: 'Първият танц' } as Photo);
+    expect(screen.getByRole('img', { name: 'Първият танц' })).toBeTruthy();
+  });
+});
+
+/**
+ * N-144 — a reaction button was named by its emoji alone, so what a screen
+ * reader said depended on its own emoji vocabulary, and nothing said whether
+ * the guest had already given that reaction.
+ */
+describe('reactions, read aloud', () => {
+  const reacted = { ...PHOTO, reactions: [{ reaction: 'heart', guestId: GUEST.id }] } as Photo;
+  const heart = () => screen.getByRole('button', { name: new RegExp(`^${i18n.t('reaction.heart')}`) });
+  const clap = () => screen.getByRole('button', { name: new RegExp(`^${i18n.t('reaction.clap')}`) });
+
+  it('names each one in words, and says which the guest has given, on a card', () => {
+    render(
+      <PhotoCard photo={reacted} currentGuest={GUEST} onLike={vi.fn()} onReact={vi.fn()} onOpenComments={vi.fn()} onOpenLightbox={vi.fn()} />
+    );
+
+    expect(heart()).toHaveAttribute('aria-pressed', 'true');
+    expect(clap()).toHaveAttribute('aria-pressed', 'false');
+  });
+
+  it('does the same full screen', () => {
+    render(
+      <LightboxModal photo={reacted} onClose={vi.fn()} currentGuest={GUEST} onLike={vi.fn()} onReact={vi.fn()} onAddComment={vi.fn()} />
+    );
+
+    expect(heart()).toHaveAttribute('aria-pressed', 'true');
+    expect(clap()).toHaveAttribute('aria-pressed', 'false');
   });
 });
 

@@ -16,6 +16,7 @@ import {
   Sparkles,
   Check
 } from 'lucide-react';
+import { photoAlt } from '../../utils/photoAlt';
 
 interface LightboxModalProps {
   photo: Photo | null;
@@ -109,7 +110,7 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
         <div className="flex-1 relative bg-black flex items-center justify-center overflow-hidden p-2">
           <img
             src={photo.fullUrl}
-            alt={photo.caption || 'Wedding Photo'}
+            alt={photoAlt(photo)}
             className="max-h-full max-w-full object-contain rounded-xl shadow-2xl"
           />
 
@@ -220,6 +221,9 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
                       key={kind}
                       onClick={() => onReact(photo.id, kind)}
                       title={i18n.t(labelKey)}
+                      // N-144 — named in words, not by the emoji alone, and pressed or not.
+                      aria-label={i18n.t(labelKey)}
+                      aria-pressed={false}
                       className="w-7 h-7 rounded-full flex items-center justify-center text-sm opacity-40 hover:opacity-100 hover:bg-noir-700 transition-all"
                     >
                       {glyph}
@@ -231,6 +235,8 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
                     key={kind}
                     onClick={() => onReact(photo.id, kind)}
                     title={i18n.t(labelKey)}
+                    aria-label={`${i18n.t(labelKey)} (${count})`}
+                    aria-pressed={hasReacted}
                     className={`flex items-center gap-1 px-2 py-1 rounded-full text-xs transition-all ${
                       hasReacted
                         ? 'bg-gold-400/20 border border-gold-400/50 text-gold-300 font-bold'
