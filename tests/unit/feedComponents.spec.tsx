@@ -152,6 +152,22 @@ describe('LiveFeed visibility rules', () => {
     renderFeed(photos, ME, { eventPlanTier: 'celebration_pass' });
     expect(screen.queryByText(/\/\s*50/)).not.toBeInTheDocument();
   });
+
+  // N-136 — the album now shows as soon as its own record arrives, while its
+  // photos are still a round trip away. An empty feed then is not an album
+  // with no photos, and must not ask the guest to be the first.
+  it('says the photos are on their way, not that there are none, while they load', () => {
+    renderFeed([], ME, { isLoadingPhotos: true });
+
+    expect(screen.getByRole('status')).toHaveTextContent(i18n.t('common.loading'));
+    expect(screen.queryByText(i18n.t('feed.empty_title'))).not.toBeInTheDocument();
+  });
+
+  it('asks for the first photo once the album has none', () => {
+    renderFeed([], ME, { isLoadingPhotos: false });
+
+    expect(screen.getByText(i18n.t('feed.empty_title'))).toBeInTheDocument();
+  });
 });
 
 describe('ScavengerHunt', () => {

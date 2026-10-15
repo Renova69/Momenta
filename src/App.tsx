@@ -88,6 +88,7 @@ function WeddingAppContent() {
     activeView,
     activeGuestTab,
     isLoadingEvent,
+    isSyncingAlbum,
     eventError,
     eventErrorKind,
     missingSlug,
@@ -442,6 +443,7 @@ function WeddingAppContent() {
                     onOpenComments={handleOpenLightbox}
                     onOpenLightbox={handleOpenLightbox}
                     onOpenCapture={handleOpenGeneralCapture}
+                    isLoadingPhotos={isSyncingAlbum}
                   />
                 )}
 

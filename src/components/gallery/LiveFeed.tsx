@@ -16,7 +16,18 @@ interface LiveFeedProps {
   onOpenComments: (photo: Photo) => void;
   onOpenLightbox: (photo: Photo) => void;
   onOpenCapture: () => void;
+  /**
+   * The album is open but its photos are still on the way (N-136): an empty
+   * feed then is not an album without photos.
+   */
+  isLoadingPhotos?: boolean;
 }
+
+/**
+ * One placeholder per masonry column the viewport shows, ragged like the
+ * cards they stand in for.
+ */
+const PHOTO_PLACEHOLDERS = ['h-72', 'hidden sm:block h-56', 'hidden lg:block h-64'];
 
 type FeedFilter = 'all' | 'featured' | 'quests' | 'mine';
 
@@ -75,6 +86,7 @@ const LiveFeedComponent: React.FC<LiveFeedProps> = ({
   onOpenComments,
   onOpenLightbox,
   onOpenCapture,
+  isLoadingPhotos = false,
 }) => {
   const [activeFilter, setActiveFilter] = useState<FeedFilter>('all');
   const [searchQuery, setSearchQuery] = useState('');
@@ -262,6 +274,15 @@ const LiveFeedComponent: React.FC<LiveFeedProps> = ({
               ))}
             </div>
           ))}
+        </div>
+      ) : isLoadingPhotos ? (
+        <div role="status" className="space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 items-start" aria-hidden="true">
+            {PHOTO_PLACEHOLDERS.map((size) => (
+              <div key={size} className={`${size} rounded-3xl bg-noir-800/40 border border-cream-400/10 animate-pulse`} />
+            ))}
+          </div>
+          <p className="text-center text-xs text-cream-300/70">{i18n.t('common.loading')}</p>
         </div>
       ) : (
         /* Empty State */

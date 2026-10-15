@@ -99,58 +99,64 @@ export async function syncFromBackend(ctx: ServiceContext, eventIdOverride?: str
   // poster before loading their own.
   if (!eventIdOverride && isDemoFallback(targetEventId)) return;
 
-  try {
-    // 1. Photos for this specific event ONLY — every page of them.
-    const serverPhotos = await fetchAllPhotos(targetEventId);
-    if (Array.isArray(serverPhotos)) {
-      // Merge remote photos with locally pending un-synced photos to prevent offline data loss.
-      //
-      // A temp-id row is kept only while its upload is still a live prospect:
-      // either the offline queue is still retrying it, or it is young enough to
-      // be in flight right now. Keeping every temp-id row unconditionally meant
-      // a capture whose upload was refused outright — or retried to exhaustion
-      // and dropped from the queue — stayed in that one guest's feed forever,
-      // invisible to the server and so untouched by the host deleting the
-      // album. Ten such rows on a guest's phone is what this fixes.
-      const queuedLocalIds = await offlineQueue.getQueuedPhotoLocalIds();
-      const localPhotos = ctx.getPhotos(targetEventId);
-      const stillPending = (photo: Photo) => {
-        if (queuedLocalIds.has(photo.id)) return true;
-        const createdAt = Date.parse(photo.createdAt);
-        // An unparseable timestamp is not evidence of abandonment — keep it.
-        if (Number.isNaN(createdAt)) return true;
-        return Date.now() - createdAt < ABANDONED_UPLOAD_GRACE_MS;
-      };
-      const unsyncedLocal = localPhotos.filter((p) => p.id.startsWith('photo-') && stillPending(p));
-      const serverIds = new Set(serverPhotos.map((p) => p.id));
-      const merged = [...unsyncedLocal.filter((p) => !serverIds.has(p.id)), ...serverPhotos];
-      persistPhotos(targetEventId, merged);
-      ctx.notify();
+  // N-136 — the four are independent, so they are asked for together. One
+  // after another, each waited a full round trip for the one before, and a
+  // failure in one skipped all that came after it.
+  const steps = [
+    syncPhotos(ctx, targetEventId),
+    syncList(ctx, STORAGE_KEYS.QUESTS(targetEventId), () => questsApi.list(targetEventId)),
+    syncList(ctx, STORAGE_KEYS.AUDIO(targetEventId), () => audioApi.list(targetEventId)),
+    syncQrConfig(ctx, targetEventId),
+  ];
+  for (const outcome of await Promise.allSettled(steps)) {
+    if (outcome.status === 'rejected') {
+      console.warn('[Storage] Backend sync failed, serving from local cache:', outcome.reason);
     }
-
-    // 2. Quests for this specific event ONLY
-    const quests = await questsApi.list(targetEventId);
-    if (Array.isArray(quests)) {
-      localStorage.setItem(STORAGE_KEYS.QUESTS(targetEventId), JSON.stringify(quests));
-      ctx.notify();
-    }
-
-    // 3. Audio entries for this specific event ONLY
-    const audioEntries = await audioApi.list(targetEventId);
-    if (Array.isArray(audioEntries)) {
-      localStorage.setItem(STORAGE_KEYS.AUDIO(targetEventId), JSON.stringify(audioEntries));
-      ctx.notify();
-    }
-
-    // 4. QR Canvas config
-    const qrConfig = await eventsApi.getQRConfig(targetEventId);
-    if (qrConfig) {
-      localStorage.setItem(STORAGE_KEYS.QR_CANVAS(targetEventId), JSON.stringify(qrConfig));
-      ctx.notify();
-    }
-  } catch (err) {
-    console.warn('[Storage] Backend sync failed, serving from local cache:', err);
   }
+}
+
+/** Photos for this event only, every page of them, merged with unsent ones. */
+async function syncPhotos(ctx: ServiceContext, targetEventId: string): Promise<void> {
+  const serverPhotos = await fetchAllPhotos(targetEventId);
+  if (!Array.isArray(serverPhotos)) return;
+
+  // A temp-id row is kept only while its upload is still a live prospect:
+  // either the offline queue is still retrying it, or it is young enough to
+  // be in flight right now. Keeping every temp-id row unconditionally meant
+  // a capture whose upload was refused outright — or retried to exhaustion
+  // and dropped from the queue — stayed in that one guest's feed forever,
+  // invisible to the server and so untouched by the host deleting the
+  // album. Ten such rows on a guest's phone is what this fixes.
+  const queuedLocalIds = await offlineQueue.getQueuedPhotoLocalIds();
+  const localPhotos = ctx.getPhotos(targetEventId);
+  const stillPending = (photo: Photo) => {
+    if (queuedLocalIds.has(photo.id)) return true;
+    const createdAt = Date.parse(photo.createdAt);
+    // An unparseable timestamp is not evidence of abandonment — keep it.
+    if (Number.isNaN(createdAt)) return true;
+    return Date.now() - createdAt < ABANDONED_UPLOAD_GRACE_MS;
+  };
+  const unsyncedLocal = localPhotos.filter((p) => p.id.startsWith('photo-') && stillPending(p));
+  const serverIds = new Set(serverPhotos.map((p) => p.id));
+  const merged = [...unsyncedLocal.filter((p) => !serverIds.has(p.id)), ...serverPhotos];
+  persistPhotos(targetEventId, merged);
+  ctx.notify();
+}
+
+/** A list the server owns outright (quests, voice messages): stored as sent. */
+async function syncList(ctx: ServiceContext, key: string, fetchList: () => Promise<unknown>): Promise<void> {
+  const list = await fetchList();
+  if (!Array.isArray(list)) return;
+  localStorage.setItem(key, JSON.stringify(list));
+  ctx.notify();
+}
+
+/** The poster layout, which an album may not have. */
+async function syncQrConfig(ctx: ServiceContext, targetEventId: string): Promise<void> {
+  const qrConfig = await eventsApi.getQRConfig(targetEventId);
+  if (!qrConfig) return;
+  localStorage.setItem(STORAGE_KEYS.QR_CANVAS(targetEventId), JSON.stringify(qrConfig));
+  ctx.notify();
 }
 
 /**

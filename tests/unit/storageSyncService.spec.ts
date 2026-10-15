@@ -310,6 +310,36 @@ describe('the rest of the sync', () => {
 
     expect(localStorage.getItem(STORAGE_KEYS.PHOTOS(EVENT))).not.toBeNull();
   });
+
+  // N-136 — the four were asked for one after another, each waiting a full
+  // round trip for the one before: on a venue's Wi-Fi, seconds before a guest
+  // saw the album at all.
+  it('asks for photos, quests, voice messages and the poster at once', async () => {
+    const never = () => new Promise<never>(() => undefined);
+    vi.spyOn(photosApi, 'list').mockImplementation(never);
+    vi.spyOn(questsApi, 'list').mockImplementation(never);
+    vi.spyOn(audioApi, 'list').mockImplementation(never);
+    vi.spyOn(eventsApi, 'getQRConfig').mockImplementation(never);
+
+    void syncFromBackend(context(), EVENT);
+    await Promise.resolve();
+
+    expect(photosApi.list).toHaveBeenCalled();
+    expect(questsApi.list).toHaveBeenCalled();
+    expect(audioApi.list).toHaveBeenCalled();
+    expect(eventsApi.getQRConfig).toHaveBeenCalled();
+  });
+
+  it('keeps the voice messages and poster when the quests fail', async () => {
+    vi.spyOn(questsApi, 'list').mockRejectedValue(new Error('boom'));
+    vi.spyOn(audioApi, 'list').mockResolvedValue([{ id: 'a1' }] as never);
+    vi.spyOn(eventsApi, 'getQRConfig').mockResolvedValue({ canvasSize: 'A3' } as never);
+
+    await syncFromBackend(context(), EVENT);
+
+    expect(JSON.parse(localStorage.getItem(STORAGE_KEYS.AUDIO(EVENT))!)).toHaveLength(1);
+    expect(localStorage.getItem(STORAGE_KEYS.QR_CANVAS(EVENT))).not.toBeNull();
+  });
 });
 
 describe('demo fixtures', () => {

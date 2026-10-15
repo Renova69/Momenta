@@ -28,7 +28,10 @@ interface AppContextType {
   qrConfig: QRCanvasConfig;
   activeView: ActiveView;
   activeGuestTab: 'feed' | 'quests' | 'audio';
+  /** The album at the address is not here yet: the loading screen. */
   isLoadingEvent: boolean;
+  /** An album is being opened: its record may be here, the rest still coming. */
+  isSyncingAlbum: boolean;
   eventError: string | null;
   /** Whether the album is missing, or the server could not be reached to ask. */
   eventErrorKind: 'missing' | 'unreachable' | 'deleted';
@@ -96,7 +99,21 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   const [activeView, setActiveView] = useState<ActiveView>(() => router.getRoute().view);
   const [activeGuestTab, setActiveGuestTab] = useState<'feed' | 'quests' | 'audio'>(() => router.getRoute().subTab || 'feed');
-  const [isLoadingEvent, setIsLoadingEvent] = useState<boolean>(false);
+  // The address being opened, from the very first render. A guest opening a
+  // link saw the built-in demo album for a frame before the loading screen
+  // (N-137), and then that screen until every part of the album had arrived
+  // (N-136). The page waits only for the album's own record now.
+  const [loadingSlug, setLoadingSlug] = useState<string | null>(() => {
+    const { slug } = router.getRoute();
+    return slug && slug !== storageService.getEvent().slug ? slug : null;
+  });
+  /** The album at this address is not here yet. */
+  const isLoadingEvent = loadingSlug !== null && event.slug !== loadingSlug;
+  /** Its record is; its photos, quests and the rest may still be on the way. */
+  const isSyncingAlbum = loadingSlug !== null;
+  const startLoading = (slug: string) => setLoadingSlug(slug);
+  // A newer address may have been opened meanwhile; that one keeps waiting.
+  const stopLoading = (slug: string) => setLoadingSlug((current) => (current === slug ? null : current));
   const [eventError, setEventError] = useState<string | null>(null);
   /** Which kind of failure `eventError` describes: no such album, or could not ask. */
   const [eventErrorKind, setEventErrorKind] = useState<'missing' | 'unreachable' | 'deleted'>('missing');
@@ -116,14 +133,15 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     // 1. Initial slug detection & event load
     const initialRoute = router.getRoute();
     if (initialRoute.slug && initialRoute.slug !== event.slug) {
-      setIsLoadingEvent(true);
-      storageService.loadEventBySlug(initialRoute.slug)
+      const slug = initialRoute.slug;
+      startLoading(slug);
+      storageService.loadEventBySlug(slug)
         .then((res) => {
-          if (!res) failEventLoad(initialRoute.slug!, 'missing', `Event not found: ${initialRoute.slug}`);
+          if (!res) failEventLoad(slug, 'missing', `Event not found: ${slug}`);
           else setEventError(null);
         })
-        .catch((e) => failEventLoad(initialRoute.slug!, 'unreachable', e.message))
-        .finally(() => setIsLoadingEvent(false));
+        .catch((e) => failEventLoad(slug, 'unreachable', e.message))
+        .finally(() => stopLoading(slug));
     }
 
     // 2. Storage service subscriber
@@ -142,14 +160,15 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       setActiveView(route.view);
       if (route.subTab) setActiveGuestTab(route.subTab);
       if (route.slug && route.slug !== storageService.getEvent().slug) {
-        setIsLoadingEvent(true);
-        storageService.loadEventBySlug(route.slug)
+        const slug = route.slug;
+        startLoading(slug);
+        storageService.loadEventBySlug(slug)
           .then((res) => {
-            if (!res) failEventLoad(route.slug!, 'missing', `Event not found: ${route.slug}`);
+            if (!res) failEventLoad(slug, 'missing', `Event not found: ${slug}`);
             else setEventError(null);
           })
-          .catch((e) => failEventLoad(route.slug!, 'unreachable', e.message))
-          .finally(() => setIsLoadingEvent(false));
+          .catch((e) => failEventLoad(slug, 'unreachable', e.message))
+          .finally(() => stopLoading(slug));
       }
     });
 
@@ -224,7 +243,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const loadEventBySlug = async (slug: string): Promise<WeddingEvent | null> => {
-    setIsLoadingEvent(true);
+    startLoading(slug);
     try {
       const loaded = await storageService.loadEventBySlug(slug);
       if (!loaded) {
@@ -240,7 +259,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       failEventLoad(slug, 'unreachable', errorMsg || 'Error loading event');
       return null;
     } finally {
-      setIsLoadingEvent(false);
+      stopLoading(slug);
     }
   };
 
@@ -347,6 +366,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           activeView,
           activeGuestTab,
           isLoadingEvent,
+          isSyncingAlbum,
           eventError,
           eventErrorKind,
           missingSlug,
@@ -393,6 +413,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           activeView,
           activeGuestTab,
           isLoadingEvent,
+          isSyncingAlbum,
           eventError,
           eventErrorKind,
           missingSlug,
