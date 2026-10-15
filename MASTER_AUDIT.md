@@ -9,6 +9,7 @@
 **Remaining five domains:** reviewed 2026-10-05 (§3g). **All 36 findings fixed.**
 **Review of the §3g fixes:** 2026-10-10 (§3h). **All 12 findings fixed.**
 **Running-app feature pass:** 2026-10-14 (§3i). **25 of 27 fixed; N-112 and N-122 on hold by the owner.**
+**Follow-up on the production build (speed, keyboard, screen reader):** 2026-10-15 (§3j). **14 of 16 fixed; N-139 and N-149 are the owner's call.**
 
 > **Read this first.** The audit below is preserved as written — each finding
 > still describes the code as it was on 2026-09-15, because a finding rewritten
@@ -751,6 +752,10 @@ language switch.
 **Still open, and still needs a person:** a pass with an actual screen reader,
 and keyboard order through a whole page under a real user's hands rather than
 a rule. Everything a tool can decide is now decided, at two viewports.
+*2026-10-15:* the keyboard order was walked through the album page, the
+lightbox, the camera, the sign-in page and every studio section, and what each
+control is announced as was read from the accessibility tree (§3j, nine
+findings). Listening with an actual screen reader still needs a person.
 
 **How to re-run it:** start the API and Vite (`npm run server`, `npm run dev`),
 then in the browser inject `/node_modules/axe-core/axe.min.js` and call
@@ -782,12 +787,15 @@ reception, not a laptop on a desk), against the production build:
   chain — document, then the bundle, then `GET /api/events/slug/:slug`, then
   the cover image. Cutting it further means overlapping the API round trip
   with the bundle's parse, or rendering something before the event arrives.
-  **Still open.**
+  **Still open.** *Closed 2026-10-15 (§3j), from the other end:* the bundle
+  was crossing the wire uncompressed (N-134), and the page waited for four
+  more requests made one after another (N-136).
 
 **Also found and not yet acted on:** two lazily-split chunks
 (`HostEventsList`, `PricingPlansModal`) are still requested on the guest page
 because they are mounted unconditionally with an `isOpen` prop rather than
 rendered only when open. The parse cost is gone; the request is not.
+*Fixed 2026-10-15 in `664f80a`:* both mount only while open.
 
 The camera was rewritten in the same stretch (`e24c2cf`) — full-screen
 viewfinder, a shutter that freezes the frame before encoding rather than
@@ -1071,6 +1079,69 @@ the visible guest browser window. It was not part of the test. It was rejected
 in moderation and removed with the test data. All test accounts used
 `@example.com` and were removed with `npm run db:purge-test-data`, which also
 deleted their files.
+
+---
+
+## 3j. Follow-up on the Production Build (2026-10-15)
+
+**16 findings: 14 fixed, 2 for the owner to decide (N-139, N-149).**
+
+The two items §3e and §3d had left open: the album's first paint, and a
+keyboard and screen-reader pass. Both were done against the production build
+served by Express exactly as the shipped compose runs it (`npm run build`,
+then the API serving `dist/`), not against Vite, which is how the first two
+findings below had stayed invisible: Vite compresses, and sets no CSP.
+Speed was measured on a 390 px phone profile, Slow 4G (562.5 ms, 1.44 Mbit/s)
+with 4x CPU throttling, three runs each, against an album of four photos on
+R2. The keyboard pass walked every screen with Tab and read what each control
+is announced as; axe-core ran on each screen and each studio section, for a
+free and for a Deluxe host. Numbered N-134 onwards.
+
+| ID | Finding | Severity | Files | Verified | Fixed |
+|---|---|---|---|---|---|
+| **N-134** | **The client crossed the wire uncompressed.** The shipped compose publishes the app's port with nothing in front of it, and Express had no compression: the 428 kB main chunk arrived as 418 kB rather than 124 kB, 3.3 s of the 4.8 s before anything was painted. Hashed assets went out with `max-age=0`, so a guest reopening the album asked for every file again. | High | `server/index.ts`, `server/lib/builtClient.ts` | Yes | `b70a230` |
+| **N-135** | **The production CSP refused the app's own fonts.** `index.html` loaded Cormorant Garamond and Plus Jakarta Sans from `fonts.googleapis.com`; the CSP allows styles and fonts from `'self'` only, so production never showed them and logged a CSP error on every page. Where no CSP applied (Vite), every guest's phone told Google which album it had opened. Now bundled from `@fontsource`. | Medium | `index.html`, `src/main.tsx` | Yes | `195e904` |
+| **N-136** | **The album waited behind four requests made one after another.** The loading screen stayed up until the photos, quests, voice messages and poster layout had all arrived, each asked for only after the one before had answered: four more round trips, about 2.4 s on this profile, after the album's own record had already arrived. A failure in one also skipped every one after it. They now go out together, and the page waits only for the album's own record; the feed says the photos are on their way instead of inviting the guest to take the first one. | Medium | `src/services/storageSyncService.ts`, `src/context/AppContext.tsx`, `src/components/gallery/LiveFeed.tsx` | Yes | `87dd0c9` |
+| **N-137** | Before the loading screen, the first render showed the built-in demo album for a frame — another couple's names — and requested its stock cover from `images.unsplash.com`, which the production CSP then refused. | Low | `src/context/AppContext.tsx` | Yes | `87dd0c9` |
+| **N-138** | The lock badges showed each plan's pricing-page ribbon where the plan's name belongs: a lock reading "Requires Most popular with couples". On a free album's top section, "Най-предпочитан за младоженци" and "Пълно VIP изживяване" were too long for their tiles at 390 px, spilled over the next tile and pushed the Challenges label off its left edge. | Medium | `src/components/common/LockedFeatureBadge.tsx`, `src/config/plans.ts`, `src/components/layout/WeddingHero.tsx` | Yes | `db03ec3` |
+| **N-139** | **No screen sets a cover photo.** The album's top section is designed around one, `PUT /api/events/:id` accepts `coverImageUrl`, but nothing in the studio writes it, and since N-131 no album has a stock one. Every album's top section is the gradient alone. Building it is a product decision (pick from the album's photos, or upload one), so it is left to the owner. | Low | `src/components/host/dashboard/OverviewTab.tsx` | Yes | **Owner's call** |
+| **N-140** | The dialog focus trap counted controls that are not on screen, such as the camera's file inputs, kept with `display:none`. Tab from the last button a guest could see then fell out of the camera onto the page. | Medium | `src/hooks/useDialog.ts` | Yes | `1ff5a99` |
+| **N-141** | The camera announced as "dialog" with no name: the full-screen rewrite (`e24c2cf`) dropped the heading its `aria-labelledby` pointed at. | Medium | `src/components/camera/CameraCaptureModal.tsx` | Yes | `1ff5a99` |
+| **N-142** | Tabbing down the feed on a phone left the focused reaction buttons under the fixed bottom bar: focused and out of sight (WCAG 2.4.11). | Medium | `src/index.css` | Yes | `1ff5a99` |
+| **N-143** | Every photo was announced as "Wedding moment" — or "Wedding Photo", "Pending review", "Approved", "Thumbnail" — in English whatever the page's language, and the same for every photo. A photo is now named by its caption, or by who took it. | Medium | `src/utils/photoAlt.ts` and its six callers | Yes | `1ff5a99` |
+| **N-144** | Reaction buttons were named by their emoji alone, so what a screen reader said depended on its own emoji vocabulary, and nothing said whether the guest had already reacted. | Low | `src/components/gallery/PhotoCard.tsx`, `src/components/gallery/LightboxModal.tsx` | Yes | `1ff5a99` |
+| **N-145** | The open studio section, the sign-in / sign-up / demo switch and the album's palette were shown by colour alone. | Medium | `src/components/host/dashboard/TabNav.tsx`, `src/components/host/HostAuthPage.tsx`, `src/components/host/dashboard/OverviewTab.tsx` | Yes | `9498d3e` |
+| **N-146** | A failed sign-in appeared on screen and nowhere else: with a screen reader, a wrong password produced silence. | Medium | `src/components/host/HostAuthPage.tsx` | Yes | `9498d3e` |
+| **N-147** | axe, in the browser: the lightbox's "no comments yet" line was under the contrast minimum; the lock badge on the studio's selected (gold) section button was gold on gold; and a locked feature's card titled itself h3 straight under the page's h1. | Low | `src/components/gallery/LightboxModal.tsx`, `src/components/common/LockedFeatureBadge.tsx` | Yes | `9498d3e` |
+| **N-148** | **A returning visitor saw the album as it was on their last visit.** With the album already in the browser, the page took the record from the cache and never asked for it again. A guest reopening the link saw the old title and names after the host had changed them; a host who had bought a plan elsewhere opened the studio to find every paid section still locked. The same held for the moderation, reveal and disposable settings that decide what a guest's phone does. Found when the studio of a host upgraded for this pass stayed locked. | High | `src/services/storageService.ts`, `src/services/eventService.ts`, `src/context/AppContext.tsx` | Yes | `3f9b82a` |
+| **N-149** | **Plus Jakarta Sans has no basic Cyrillic** (`@fontsource` ships latin, latin-ext, cyrillic-ext and vietnamese; Google Fonts the same), so in Bulgarian, the default language, all body text has always been the phone's system font. Only the headings, in Cormorant Garamond, render as designed. A typeface decision, left to the owner. | Low | `tailwind.config.js`, `src/main.tsx` | Yes | **Owner's call** |
+
+**Numbers**, same profile, production build, median of three:
+
+| | Before | After |
+|---|---|---|
+| Main chunk on the wire | 418 kB | 124 kB |
+| First contentful paint | 4.8 s | 2.8 s |
+| Album title on screen | 7.9 s | 3.0 s |
+| Largest contentful paint | 8.4 s | 3.9 s |
+| First photo on screen | 9.4 s | 4.5 s |
+| Third-party requests | 2 (Google Fonts, Unsplash) | 0 |
+| Host-only chunks on the guest page | 0 (already fixed in `664f80a`) | 0 |
+
+On a second visit all twelve hashed files now come from the browser cache
+without a request. The cover-image half of the old LCP chain no longer
+applies: since N-131 no album has a cover unless one is set through the API
+(N-139).
+
+**Seen and left as they are:** axe flags the small "Сватбен албум на живо"
+line on the QR poster preview for contrast. That is the poster's print
+design, chosen per template, not interface text. The font files for the
+Latin subsets still download on a Bulgarian page, for the Latin characters
+in it ("WedMoments", digits); about 20 kB each, after the text is shown.
+
+**Not covered:** listening with an actual screen reader (NVDA, VoiceOver,
+TalkBack), which still needs a person; a real phone on a real venue's
+Wi-Fi.
 
 ---
 ## 4. Confirmed Low
