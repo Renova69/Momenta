@@ -72,7 +72,8 @@ describe('ModerationQueue', () => {
     const heading = screen.getByText(new RegExp(`${i18n.t('host.active_photos')} \\(2\\)`));
     expect(heading).toBeInTheDocument();
 
-    const images = screen.getAllByRole('img', { name: 'Approved' });
+    // Named by who took them since N-143; the alt text was "Approved".
+    const images = screen.getAllByRole('img', { name: i18n.t('photo.alt_by', { name: 'Silvia' }) });
     expect(images).toHaveLength(2);
     expect(screen.getAllByText(i18n.t('host.tv_featured')).length).toBeGreaterThanOrEqual(1);
   });
@@ -121,7 +122,7 @@ describe('ModerationQueue', () => {
     render(<ModerationQueue photos={[approved, featured]} onSetStatus={vi.fn()} onDeletePhoto={onDeletePhoto} />);
 
     fireEvent.click(screen.getByText(i18n.t('host.select_photos')));
-    const images = screen.getAllByRole('img', { name: 'Approved' });
+    const images = screen.getAllByRole('img', { name: i18n.t('photo.alt_by', { name: 'Silvia' }) });
     fireEvent.click(images[0].parentElement as Element);
     fireEvent.click(images[1].parentElement as Element);
 

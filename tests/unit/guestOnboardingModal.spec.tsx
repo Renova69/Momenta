@@ -49,7 +49,8 @@ describe('GuestOnboardingModal', () => {
 
     expect(nameInput()).toHaveValue('Silvia');
     expect(screen.getByPlaceholderText(i18n.t('profile.table_placeholder'))).toHaveValue('Table 4');
-    expect(screen.getByAltText('Guest avatar')).toHaveAttribute('src', 'https://cdn.example/avatar.jpg');
+    // Translated since N-143; it was the English "Guest avatar" in every language.
+    expect(screen.getByAltText(i18n.t('profile.selfie_alt'))).toHaveAttribute('src', 'https://cdn.example/avatar.jpg');
   });
 
   it('leaves fields blank for a fresh anonymous guest, not a leftover name', () => {
@@ -59,7 +60,7 @@ describe('GuestOnboardingModal', () => {
 
     expect(nameInput()).toHaveValue('');
     expect(screen.getByPlaceholderText(i18n.t('profile.table_placeholder'))).toHaveValue('');
-    expect(screen.queryByAltText('Guest avatar')).not.toBeInTheDocument();
+    expect(screen.queryByAltText(i18n.t('profile.selfie_alt'))).not.toBeInTheDocument();
   });
 
   it('saves the trimmed name/table/avatar and closes on submit', () => {
@@ -103,7 +104,7 @@ describe('GuestOnboardingModal', () => {
     const file = new File(['selfie-bytes'], 'selfie.jpg', { type: 'image/jpeg' });
     fireEvent.change(fileInputs()[1], { target: { files: [file] } }); // gallery input
 
-    await waitFor(() => expect(screen.getByAltText('Guest avatar')).toHaveAttribute('src', 'data:image/jpeg;base64,compressed'));
+    await waitFor(() => expect(screen.getByAltText(i18n.t('profile.selfie_alt'))).toHaveAttribute('src', 'data:image/jpeg;base64,compressed'));
   });
 
   it('falls back to a raw data URL if compression fails', async () => {
@@ -116,7 +117,7 @@ describe('GuestOnboardingModal', () => {
     const file = new File(['selfie-bytes'], 'selfie.jpg', { type: 'image/jpeg' });
     fireEvent.change(fileInputs()[0], { target: { files: [file] } }); // camera input
 
-    await waitFor(() => expect(screen.getByAltText('Guest avatar')).toHaveAttribute('src', expect.stringMatching(/^data:/)));
+    await waitFor(() => expect(screen.getByAltText(i18n.t('profile.selfie_alt'))).toHaveAttribute('src', expect.stringMatching(/^data:/)));
   });
 
   it('calls onClose when the close button is clicked', () => {
