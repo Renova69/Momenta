@@ -310,6 +310,13 @@ async function runE2ETests() {
     // -------------------------------------------------------------
     console.log('\n--- SUITE 6: Scavenger Quests & Audio Guestbook ---');
 
+    // Quests are a Celebration Pass feature (N-123): a free album lists none.
+    // Raise the host to that tier, which 6.3 below assumes too.
+    await pool.query(
+      "UPDATE subscriptions SET tier = 'celebration_pass' WHERE user_id = $1",
+      [regData.user.id]
+    );
+
     // 6.1 List Quests
     const questsRes = await fetch(`${BASE_URL}/api/events/${testEvent.id}/quests`);
     const questsList = await questsRes.json();
