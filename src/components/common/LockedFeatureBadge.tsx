@@ -28,7 +28,9 @@ export const LockedFeatureBadge: React.FC<LockedFeatureBadgeProps> = ({
           }
         }}
         title={`${i18n.t('gate.requires_plan')}: ${i18n.t(plan.name)}`}
-        className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-gold-400/15 border border-gold-400/40 text-gold-300 text-[9px] font-bold uppercase tracking-wider cursor-pointer hover:bg-gold-400/25 transition-colors"
+        // Its own dark ground: it also sits on the studio's selected section
+        // button, which is gold, where translucent gold on gold could not be read.
+        className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-noir-900 border border-gold-400/40 text-gold-300 text-[9px] font-bold uppercase tracking-wider cursor-pointer hover:bg-noir-800 transition-colors"
       >
         <Lock className="w-2.5 h-2.5 text-gold-400" />
         <span>{i18n.t(plan.shortName)}</span>
@@ -76,9 +78,10 @@ export const LockedFeatureCard: React.FC<LockedFeatureCardProps> = ({
         <span className="inline-block px-3 py-1 rounded-full bg-gold-400/10 text-gold-300 text-xs font-bold border border-gold-400/30 uppercase tracking-wider">
           {i18n.t('gate.plan_label')}: {i18n.t(plan.name)}
         </span>
-        <h3 className="font-serif text-2xl sm:text-3xl font-bold text-cream-100">
+        {/* h2: it sits straight under the page's h1, on the album and in the studio. */}
+        <h2 className="font-serif text-2xl sm:text-3xl font-bold text-cream-100">
           {i18n.t(gate.titleKey)}
-        </h3>
+        </h2>
         <p className="text-xs sm:text-sm text-cream-300/80 max-w-md mx-auto">
           {i18n.t(gate.descriptionKey)}
         </p>

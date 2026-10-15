@@ -200,7 +200,7 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
                   ))}
                 </div>
               ) : (
-                <p className="text-xs text-cream-400/50 italic text-center py-4">
+                <p className="text-xs text-cream-300/80 italic text-center py-4">
                   {i18n.t('lightbox.no_comments')}
                 </p>
               )}

@@ -102,6 +102,31 @@ function openTab(container: HTMLElement, key: string) {
   fireEvent.click(button);
 }
 
+/**
+ * N-145 — the open section and the chosen palette were shown by colour alone,
+ * so a host using a screen reader could not tell where they were or which
+ * palette the album had.
+ */
+describe('what is selected, for a screen reader', () => {
+  it('marks the section that is open', () => {
+    const { container } = renderDashboard({ planTier: 'deluxe_keepsake' });
+    const sectionButton = (key: string) =>
+      Array.from(container.querySelectorAll('button')).find((b) => b.textContent?.includes(i18n.t(key)))!;
+
+    expect(sectionButton('host.overview')).toHaveAttribute('aria-current', 'true');
+    openTab(container, 'host.export_zip');
+
+    expect(sectionButton('host.export_zip')).toHaveAttribute('aria-current', 'true');
+    expect(sectionButton('host.overview')).not.toHaveAttribute('aria-current');
+  });
+
+  it('marks the palette the album has', () => {
+    renderDashboard({ planTier: 'deluxe_keepsake' });
+
+    expect(screen.getByRole('button', { name: i18n.t('theme.champagne_gold.name') })).toHaveAttribute('aria-pressed', 'true');
+  });
+});
+
 describe('tier gates', () => {
   const gated: [string, string][] = [
     ['moderation', 'host.moderation'],

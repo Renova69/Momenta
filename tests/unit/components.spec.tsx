@@ -219,6 +219,20 @@ describe('LockedFeatureBadge', () => {
     expect(screen.queryByText(i18n.t('plan.celebration.badge'))).not.toBeInTheDocument();
   });
 
+  // axe in a browser: inside the dashboard's selected section button, which
+  // is gold, a translucent gold badge with gold text could not be read.
+  it('carries its own dark background, so it reads on a gold button too', () => {
+    render(<LockedFeatureBadge feature="scavenger_quests" compact />);
+    const badge = screen.getByText(i18n.t('plan.celebration.short')).parentElement!;
+    expect(badge.className).toMatch(/\bbg-noir-900\b/);
+  });
+
+  // axe: the card's title came straight after the page's h1 as an h3.
+  it('titles a locked feature one level under the page title', () => {
+    render(<LockedFeatureCard feature="audio_guestbook" />);
+    expect(screen.getByRole('heading', { level: 2, name: i18n.t('gate.audio_guestbook.title') })).toBeInTheDocument();
+  });
+
   it('names the plan in full on the larger badge', () => {
     render(<LockedFeatureBadge feature="audio_guestbook" />);
 

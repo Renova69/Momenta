@@ -47,6 +47,27 @@ describe('HostAuthPage', () => {
     expect(onSuccess).not.toHaveBeenCalled();
   });
 
+  // N-146 — the message appeared on screen and nowhere else: a host using a
+  // screen reader pressed "sign in" and heard nothing at all.
+  it('announces a failed sign-in, not just shows it', async () => {
+    vi.spyOn(authService, 'login').mockResolvedValue({ success: false, error: 'Wrong password' });
+    render(<HostAuthPage onSuccess={vi.fn()} />);
+
+    fireEvent.change(screen.getByPlaceholderText('monika.alexander@wedmoments.bg'), { target: { value: 'monika@example.com' } });
+    fireEvent.change(screen.getByPlaceholderText('••••••••••••'), { target: { value: 'wrong' } });
+    fireEvent.click(screen.getByText(i18n.t('host.signin_btn')));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Wrong password');
+  });
+
+  // N-145 — which form was open was shown by colour alone.
+  it('says which of sign-in, sign-up and demo is open', () => {
+    render(<HostAuthPage onSuccess={vi.fn()} initialTab="signup" />);
+
+    expect(screen.getByRole('button', { name: i18n.t('host.signup') })).toHaveAttribute('aria-current', 'true');
+    expect(screen.getByRole('button', { name: i18n.t('host.signin') })).not.toHaveAttribute('aria-current');
+  });
+
   it('registers a new planner account with the company name field', async () => {
     const registerSpy = vi.spyOn(authService, 'register').mockResolvedValue({ success: true, user: USER });
     const onSuccess = vi.fn();

@@ -122,6 +122,7 @@ export const OverviewTab: React.FC = () => {
                     key={themeKey}
                     type="button"
                     aria-label={isLocked ? `${i18n.t(t.name)} — ${i18n.t('gate.plan_label')}` : i18n.t(t.name)}
+                    aria-pressed={isSelected}
                     onClick={() =>
                       isLocked ? onOpenPricing?.() : onUpdateEvent({ themePalette: themeKey as ThemePalette })
                     }

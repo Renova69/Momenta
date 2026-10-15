@@ -24,10 +24,12 @@ export const TabNav: React.FC = () => {
       {/* Header & Sub-Navigation */}
       <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4 bg-noir-800/80 p-3 sm:p-4 rounded-3xl border border-cream-400/10 backdrop-blur-md">
   
-        {/* Navigation Tabs */}
+        {/* Navigation Tabs. The open one is marked for screen readers too
+            (N-145): colour alone told only those who could see it. */}
         <div className="flex items-center gap-1.5 overflow-x-auto pb-1 md:pb-0 scrollbar-none">
           <button
             onClick={() => setActiveTab('overview')}
+            aria-current={activeTab === 'overview' ? 'true' : undefined}
             className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold whitespace-nowrap transition-all ${
               activeTab === 'overview'
                 ? 'bg-gold-400 text-noir-900 shadow-glow font-bold'
@@ -40,6 +42,7 @@ export const TabNav: React.FC = () => {
 
           <button
             onClick={() => setActiveTab('moderation')}
+            aria-current={activeTab === 'moderation' ? 'true' : undefined}
             className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold whitespace-nowrap transition-all relative ${
               activeTab === 'moderation'
                 ? 'bg-gold-400 text-noir-900 shadow-glow font-bold'
@@ -59,6 +62,7 @@ export const TabNav: React.FC = () => {
 
           <button
             onClick={() => setActiveTab('canvas')}
+            aria-current={activeTab === 'canvas' ? 'true' : undefined}
             className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold whitespace-nowrap transition-all ${
               activeTab === 'canvas'
                 ? 'bg-gold-400 text-noir-900 shadow-glow font-bold'
@@ -74,6 +78,7 @@ export const TabNav: React.FC = () => {
 
           <button
             onClick={() => setActiveTab('quests')}
+            aria-current={activeTab === 'quests' ? 'true' : undefined}
             className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold whitespace-nowrap transition-all ${
               activeTab === 'quests'
                 ? 'bg-gold-400 text-noir-900 shadow-glow font-bold'
@@ -89,6 +94,7 @@ export const TabNav: React.FC = () => {
 
           <button
             onClick={() => setActiveTab('export')}
+            aria-current={activeTab === 'export' ? 'true' : undefined}
             className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold whitespace-nowrap transition-all ${
               activeTab === 'export'
                 ? 'bg-gold-400 text-noir-900 shadow-glow font-bold'
@@ -104,6 +110,7 @@ export const TabNav: React.FC = () => {
 
           <button
             onClick={() => setActiveTab('ingest')}
+            aria-current={activeTab === 'ingest' ? 'true' : undefined}
             className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold whitespace-nowrap transition-all ${
               activeTab === 'ingest'
                 ? 'bg-gold-400 text-noir-900 shadow-glow font-bold'

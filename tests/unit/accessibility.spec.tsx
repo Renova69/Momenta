@@ -132,6 +132,14 @@ describe('the lightbox is a dialog', () => {
     const { container } = open();
     await expectNoViolations(container);
   });
+
+  // N-147 — axe in a browser measured the empty-comments line at too little
+  // contrast for its size; jsdom cannot measure it, so the class is pinned.
+  it('writes "no comments yet" in a colour that can be read', () => {
+    open();
+    const line = screen.getByText(i18n.t('lightbox.no_comments'));
+    expect(line.className).not.toMatch(/text-cream-400\/50/);
+  });
 });
 
 describe('the guest sign-in dialog', () => {

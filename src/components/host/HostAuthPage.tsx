@@ -93,6 +93,7 @@ export const HostAuthPage: React.FC<HostAuthPageProps> = ({ onSuccess, initialTa
         <div className="flex items-center bg-noir-950 p-1.5 rounded-2xl border border-cream-400/10 mb-6 text-xs font-semibold">
           <button
             onClick={() => setActiveTab('signin')}
+            aria-current={activeTab === 'signin' ? 'true' : undefined}
             className={`flex-1 py-2.5 rounded-xl transition-all ${
               activeTab === 'signin'
                 ? 'bg-gold-400 text-noir-900 font-bold shadow-md'
@@ -103,6 +104,7 @@ export const HostAuthPage: React.FC<HostAuthPageProps> = ({ onSuccess, initialTa
           </button>
           <button
             onClick={() => setActiveTab('signup')}
+            aria-current={activeTab === 'signup' ? 'true' : undefined}
             className={`flex-1 py-2.5 rounded-xl transition-all ${
               activeTab === 'signup'
                 ? 'bg-gold-400 text-noir-900 font-bold shadow-md'
@@ -113,6 +115,7 @@ export const HostAuthPage: React.FC<HostAuthPageProps> = ({ onSuccess, initialTa
           </button>
           <button
             onClick={() => setActiveTab('demo')}
+            aria-current={activeTab === 'demo' ? 'true' : undefined}
             className={`flex-1 py-2.5 rounded-xl transition-all ${
               activeTab === 'demo'
                 ? 'bg-gold-400 text-noir-900 font-bold shadow-md'
@@ -123,8 +126,9 @@ export const HostAuthPage: React.FC<HostAuthPageProps> = ({ onSuccess, initialTa
           </button>
         </div>
 
+        {/* role="alert": announced as it appears, not only shown (N-146). */}
         {errorMsg && (
-          <div className="mb-6 p-3.5 rounded-xl bg-rosewood-900/60 border border-rosewood-400/40 text-rosewood-200 text-xs text-center">
+          <div role="alert" className="mb-6 p-3.5 rounded-xl bg-rosewood-900/60 border border-rosewood-400/40 text-rosewood-200 text-xs text-center">
             {errorMsg}
           </div>
         )}
