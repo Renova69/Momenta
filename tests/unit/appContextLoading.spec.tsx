@@ -87,6 +87,34 @@ describe('opening an album link', () => {
     expect(seen.at(-1)).toEqual({ slug: ALBUM.slug, isLoadingEvent: false, isSyncingAlbum: true });
   });
 
+  // N-148 — the album record is re-read as the app starts. On a fast
+  // connection the answer landed after the first render and before this
+  // provider subscribed, and was never shown: storage had the new title, the
+  // page the old one.
+  it('shows a change that landed before it started listening', () => {
+    let reads = 0;
+    vi.spyOn(router, 'getRoute').mockReturnValue({ view: 'guest', slug: ALBUM.slug, subTab: 'feed' });
+    vi.spyOn(storageService, 'getEvent').mockImplementation(() =>
+      reads++ === 0 ? ALBUM : { ...ALBUM, title: 'Мира и Даниел — ново' }
+    );
+    vi.spyOn(storageService, 'subscribe').mockImplementation(() => () => undefined);
+    const seen: Seen[] = [];
+    const titles: string[] = [];
+    function Title() {
+      titles.push(useApp().event.title);
+      return null;
+    }
+
+    render(
+      <AppProvider>
+        <Probe seen={seen} />
+        <Title />
+      </AppProvider>
+    );
+
+    expect(titles.at(-1)).toBe('Мира и Даниел — ново');
+  });
+
   it('says when the rest of the album has arrived too', async () => {
     const { seen, recordArrives, syncFinishes } = openAlbumLink();
 

@@ -105,6 +105,10 @@ export async function refreshEventDetails(ctx: ServiceContext): Promise<void> {
   if (!slug) return;
   try {
     const remote = await eventsApi.getBySlug(slug);
+    // N-148 — this also runs as the app starts, while a link to another
+    // album may be opening; an answer for the one open when it asked must
+    // not be written over the one open now.
+    if (getEvent()?.slug !== slug) return;
     if (remote && (remote.id || remote.slug)) {
       ctx.updateEvent(normalizeEvent(remote as RemoteEventPayload), false);
     }

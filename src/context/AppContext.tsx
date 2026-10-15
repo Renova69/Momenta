@@ -145,7 +145,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
 
     // 2. Storage service subscriber
-    const unsubStorage = storageService.subscribe(() => {
+    const readStore = () => {
       setEvent(storageService.getEvent());
       setGuests(storageService.getGuests());
       setCurrentGuest(storageService.getCurrentGuest());
@@ -153,7 +153,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       setQuests(storageService.getQuests());
       setAudioEntries(storageService.getAudioEntries());
       setQRConfig(storageService.getQRCanvasConfig());
-    });
+    };
+    const unsubStorage = storageService.subscribe(readStore);
+    // Read once now as well (N-148): the store starts work before the first
+    // render, and what it finished between that render and this subscription
+    // reached no listener.
+    readStore();
 
     // 3. Router subscriber
     const unsubRouter = router.subscribe((route: RouteState) => {

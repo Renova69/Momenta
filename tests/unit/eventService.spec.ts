@@ -315,6 +315,22 @@ describe('refreshEventDetails (N-54)', () => {
     await expect(refreshEventDetails(ctx)).resolves.toBeUndefined();
     expect(updateEventSpy).not.toHaveBeenCalled();
   });
+
+  // N-148 — it now also runs as the app starts, while a link to another album
+  // may be opening. An answer for the album that was open when it asked must
+  // not be written over the one open when it arrives.
+  it('drops the answer if another album was opened while it was on its way', async () => {
+    const { ctx, updateEventSpy } = makeContext();
+    storeEvent({ id: EVENT_ID, slug: 'album-a' });
+    vi.spyOn(eventsApi, 'getBySlug').mockImplementation(async () => {
+      storeEvent({ id: 'cccccccc-3333-4444-8555-666677778888', slug: 'album-b' });
+      return { id: EVENT_ID, slug: 'album-a', title: 'A' } as never;
+    });
+
+    await refreshEventDetails(ctx);
+
+    expect(updateEventSpy).not.toHaveBeenCalled();
+  });
 });
 
 describe('refreshEventFromBackend', () => {

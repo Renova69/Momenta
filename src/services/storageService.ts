@@ -88,6 +88,10 @@ class WedStorageService {
     if (typeof window !== 'undefined') {
       this.realtimeSocket.connect();
       this.syncFromBackend();
+      // N-148 — the album record too, not only its photos: a returning
+      // visitor was shown the cached copy from their last visit, whatever
+      // the host had changed since, plan included.
+      void this.refreshEventDetails();
       // FE-03: audio's syncFromBackend does a full unconditional overwrite,
       // so a flushed offline audio entry self-heals on the next sync -
       // photos merge instead, so a flushed photo needs its temp id
@@ -233,6 +237,8 @@ class WedStorageService {
    */
   /** Re-read the album's own record only. See eventService.refreshEventDetails. */
   public refreshEventDetails(): Promise<void> {
+    // The demo album standing in for none has no record to read (N-127).
+    if (syncService.isDemoFallback(this.getEvent().id)) return Promise.resolve();
     return eventService.refreshEventDetails(this.ctx);
   }
 
