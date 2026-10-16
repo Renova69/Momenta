@@ -243,7 +243,7 @@ const LiveFeedComponent: React.FC<LiveFeedProps> = ({
             onChange={(e) => setSearchQuery(e.target.value)}
             aria-label={i18n.t('feed.search_placeholder')}
             placeholder={i18n.t('feed.search_placeholder')}
-            className="w-full pl-9 pr-3 py-1.5 rounded-xl bg-noir-900 border border-cream-400/15 text-cream-100 text-xs placeholder:text-cream-400/40 focus:outline-none focus:border-gold-400"
+            className="w-full pl-9 pr-3 py-1.5 rounded-xl bg-noir-900 border border-cream-400/15 text-cream-100 text-xs placeholder:text-cream-400/40 focus:outline-hidden focus:border-gold-400"
           />
         </div>
       </div>
@@ -296,7 +296,7 @@ const LiveFeedComponent: React.FC<LiveFeedProps> = ({
           </div>
           <button
             onClick={onOpenCapture}
-            className="px-6 py-2.5 rounded-full bg-gradient-to-r from-gold-400 to-gold-500 text-noir-900 font-bold text-xs shadow-glow hover:scale-105 active:scale-95 transition-transform"
+            className="px-6 py-2.5 rounded-full bg-linear-to-r from-gold-400 to-gold-500 text-noir-900 font-bold text-xs shadow-glow hover:scale-105 active:scale-95 transition-transform"
           >
             {i18n.t('feed.snap_first')}
           </button>

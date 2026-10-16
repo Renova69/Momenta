@@ -135,7 +135,7 @@ export const LandingHomePage: React.FC<LandingHomePageProps> = ({
     <div className="space-y-16 sm:space-y-24 animate-fade-in pb-12">
       
       {/* 1. HERO SECTION */}
-      <section className="relative overflow-hidden rounded-3xl bg-gradient-to-b from-noir-850 via-noir-900 to-noir-950 border border-gold-400/25 p-6 sm:p-12 lg:p-16 text-center shadow-2xl">
+      <section className="relative overflow-hidden rounded-3xl bg-linear-to-b from-noir-850 via-noir-900 to-noir-950 border border-gold-400/25 p-6 sm:p-12 lg:p-16 text-center shadow-2xl">
         {/* Ambient Glow */}
         <div className="absolute -top-24 left-1/2 -translate-x-1/2 w-96 h-96 bg-gold-400/10 rounded-full blur-3xl pointer-events-none" />
 
@@ -184,7 +184,7 @@ export const LandingHomePage: React.FC<LandingHomePageProps> = ({
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-4">
             <button
               onClick={onOpenCreateEvent}
-              className="w-full sm:w-auto px-8 py-4 rounded-2xl bg-gradient-to-r from-gold-400 to-gold-500 text-noir-900 font-bold text-sm sm:text-base shadow-glow hover:brightness-110 active:scale-98 transition-all flex items-center justify-center gap-2.5 group"
+              className="w-full sm:w-auto px-8 py-4 rounded-2xl bg-linear-to-r from-gold-400 to-gold-500 text-noir-900 font-bold text-sm sm:text-base shadow-glow hover:brightness-110 active:scale-98 transition-all flex items-center justify-center gap-2.5 group"
             >
               <Heart className="w-5 h-5 fill-noir-900 text-noir-900 group-hover:scale-110 transition-transform" />
               <span>{i18n.t('ui.landing_home_page.8')}</span>
@@ -378,7 +378,7 @@ export const LandingHomePage: React.FC<LandingHomePageProps> = ({
           </div>
 
           {/* Celebration Pass */}
-          <div className="p-5 rounded-2xl bg-gradient-to-b from-gold-400/15 to-noir-800 border-2 border-gold-400/60 shadow-glow flex flex-col justify-between space-y-4 relative">
+          <div className="p-5 rounded-2xl bg-linear-to-b from-gold-400/15 to-noir-800 border-2 border-gold-400/60 shadow-glow flex flex-col justify-between space-y-4 relative">
             <span className="absolute -top-3 left-1/2 -translate-x-1/2 px-2.5 py-0.5 rounded-full bg-gold-400 text-noir-900 text-[10px] font-bold uppercase tracking-wider">
               {i18n.t('ui.landing_home_page.36')}
             </span>
@@ -396,7 +396,7 @@ export const LandingHomePage: React.FC<LandingHomePageProps> = ({
             </div>
             <button
               onClick={onOpenPricing}
-              className="w-full py-2.5 rounded-xl bg-gradient-to-r from-gold-400 to-gold-500 text-noir-900 text-xs font-bold shadow-md hover:brightness-110 transition-all"
+              className="w-full py-2.5 rounded-xl bg-linear-to-r from-gold-400 to-gold-500 text-noir-900 text-xs font-bold shadow-md hover:brightness-110 transition-all"
             >
               {i18n.t('ui.landing_home_page.43')}
             </button>
@@ -491,7 +491,7 @@ export const LandingHomePage: React.FC<LandingHomePageProps> = ({
       </section>
 
       {/* 8. FINAL HIGH-CONVERSION CTA */}
-      <section className="relative rounded-3xl bg-gradient-to-r from-noir-900 via-gold-400/10 to-noir-900 border border-gold-400/40 p-8 sm:p-14 text-center max-w-5xl mx-auto shadow-2xl overflow-hidden">
+      <section className="relative rounded-3xl bg-linear-to-r from-noir-900 via-gold-400/10 to-noir-900 border border-gold-400/40 p-8 sm:p-14 text-center max-w-5xl mx-auto shadow-2xl overflow-hidden">
         <div className="relative z-10 max-w-2xl mx-auto space-y-5">
           <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-gold-400/20 text-gold-300 text-xs font-semibold">
             <Heart className="w-3.5 h-3.5 fill-gold-400 text-gold-400" />
@@ -509,7 +509,7 @@ export const LandingHomePage: React.FC<LandingHomePageProps> = ({
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-2">
             <button
               onClick={onOpenCreateEvent}
-              className="w-full sm:w-auto px-8 py-4 rounded-2xl bg-gradient-to-r from-gold-400 to-gold-500 text-noir-900 font-bold text-sm sm:text-base shadow-glow hover:brightness-110 active:scale-98 transition-all flex items-center justify-center gap-2"
+              className="w-full sm:w-auto px-8 py-4 rounded-2xl bg-linear-to-r from-gold-400 to-gold-500 text-noir-900 font-bold text-sm sm:text-base shadow-glow hover:brightness-110 active:scale-98 transition-all flex items-center justify-center gap-2"
             >
               <Users className="w-4 h-4" />
               <span>{i18n.t('ui.landing_home_page.61')}</span>

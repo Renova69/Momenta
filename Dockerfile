@@ -26,7 +26,8 @@ COPY server/ ./server/
 COPY scripts/ ./scripts/
 COPY shared/ ./shared/
 COPY index.html ./
-COPY tailwind.config.js postcss.config.js ./
+# Tailwind 4 reads its theme from src/index.css and runs as a Vite plugin, so
+# there is no tailwind.config.js or postcss.config.js to copy.
 
 # Build production Vite bundle into /app/dist
 RUN npm run build

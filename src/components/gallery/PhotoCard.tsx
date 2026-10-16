@@ -114,7 +114,7 @@ const PhotoCardComponent: React.FC<PhotoCardProps> = ({
       }`}
     >
       {/* Photo Image Container (Polaroid framing) */}
-      <div className="relative aspect-[4/5] w-full bg-noir-950 overflow-hidden">
+      <div className="relative aspect-4/5 w-full bg-noir-950 overflow-hidden">
         {photo.isLocked ? (
           // Nothing to draw: the server withholds the image until the reveal,
           // so there is no URL here to blur, hide behind an overlay, or read
@@ -154,16 +154,16 @@ const PhotoCardComponent: React.FC<PhotoCardProps> = ({
         {/* Top Badges (Featured / Quest / Pending) */}
         <div className="absolute top-3 left-3 right-3 flex items-center justify-between pointer-events-none">
           {photo.status === 'featured' ? (
-            <span className="px-2.5 py-1 rounded-full bg-gold-400/90 backdrop-blur-sm text-noir-900 text-[10px] font-bold uppercase tracking-wider flex items-center gap-1 shadow-md">
+            <span className="px-2.5 py-1 rounded-full bg-gold-400/90 backdrop-blur-xs text-noir-900 text-[10px] font-bold uppercase tracking-wider flex items-center gap-1 shadow-md">
               <Sparkles className="w-3 h-3 fill-noir-900" />
               <span>{i18n.t('feed.featured_badge')}</span>
             </span>
           ) : photo.status === 'pending' ? (
-            <span className="px-2.5 py-1 rounded-full bg-amber-400/90 backdrop-blur-sm text-noir-900 text-[10px] font-bold uppercase tracking-wider flex items-center gap-1 shadow-md">
+            <span className="px-2.5 py-1 rounded-full bg-amber-400/90 backdrop-blur-xs text-noir-900 text-[10px] font-bold uppercase tracking-wider flex items-center gap-1 shadow-md">
               <span>{i18n.t('feed.in_review')}</span>
             </span>
           ) : photo.questTitle ? (
-            <span className="px-2.5 py-1 rounded-full bg-noir-900/80 backdrop-blur-sm text-gold-300 text-[10px] font-semibold flex items-center gap-1 border border-gold-400/30">
+            <span className="px-2.5 py-1 rounded-full bg-noir-900/80 backdrop-blur-xs text-gold-300 text-[10px] font-semibold flex items-center gap-1 border border-gold-400/30">
               <Trophy className="w-3.5 h-3.5 text-gold-400" />
               <span className="max-w-[100px] truncate">{photo.questTitle}</span>
             </span>
@@ -172,7 +172,7 @@ const PhotoCardComponent: React.FC<PhotoCardProps> = ({
           )}
 
           {/* Quick zoom icon */}
-          <span className="w-7 h-7 rounded-full bg-black/40 backdrop-blur-sm text-white/80 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+          <span className="w-7 h-7 rounded-full bg-black/40 backdrop-blur-xs text-white/80 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
             <Maximize2 className="w-3.5 h-3.5" />
           </span>
         </div>
@@ -191,7 +191,7 @@ const PhotoCardComponent: React.FC<PhotoCardProps> = ({
         {/* Guest Header */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <div className="w-7 h-7 rounded-full bg-gold-400/20 border border-gold-400/40 overflow-hidden flex-shrink-0">
+            <div className="w-7 h-7 rounded-full bg-gold-400/20 border border-gold-400/40 overflow-hidden shrink-0">
               {photo.guestAvatar ? (
                 <img
                   src={photo.guestAvatar}
@@ -213,7 +213,7 @@ const PhotoCardComponent: React.FC<PhotoCardProps> = ({
                 {photo.guestName}
               </h2>
               {photo.source === 'photographer' && (
-                <span className="inline-flex items-center gap-1 mt-0.5 px-1.5 py-0.5 rounded bg-gold-400/15 border border-gold-400/40 text-gold-300 text-[9px] font-bold uppercase tracking-wider">
+                <span className="inline-flex items-center gap-1 mt-0.5 px-1.5 py-0.5 rounded-sm bg-gold-400/15 border border-gold-400/40 text-gold-300 text-[9px] font-bold uppercase tracking-wider">
                   <Camera className="w-2.5 h-2.5" /> Official Photographer
                 </span>
               )}

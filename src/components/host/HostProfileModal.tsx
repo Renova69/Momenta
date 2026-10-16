@@ -85,7 +85,7 @@ export const HostProfileModal: React.FC<HostProfileModalProps> = ({
               type="text"
               value={nameDraft}
               onChange={(e) => setNameDraft(e.target.value)}
-              className="w-full px-3 py-2.5 rounded-xl bg-noir-800 border border-cream-400/20 text-sm text-cream-100 focus:outline-none focus:border-gold-400"
+              className="w-full px-3 py-2.5 rounded-xl bg-noir-800 border border-cream-400/20 text-sm text-cream-100 focus:outline-hidden focus:border-gold-400"
             />
           </div>
 
@@ -110,7 +110,7 @@ export const HostProfileModal: React.FC<HostProfileModalProps> = ({
           <button
             onClick={handleSave}
             disabled={isSaving}
-            className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-gradient-to-r from-gold-400 to-gold-500 text-noir-900 font-bold text-sm shadow-glow hover:brightness-110 active:scale-98 transition-all disabled:opacity-60"
+            className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-linear-to-r from-gold-400 to-gold-500 text-noir-900 font-bold text-sm shadow-glow hover:brightness-110 active:scale-98 transition-all disabled:opacity-60"
           >
             {isSaving ? (
               <Loader2 className="w-4 h-4 animate-spin" />

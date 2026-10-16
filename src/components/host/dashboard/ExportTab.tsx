@@ -33,7 +33,7 @@ export const ExportTab: React.FC = () => {
         <button
           onClick={handleDownloadZip}
           disabled={isExportingZip}
-          className="p-5 rounded-2xl bg-gradient-to-r from-gold-400 to-gold-500 text-noir-900 font-bold shadow-glow hover:brightness-110 flex items-center justify-between transition-all disabled:opacity-60"
+          className="p-5 rounded-2xl bg-linear-to-r from-gold-400 to-gold-500 text-noir-900 font-bold shadow-glow hover:brightness-110 flex items-center justify-between transition-all disabled:opacity-60"
         >
           <div className="text-left">
             <div className="text-sm">{isExportingZip ? i18n.t('host.zip_downloading') : i18n.t('host.zip_download')}</div>

@@ -91,7 +91,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             onClick={onLogoClick || (() => setActiveView('guest'))}
             className="flex items-center gap-2 cursor-pointer group"
           >
-            <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-full flex items-center justify-center bg-gradient-to-tr from-gold-500/20 to-gold-400/40 border border-gold-400/50 shadow-glow group-hover:scale-105 transition-transform shrink-0">
+            <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-full flex items-center justify-center bg-linear-to-tr from-gold-500/20 to-gold-400/40 border border-gold-400/50 shadow-glow group-hover:scale-105 transition-transform shrink-0">
               <Heart className="w-4 h-4 sm:w-5 sm:h-5 text-gold-400 fill-gold-400/30" />
             </div>
             <div>
@@ -113,7 +113,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             onClick={() => setActiveView('guest')}
             className={`flex items-center gap-1.5 px-3 sm:px-4 py-1.5 rounded-full transition-all ${
               activeView === 'guest'
-                ? `${theme.buttonPrimary} shadow-sm`
+                ? `${theme.buttonPrimary} shadow-xs`
                 : 'text-cream-300 hover:text-cream-100 hover:bg-noir-700'
             }`}
           >
@@ -125,7 +125,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             onClick={() => setActiveView('host')}
             className={`relative flex items-center gap-1.5 px-3 sm:px-4 py-1.5 rounded-full transition-all ${
               activeView === 'host'
-                ? `${theme.buttonPrimary} shadow-sm`
+                ? `${theme.buttonPrimary} shadow-xs`
                 : 'text-cream-300 hover:text-cream-100 hover:bg-noir-700'
             }`}
           >
@@ -154,7 +154,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               }}
               className={`flex items-center gap-1.5 px-3 sm:px-4 py-1.5 rounded-full transition-all ${
                 activeView === 'projector'
-                  ? 'bg-cream-100 text-noir-900 font-bold shadow-sm'
+                  ? 'bg-cream-100 text-noir-900 font-bold shadow-xs'
                   : 'text-cream-300 hover:text-cream-100 hover:bg-noir-700'
               }`}
             >

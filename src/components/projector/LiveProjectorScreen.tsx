@@ -266,7 +266,7 @@ export const LiveProjectorScreen: React.FC<LiveProjectorScreenProps> = ({
     <div className="fixed inset-0 z-50 bg-black text-white flex flex-col justify-between overflow-hidden select-none animate-fade-in">
       
       {/* TOP BAR: Couple Title & Slideshow Controls */}
-      <div className="relative z-20 px-6 sm:px-10 py-5 flex items-center justify-between bg-gradient-to-b from-black/85 via-black/40 to-transparent">
+      <div className="relative z-20 px-6 sm:px-10 py-5 flex items-center justify-between bg-linear-to-b from-black/85 via-black/40 to-transparent">
         <div className="flex items-center gap-3.5">
           <div className="w-11 h-11 rounded-full bg-gold-400/20 border border-gold-400/50 flex items-center justify-center shadow-glow">
             <Heart className="w-5 h-5 text-gold-400 fill-gold-400" />
@@ -430,7 +430,7 @@ export const LiveProjectorScreen: React.FC<LiveProjectorScreenProps> = ({
       </div>
 
       {/* BOTTOM BAR: Big Live QR Code & Prompt for Guests */}
-      <div className="relative z-20 px-6 sm:px-10 py-4 bg-gradient-to-t from-black/95 via-black/70 to-transparent flex flex-col sm:flex-row items-center justify-between gap-4 border-t border-white/10">
+      <div className="relative z-20 px-6 sm:px-10 py-4 bg-linear-to-t from-black/95 via-black/70 to-transparent flex flex-col sm:flex-row items-center justify-between gap-4 border-t border-white/10">
         <div className="flex items-center gap-4">
           <div className="p-2.5 bg-white rounded-2xl shadow-glow">
             <QRCodeSVG

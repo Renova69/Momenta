@@ -47,7 +47,7 @@ export const LockedFeatureBadge: React.FC<LockedFeatureBadgeProps> = ({
           onUpgrade();
         }
       }}
-      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-gold-400/10 border border-gold-400/30 text-gold-300 text-xs font-semibold hover:bg-gold-400/20 transition-all cursor-pointer shadow-sm group"
+      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-gold-400/10 border border-gold-400/30 text-gold-300 text-xs font-semibold hover:bg-gold-400/20 transition-all cursor-pointer shadow-xs group"
     >
       <Lock className="w-3 h-3 text-gold-400 group-hover:rotate-12 transition-transform" />
       <span>{i18n.t('gate.requires')} {i18n.t(plan.name)}</span>
@@ -91,7 +91,7 @@ export const LockedFeatureCard: React.FC<LockedFeatureCardProps> = ({
         <button
           type="button"
           onClick={onOpenPricing}
-          className="w-full sm:w-auto px-8 py-3.5 rounded-xl bg-gradient-to-r from-gold-400 to-gold-500 text-noir-900 font-bold text-sm shadow-glow hover:brightness-110 active:scale-98 transition-all inline-flex items-center justify-center gap-2"
+          className="w-full sm:w-auto px-8 py-3.5 rounded-xl bg-linear-to-r from-gold-400 to-gold-500 text-noir-900 font-bold text-sm shadow-glow hover:brightness-110 active:scale-98 transition-all inline-flex items-center justify-center gap-2"
         >
           <Sparkles className="w-4 h-4" />
           <span>{i18n.t('gate.upgrade_for', { price: plan.price })}</span>

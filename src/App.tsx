@@ -278,7 +278,7 @@ function WeddingAppContent() {
   const safeGuest = currentGuest || fallbackGuest;
 
   return (
-    <div className={`min-h-screen bg-gradient-to-b ${currentTheme.bgGradient} text-cream-100 flex flex-col`}>
+    <div className={`min-h-screen bg-linear-to-b ${currentTheme.bgGradient} text-cream-100 flex flex-col`}>
       {/* Network Status Indicators */}
       {!isNetworkOnline && (
         <div className="bg-red-500 text-white px-4 py-1 text-xs font-bold flex items-center justify-center gap-2 sticky top-0 z-50">
@@ -400,7 +400,7 @@ function WeddingAppContent() {
                     onClick={() => navigateGuestTab('feed')}
                     className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl text-xs font-bold transition-all ${
                       activeGuestTab === 'feed'
-                        ? `${currentTheme.buttonPrimary} shadow-sm`
+                        ? `${currentTheme.buttonPrimary} shadow-xs`
                         : 'text-cream-400 hover:text-cream-100'
                     }`}
                   >
@@ -412,7 +412,7 @@ function WeddingAppContent() {
                     onClick={() => navigateGuestTab('quests')}
                     className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl text-xs font-bold transition-all ${
                       activeGuestTab === 'quests'
-                        ? `${currentTheme.buttonPrimary} shadow-sm`
+                        ? `${currentTheme.buttonPrimary} shadow-xs`
                         : 'text-cream-400 hover:text-cream-100'
                     }`}
                   >
@@ -424,7 +424,7 @@ function WeddingAppContent() {
                     onClick={() => navigateGuestTab('audio')}
                     className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl text-xs font-bold transition-all ${
                       activeGuestTab === 'audio'
-                        ? `${currentTheme.buttonPrimary} shadow-sm`
+                        ? `${currentTheme.buttonPrimary} shadow-xs`
                         : 'text-cream-400 hover:text-cream-100'
                     }`}
                   >

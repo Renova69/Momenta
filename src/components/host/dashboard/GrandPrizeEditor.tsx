@@ -70,7 +70,7 @@ export const GrandPrizeEditor: React.FC = () => {
   };
 
   return (
-    <div className="bg-gradient-to-r from-noir-800 via-[#1c1810] to-noir-800 rounded-3xl p-6 border border-gold-400/30 shadow-xl relative overflow-hidden">
+    <div className="bg-linear-to-r from-noir-800 via-[#1c1810] to-noir-800 rounded-3xl p-6 border border-gold-400/30 shadow-xl relative overflow-hidden">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-2">
         <div className="flex items-center gap-2.5">
           <div className="w-9 h-9 rounded-xl bg-gold-400/20 border border-gold-400/40 flex items-center justify-center text-gold-400 shadow-glow">
@@ -104,7 +104,7 @@ export const GrandPrizeEditor: React.FC = () => {
             value={prizeDraft}
             onChange={(e) => setPrizeDraft(e.target.value)}
             placeholder={i18n.t('quests.default_prize')}
-            className="w-full px-3 py-2 rounded-xl bg-noir-900 border border-cream-400/20 text-xs text-cream-100 placeholder:text-cream-400/50 focus:outline-none focus:border-gold-400 leading-relaxed"
+            className="w-full px-3 py-2 rounded-xl bg-noir-900 border border-cream-400/20 text-xs text-cream-100 placeholder:text-cream-400/50 focus:outline-hidden focus:border-gold-400 leading-relaxed"
           />
         </div>
 

@@ -40,7 +40,7 @@ export const RevealTimeField: React.FC<RevealTimeFieldProps> = ({ revealAt, onCo
   };
 
   const fieldClass =
-    'px-3 py-2 rounded-xl bg-noir-900 border border-cream-400/20 text-xs text-cream-100 focus:outline-none focus:border-gold-400 font-mono';
+    'px-3 py-2 rounded-xl bg-noir-900 border border-cream-400/20 text-xs text-cream-100 focus:outline-hidden focus:border-gold-400 font-mono';
 
   return (
     <div role="group" aria-labelledby={labelId} className="px-1 space-y-1">
