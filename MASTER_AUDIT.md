@@ -8,7 +8,7 @@
 **Security review, partial:** 2026-09-25 to 26, recorded 2026-10-04 (§3f). **All 25 findings fixed.**
 **Remaining five domains:** reviewed 2026-10-05 (§3g). **All 36 findings fixed.**
 **Review of the §3g fixes:** 2026-10-10 (§3h). **All 12 findings fixed.**
-**Running-app feature pass:** 2026-10-14 (§3i). **25 of 27 fixed; N-112 and N-122 on hold by the owner.**
+**Running-app feature pass:** 2026-10-14 (§3i). **26 of 27 fixed; N-112 kept by the owner's decision.**
 **Follow-up on the production build (speed, keyboard, screen reader):** 2026-10-15 (§3j). **All 16 fixed** (N-139 and N-149 after the owner's decision).
 
 > **Read this first.** The audit below is preserved as written — each finding
@@ -1002,7 +1002,7 @@ and N-74, N-103 of N-75, N-104 of N-62.
 
 ## 3i. The Running-App Feature Pass (2026-10-14)
 
-**27 findings (N-133 found while re-checking the fixes): 25 fixed, 2 on hold by the owner (N-112, N-122).**
+**27 findings (N-133 found while re-checking the fixes): 26 fixed; N-112 kept by the owner's decision (2026-10-16).**
 
 Every review since §3c has read code. This one ran it: the API on local
 storage, Vite, Postgres, a desktop host browser, phone-sized guest browsers,
@@ -1037,7 +1037,7 @@ reading it.
 | **N-119** | "Нулирай" (reset local data), in the ZIP tab, clears localStorage. The signed-in host's studio then shows the demo album (`monika-and-alexander-2026`) as theirs, and every edit fails with "Forbidden: You do not own this event", shown in English inside the Bulgarian toast. | Medium | `src/services/storageSyncService.ts`, `src/components/host/HostDashboard.tsx` | Yes | `6cb05c8` |
 | **N-120** | After an album is deleted, `active_event_id` still points at it, and "Студио за младоженци" opens the deleted album from the local cache. | Medium | `src/components/host/dashboard/OverviewTab.tsx`, `src/services/eventService.ts` | Yes | `6cb05c8` |
 | **N-121** | Rejected photos disappear from every host screen: they are in neither the queue nor the gallery. The host cannot restore or delete them. They stay in storage, and the ZIP includes them with pending photos ("Всички 4 снимки" exported two rejected photos). | Medium | `src/components/host/ModerationQueue.tsx`, `server/routes/events/export.ts` | Yes | `fcd011f` |
-| **N-122** | There is no way to reset or change a password, and no way to delete an account. `authRouter` has only `/register`, `/login`, `/me` and `/logout`. A paying host who forgets their password loses the album. | Medium | `server/routes/auth.ts`, `src/components/host/HostAuthPage.tsx` | Yes | On hold (owner, 2026-10-14) |
+| **N-122** | There is no way to reset or change a password, and no way to delete an account. `authRouter` has only `/register`, `/login`, `/me` and `/logout`. A paying host who forgets their password loses the album. | Medium | `server/routes/authAccount.ts`, `src/components/host/AccountSecurity.tsx` | Yes | `99eeed2` (password change and account deletion, with a live plan cancelled at Stripe first). Email reset waits for mail; meanwhile `npm run admin:reset-password -- <email>` |
 | **N-123** | Free albums are seeded with five quests that guests can see and complete, because uploads record completions on any tier. But the host's quest tab is locked, so the host cannot delete them, and the leaderboard returns 403. | Low | `server/routes/auth.ts`, `server/routes/photos/upload.ts` | Yes | `5b4c67c` |
 | **N-124** | Camera errors other than a denied permission show the browser's raw English message, for example "Requested device not found". A missing microphone is reported as a denied permission. The voice guestbook's re-record button says "Снимай отново", which is photo wording. | Low | `src/components/camera/CameraCaptureModal.tsx`, `src/components/audio/AudioGuestbook.tsx` | Yes | `7d20328` |
 | **N-125** | English or untranslated text remains in the Bulgarian app. The default album title is "`<name>`'s Wedding". The "Photographer Ingest" tab label appears twice. The fallback guest name is "Guest". The portal says "N image(s) selected", which N-105 said was localized, and the default photographer name is "Official Photographer". Tier refusals embed raw ids ("изисква план \"celebration_pass\""). Event-save failure toasts show the server's English text. In EN mode the date placeholders stay "ДД.ММ.ГГГГ" and "ЧЧ:ММ". Ingest-key dates use the US format ("10/14/2026"). Album dates render as "13 Ноември 2026 Г.", with a capital month and "Г.". | Low | `server/routes/auth.ts`, `src/components/host/dashboard/TabNav.tsx`, `src/App.tsx`, `src/components/ingest/PhotographerIngestPortal.tsx`, `server/middleware/tierGate.ts`, `src/services/eventService.ts` | Yes | `cf89b4b` |
