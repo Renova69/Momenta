@@ -15,7 +15,8 @@ import { cleanSlug } from '../../lib/storage';
 import { SLUG_MAX_LENGTH } from '../../../shared/transliterate';
 import { requireAuth, optionalAuth } from '../../middleware/auth';
 import { getEffectiveTierForEvent, getEffectiveTierForUser, meetsTier, acquireUserEventCreationLock } from '../../middleware/tierGate';
-import { computeExpiry, purgeEventMedia, markEventDeleting, clearDeletionMark } from '../../lib/retention';
+import { computeExpiry } from '../../lib/retention';
+import { eraseAlbum, AlbumBeingDeletedError, type AlbumErasure } from '../../lib/albumErasure';
 import { errorLabel, isUniqueViolation } from '../../lib/errors';
 import {
   UpdateEventSchema,
@@ -618,13 +619,7 @@ eventsRouter.post('/:id/guest-sessions/reset', requireAuth, requireUuidParams('i
  * repository name before deleting it, and it is the appropriate weight for an
  * action this irreversible.
  *
- * **Media is purged before the row, and the order is load-bearing.** Deleting
- * the event cascades its photo and audio rows away, and those rows hold the
- * only record of which stored objects belong to this album. Purge afterwards
- * and every file is orphaned permanently, with nothing left that could ever
- * find them again — exactly the failure that put 164 MB of unreachable objects
- * in storage before the orphan sweep was fixed. purgeEventMedia() is the same
- * function the retention sweep uses; it is not reimplemented here.
+ * The erasure itself, files before rows, is eraseAlbum() (server/lib/albumErasure.ts).
  */
 eventsRouter.delete(
   '/:id',
@@ -655,77 +650,20 @@ eventsRouter.delete(
         });
       }
 
-      const photoCountRes = await pool.query<{ n: number }>(
-        'SELECT COUNT(*)::int AS n FROM photos WHERE event_id = $1',
-        [id]
-      );
-      const photosDeleted = photoCountRes.rows[0]?.n ?? 0;
-
-      // 0. N-47 — stop new media first. The purge works from a snapshot, and
-      // a photo written after it would lose its row and keep its file.
-      // Stamped under the album's upload lock, so an upload that holds the
-      // lock now commits before the snapshot and one that takes it later
-      // sees the stamp and refuses (getUploadContext).
-      const mark = await markEventDeleting(id);
-      if (!mark) {
-        // The retention sweep is purging it; its mark is not ours to take off.
-        return res.status(409).json({
-          error: 'This album is already being deleted. Try again in a few minutes.',
-          code: 'DELETION_IN_PROGRESS',
-        });
-      }
-
-      // 1. Storage first — see the note above about the cascade.
-      // If the purge or the row delete fails, the album is still here and must
-      // take uploads again. A crash leaves the mark behind; getUploadContext
-      // stops honouring one that old (DELETION_STALE_AFTER).
-      const unmark = () => clearDeletionMark(mark).catch(() => undefined);
-      let purge: Awaited<ReturnType<typeof purgeEventMedia>>;
+      // The same erasure an account deletion runs for each album (N-122).
+      let erased: AlbumErasure;
       try {
-        purge = await purgeEventMedia(id, mark);
+        erased = await eraseAlbum(id);
       } catch (err) {
-        await unmark();
+        if (err instanceof AlbumBeingDeletedError) {
+          return res.status(409).json({
+            error: 'This album is already being deleted. Try again in a few minutes.',
+            code: 'DELETION_IN_PROGRESS',
+          });
+        }
         throw err;
       }
-      const bytesFreed = purge.freedBytes;
-      if (purge.failedPaths.length > 0) {
-        // The rows naming these are about to be deleted, so after this only
-        // `storage:orphans` can find them. Logged loudly rather than returned:
-        // the host's erasure request did succeed, and this is an operator
-        // problem, not something to report to them as a failure.
-        console.error(
-          `[Events] purge for ${id} left ${purge.failedPaths.length} object(s) in storage:`,
-          purge.failedPaths.join(', ')
-        );
-      }
-
-      // 2. Then the row, which cascades guests, quests, comments and the rest.
-      try {
-        await pool.query('DELETE FROM events WHERE id = $1', [id]);
-      } catch (err) {
-        await unmark();
-        throw err;
-      }
-
-      // 3. A record that this happened, holding none of what was deleted.
-      await pool
-        .query(
-          `INSERT INTO event_deletions (event_id, slug, host_user_id, photos_deleted, bytes_freed)
-           VALUES ($1, $2, $3, $4, $5)`,
-          [id, slug, hostUserId, photosDeleted, bytesFreed]
-        )
-        .catch((err) => {
-          // The deletion itself has already happened and is not reversible;
-          // failing the response now would tell the host it did not work.
-          console.error('[Events] deletion succeeded but the audit row failed:', errorLabel(err));
-        });
-
-      console.warn(
-        `[Events] Host ${hostUserId} deleted event ${slug} (${id}) — ${photosDeleted} photo(s), ${bytesFreed} bytes freed`
-      );
-
-      wsManager.broadcastToEvent(id, 'EVENT_DELETED', { eventId: id });
-      res.json({ success: true, eventId: id, photosDeleted, bytesFreed });
+      res.json({ success: true, eventId: id, ...erased });
     } catch (err) {
       console.error('[Events] DELETE error:', errorLabel(err));
       res.status(500).json({ error: 'Internal server error' });
