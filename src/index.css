@@ -1,6 +1,184 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import 'tailwindcss';
+
+@theme {
+  --color-gold-50: #faf8f0;
+  --color-gold-100: #f5efe0;
+  --color-gold-200: #ebdcb9;
+  --color-gold-300: #dec58f;
+  --color-gold-400: #d4af37;
+  --color-gold-500: #b89325;
+  --color-gold-600: #91721a;
+  --color-gold-700: #6c5413;
+  --color-gold-800: #48370b;
+  --color-gold-900: #2a1f05;
+
+  --color-rosewood-50: #fdf7f7;
+  --color-rosewood-100: #faeeee;
+  --color-rosewood-200: #f4d4d6;
+  --color-rosewood-300: #e9b2b6;
+  --color-rosewood-400: #d98991;
+  --color-rosewood-500: #c45e68;
+  --color-rosewood-600: #a3424c;
+  --color-rosewood-700: #7f3139;
+  --color-rosewood-800: #5a2228;
+  --color-rosewood-900: #381418;
+
+  --color-sage-50: #f4f7f4;
+  --color-sage-100: #e6efe6;
+  --color-sage-200: #cddfcd;
+  --color-sage-300: #a9c5a9;
+  --color-sage-400: #84a784;
+  --color-sage-500: #628862;
+  --color-sage-600: #4c6e4c;
+  --color-sage-700: #3a543a;
+  --color-sage-800: #283b28;
+  --color-sage-900: #172317;
+
+  --color-cream-50: #fffefa;
+  --color-cream-100: #fdfbf7;
+  --color-cream-200: #f9f5ec;
+  --color-cream-300: #f4eedc;
+  --color-cream-400: #eae1c7;
+  --color-cream-500: #d5c8a6;
+  --color-cream-600: #b2a37d;
+  --color-cream-700: #8a7c59;
+  --color-cream-800: #5f553b;
+  --color-cream-900: #383222;
+
+  --color-noir-600: #3b3b42;
+  --color-noir-700: #27272c;
+  --color-noir-800: #1b1b1e;
+  --color-noir-900: #121214;
+
+  --font-serif: 'Cormorant Garamond', 'Playfair Display', Georgia, serif;
+  --font-sans: 'Sofia Sans Variable', system-ui, sans-serif;
+
+  --shadow-wedding: 0 10px 30px -5px rgba(212, 175, 55, 0.15);
+  --shadow-polaroid:
+    0 14px 28px rgba(0, 0, 0, 0.12), 0 10px 10px rgba(0, 0, 0, 0.08);
+  --shadow-glow: 0 0 25px rgba(212, 175, 55, 0.35);
+
+  --animate-fade-in: fadeIn 0.4s ease-out;
+  --animate-slide-up: slideUp 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+  --animate-pulse-subtle: pulseSubtle 3s infinite ease-in-out;
+  --animate-ken-burns-0: kenBurns0 12s ease-out forwards;
+  --animate-ken-burns-1: kenBurns1 12s ease-out forwards;
+  --animate-ken-burns-2: kenBurns2 12s ease-out forwards;
+  --animate-ken-burns-3: kenBurns3 12s ease-out forwards;
+  --animate-float-up: floatUp 3.2s ease-out forwards;
+
+  @keyframes fadeIn {
+    0% {
+      opacity: 0;
+    }
+    100% {
+      opacity: 1;
+    }
+  }
+  @keyframes slideUp {
+    0% {
+      opacity: 0;
+      transform: translateY(16px);
+    }
+    100% {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+  @keyframes pulseSubtle {
+    0%,
+    100% {
+      opacity: 1;
+      transform: scale(1);
+    }
+    50% {
+      opacity: 0.85;
+      transform: scale(1.02);
+    }
+  }
+  @keyframes kenBurns0 {
+    0% {
+      transform: scale(1.04) translate3d(0, 0, 0);
+    }
+    100% {
+      transform: scale(1.16) translate3d(-2.2%, -1.6%, 0);
+    }
+  }
+  @keyframes kenBurns1 {
+    0% {
+      transform: scale(1.16) translate3d(2%, 1.4%, 0);
+    }
+    100% {
+      transform: scale(1.04) translate3d(0, 0, 0);
+    }
+  }
+  @keyframes kenBurns2 {
+    0% {
+      transform: scale(1.05) translate3d(2.4%, -1.2%, 0);
+    }
+    100% {
+      transform: scale(1.18) translate3d(-1.8%, 1.8%, 0);
+    }
+  }
+  @keyframes kenBurns3 {
+    0% {
+      transform: scale(1.18) translate3d(-2%, 1.6%, 0);
+    }
+    100% {
+      transform: scale(1.05) translate3d(1.6%, -1.4%, 0);
+    }
+  }
+  @keyframes floatUp {
+    0% {
+      opacity: 0;
+      transform: translate3d(0, 0, 0) scale(0.6);
+    }
+    12% {
+      opacity: 1;
+      transform: translate3d(0, -8vh, 0) scale(1.1);
+    }
+    100% {
+      opacity: 0;
+      transform: translate3d(var(--drift, 0px), -78vh, 0) scale(0.85);
+    }
+  }
+}
+
+/*
+  The default border color has changed to `currentcolor` in Tailwind CSS v4,
+  so we've added these compatibility styles to make sure everything still
+  looks the same as it did with Tailwind CSS v3.
+
+  If we ever want to remove these styles, we need to add an explicit border
+  color utility to any element that depends on these defaults.
+*/
+@layer base {
+  *,
+  ::after,
+  ::before,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: var(--color-gray-200, currentcolor);
+  }
+}
+
+/*
+  Two more v3 defaults v4 dropped, kept so the move changes nothing a guest
+  sees: buttons show the pointing hand on hover (v4 leaves the arrow), and
+  placeholder text is a fixed grey rather than the field's own colour at half
+  strength.
+*/
+@layer base {
+  button:not(:disabled),
+  [role='button']:not(:disabled) {
+    cursor: pointer;
+  }
+
+  input::placeholder,
+  textarea::placeholder {
+    color: var(--color-gray-400);
+  }
+}
 
 @layer base {
   /*

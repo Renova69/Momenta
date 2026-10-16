@@ -201,7 +201,7 @@ export const OverviewTab: React.FC = () => {
               onChange={(e) => setDeleteConfirmText(e.target.value)}
               placeholder={event.slug}
               aria-label={i18n.t('host.delete_event')}
-              className="w-full px-3 py-1.5 rounded-xl bg-noir-900 border border-rosewood-500/30 text-cream-100 text-xs placeholder:text-cream-400/30 focus:outline-none focus:border-rosewood-400"
+              className="w-full px-3 py-1.5 rounded-xl bg-noir-900 border border-rosewood-500/30 text-cream-100 text-xs placeholder:text-cream-400/30 focus:outline-hidden focus:border-rosewood-400"
             />
             <button
               type="button"
@@ -330,7 +330,7 @@ export const OverviewTab: React.FC = () => {
               value={hostNameDraft}
               onChange={(e) => setHostNameDraft(e.target.value)}
               placeholder={i18n.t('host.hosts_example')}
-              className="w-full px-3 py-2 rounded-xl bg-noir-900 border border-cream-400/20 text-xs text-cream-100 focus:outline-none focus:border-gold-400"
+              className="w-full px-3 py-2 rounded-xl bg-noir-900 border border-cream-400/20 text-xs text-cream-100 focus:outline-hidden focus:border-gold-400"
             />
           </div>
 
@@ -345,7 +345,7 @@ export const OverviewTab: React.FC = () => {
               value={titleDraft}
               onChange={(e) => setTitleDraft(e.target.value)}
               placeholder={i18n.t('host.title_example')}
-              className="w-full px-3 py-2 rounded-xl bg-noir-900 border border-cream-400/20 text-xs text-cream-100 focus:outline-none focus:border-gold-400"
+              className="w-full px-3 py-2 rounded-xl bg-noir-900 border border-cream-400/20 text-xs text-cream-100 focus:outline-hidden focus:border-gold-400"
             />
           </div>
 
@@ -387,7 +387,7 @@ export const OverviewTab: React.FC = () => {
               onKeyDown={(e) => {
                 if (e.key === 'Enter') e.currentTarget.blur();
               }}
-              className="w-full px-3 py-2 rounded-xl bg-noir-900 border border-cream-400/20 text-xs text-gold-300 font-mono focus:outline-none focus:border-gold-400"
+              className="w-full px-3 py-2 rounded-xl bg-noir-900 border border-cream-400/20 text-xs text-gold-300 font-mono focus:outline-hidden focus:border-gold-400"
             />
           </div>
 
@@ -411,7 +411,7 @@ export const OverviewTab: React.FC = () => {
                   value={eventDateText}
                   onChange={(e) => setEventDateText(maskDateInput(e.target.value))}
                   onBlur={() => commitEventDateTime(eventDateText, eventTimeText)}
-                  className="w-full px-3 py-2 rounded-xl bg-noir-900 border border-cream-400/20 text-xs text-cream-100 focus:outline-none focus:border-gold-400 font-mono"
+                  className="w-full px-3 py-2 rounded-xl bg-noir-900 border border-cream-400/20 text-xs text-cream-100 focus:outline-hidden focus:border-gold-400 font-mono"
                 />
                 <input
                   type="text"
@@ -422,7 +422,7 @@ export const OverviewTab: React.FC = () => {
                   value={eventTimeText}
                   onChange={(e) => setEventTimeText(maskTimeInput(e.target.value))}
                   onBlur={() => commitEventDateTime(eventDateText, eventTimeText)}
-                  className="w-24 px-3 py-2 rounded-xl bg-noir-900 border border-cream-400/20 text-xs text-cream-100 focus:outline-none focus:border-gold-400 font-mono"
+                  className="w-24 px-3 py-2 rounded-xl bg-noir-900 border border-cream-400/20 text-xs text-cream-100 focus:outline-hidden focus:border-gold-400 font-mono"
                 />
               </div>
             </div>
@@ -437,7 +437,7 @@ export const OverviewTab: React.FC = () => {
                 value={venueNameDraft}
                 onChange={(e) => setVenueNameDraft(e.target.value)}
                 placeholder={i18n.t('host.venue_example')}
-                className="w-full px-3 py-2 rounded-xl bg-noir-900 border border-cream-400/20 text-xs text-cream-100 focus:outline-none focus:border-gold-400"
+                className="w-full px-3 py-2 rounded-xl bg-noir-900 border border-cream-400/20 text-xs text-cream-100 focus:outline-hidden focus:border-gold-400"
               />
             </div>
           </div>
@@ -452,7 +452,7 @@ export const OverviewTab: React.FC = () => {
               value={welcomeMessageDraft}
               onChange={(e) => setWelcomeMessageDraft(e.target.value)}
               rows={2}
-              className="w-full px-3 py-2 rounded-xl bg-noir-900 border border-cream-400/20 text-xs text-cream-100 focus:outline-none focus:border-gold-400 resize-none"
+              className="w-full px-3 py-2 rounded-xl bg-noir-900 border border-cream-400/20 text-xs text-cream-100 focus:outline-hidden focus:border-gold-400 resize-none"
             />
           </div>
         </div>

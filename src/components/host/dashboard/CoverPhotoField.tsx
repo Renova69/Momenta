@@ -85,7 +85,7 @@ export const CoverPhotoField: React.FC<CoverPhotoFieldProps> = ({ coverImageUrl,
       <span className="block text-xs font-semibold text-cream-300 mb-1">{i18n.t('host.cover_title')}</span>
       <p className="text-[11px] text-cream-400 mb-2">{i18n.t('host.cover_hint')}</p>
 
-      <div className="relative h-28 rounded-2xl overflow-hidden border border-cream-400/10 bg-gradient-to-br from-noir-900 via-noir-800 to-gold-900/30">
+      <div className="relative h-28 rounded-2xl overflow-hidden border border-cream-400/10 bg-linear-to-br from-noir-900 via-noir-800 to-gold-900/30">
         {coverImageUrl ? (
           <img src={coverImageUrl} alt={i18n.t('host.cover_current_alt')} className="w-full h-full object-cover" />
         ) : (

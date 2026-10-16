@@ -149,7 +149,7 @@ export const HostAuthPage: React.FC<HostAuthPageProps> = ({ onSuccess, initialTa
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="monika.alexander@wedmoments.bg"
-                  className="w-full pl-10 pr-4 py-3 rounded-xl bg-noir-800 border border-cream-400/20 text-cream-100 text-sm focus:outline-none focus:border-gold-400"
+                  className="w-full pl-10 pr-4 py-3 rounded-xl bg-noir-800 border border-cream-400/20 text-cream-100 text-sm focus:outline-hidden focus:border-gold-400"
                 />
               </div>
             </div>
@@ -167,7 +167,7 @@ export const HostAuthPage: React.FC<HostAuthPageProps> = ({ onSuccess, initialTa
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••••••"
-                  className="w-full pl-10 pr-4 py-3 rounded-xl bg-noir-800 border border-cream-400/20 text-cream-100 text-sm focus:outline-none focus:border-gold-400"
+                  className="w-full pl-10 pr-4 py-3 rounded-xl bg-noir-800 border border-cream-400/20 text-cream-100 text-sm focus:outline-hidden focus:border-gold-400"
                 />
               </div>
             </div>
@@ -175,7 +175,7 @@ export const HostAuthPage: React.FC<HostAuthPageProps> = ({ onSuccess, initialTa
             <button
               type="submit"
               disabled={isLoading}
-              className="w-full py-3.5 rounded-xl bg-gradient-to-r from-gold-400 to-gold-500 text-noir-900 font-bold text-sm shadow-glow hover:brightness-110 active:scale-98 transition-all flex items-center justify-center gap-2 mt-6 disabled:opacity-50"
+              className="w-full py-3.5 rounded-xl bg-linear-to-r from-gold-400 to-gold-500 text-noir-900 font-bold text-sm shadow-glow hover:brightness-110 active:scale-98 transition-all flex items-center justify-center gap-2 mt-6 disabled:opacity-50"
             >
               {isLoading ? i18n.t('auth.signing_in') : i18n.t('host.signin_btn')}
             </button>
@@ -198,7 +198,7 @@ export const HostAuthPage: React.FC<HostAuthPageProps> = ({ onSuccess, initialTa
                   value={fullName}
                   onChange={(e) => setFullName(e.target.value)}
                   placeholder={i18n.t('auth.name_example')}
-                  className="w-full pl-10 pr-4 py-3 rounded-xl bg-noir-800 border border-cream-400/20 text-cream-100 text-sm focus:outline-none focus:border-gold-400"
+                  className="w-full pl-10 pr-4 py-3 rounded-xl bg-noir-800 border border-cream-400/20 text-cream-100 text-sm focus:outline-hidden focus:border-gold-400"
                 />
               </div>
             </div>
@@ -216,7 +216,7 @@ export const HostAuthPage: React.FC<HostAuthPageProps> = ({ onSuccess, initialTa
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="monika.alexander@wedmoments.bg"
-                  className="w-full pl-10 pr-4 py-3 rounded-xl bg-noir-800 border border-cream-400/20 text-cream-100 text-sm focus:outline-none focus:border-gold-400"
+                  className="w-full pl-10 pr-4 py-3 rounded-xl bg-noir-800 border border-cream-400/20 text-cream-100 text-sm focus:outline-hidden focus:border-gold-400"
                 />
               </div>
             </div>
@@ -234,7 +234,7 @@ export const HostAuthPage: React.FC<HostAuthPageProps> = ({ onSuccess, initialTa
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder={i18n.t('auth.password_hint')}
-                  className="w-full pl-10 pr-4 py-3 rounded-xl bg-noir-800 border border-cream-400/20 text-cream-100 text-sm focus:outline-none focus:border-gold-400"
+                  className="w-full pl-10 pr-4 py-3 rounded-xl bg-noir-800 border border-cream-400/20 text-cream-100 text-sm focus:outline-hidden focus:border-gold-400"
                 />
               </div>
             </div>
@@ -280,7 +280,7 @@ export const HostAuthPage: React.FC<HostAuthPageProps> = ({ onSuccess, initialTa
                   value={companyName}
                   onChange={(e) => setCompanyName(e.target.value)}
                   placeholder={i18n.t('auth.company_example')}
-                  className="w-full px-4 py-3 rounded-xl bg-noir-800 border border-cream-400/20 text-cream-100 text-sm focus:outline-none focus:border-gold-400"
+                  className="w-full px-4 py-3 rounded-xl bg-noir-800 border border-cream-400/20 text-cream-100 text-sm focus:outline-hidden focus:border-gold-400"
                 />
               </div>
             )}
@@ -288,7 +288,7 @@ export const HostAuthPage: React.FC<HostAuthPageProps> = ({ onSuccess, initialTa
             <button
               type="submit"
               disabled={isLoading}
-              className="w-full py-3.5 rounded-xl bg-gradient-to-r from-gold-400 to-gold-500 text-noir-900 font-bold text-sm shadow-glow hover:brightness-110 active:scale-98 transition-all flex items-center justify-center gap-2 mt-6 disabled:opacity-50"
+              className="w-full py-3.5 rounded-xl bg-linear-to-r from-gold-400 to-gold-500 text-noir-900 font-bold text-sm shadow-glow hover:brightness-110 active:scale-98 transition-all flex items-center justify-center gap-2 mt-6 disabled:opacity-50"
             >
               {isLoading ? i18n.t('auth.creating') : i18n.t('host.signup_btn')}
             </button>

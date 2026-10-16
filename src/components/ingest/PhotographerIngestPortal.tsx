@@ -158,7 +158,7 @@ export const PhotographerIngestPortal: React.FC<PhotographerIngestPortalProps> =
               value={key}
               onChange={(e) => setKey(e.target.value)}
               placeholder="wmi_..."
-              className="w-full px-3 py-2.5 rounded-xl bg-noir-900 border border-cream-400/20 text-xs text-cream-100 font-mono focus:outline-none focus:border-gold-400"
+              className="w-full px-3 py-2.5 rounded-xl bg-noir-900 border border-cream-400/20 text-xs text-cream-100 font-mono focus:outline-hidden focus:border-gold-400"
             />
           </div>
 
@@ -169,7 +169,7 @@ export const PhotographerIngestPortal: React.FC<PhotographerIngestPortalProps> =
                 type="text"
                 value={photographerName}
                 onChange={(e) => setPhotographerName(e.target.value)}
-                className="w-full px-3 py-2.5 rounded-xl bg-noir-900 border border-cream-400/20 text-xs text-cream-100 focus:outline-none focus:border-gold-400"
+                className="w-full px-3 py-2.5 rounded-xl bg-noir-900 border border-cream-400/20 text-xs text-cream-100 focus:outline-hidden focus:border-gold-400"
               />
             </div>
             <div>
@@ -179,7 +179,7 @@ export const PhotographerIngestPortal: React.FC<PhotographerIngestPortalProps> =
                 value={caption}
                 onChange={(e) => setCaption(e.target.value)}
                 placeholder={i18n.t('ingest.portal_caption_placeholder')}
-                className="w-full px-3 py-2.5 rounded-xl bg-noir-900 border border-cream-400/20 text-xs text-cream-100 focus:outline-none focus:border-gold-400"
+                className="w-full px-3 py-2.5 rounded-xl bg-noir-900 border border-cream-400/20 text-xs text-cream-100 focus:outline-hidden focus:border-gold-400"
               />
             </div>
           </div>
@@ -243,7 +243,7 @@ export const PhotographerIngestPortal: React.FC<PhotographerIngestPortalProps> =
         <button
           onClick={handleUpload}
           disabled={isUploading}
-          className="w-full py-4 rounded-2xl bg-gradient-to-r from-gold-400 to-gold-500 text-noir-900 font-bold shadow-glow hover:brightness-110 flex items-center justify-center gap-2 disabled:opacity-60"
+          className="w-full py-4 rounded-2xl bg-linear-to-r from-gold-400 to-gold-500 text-noir-900 font-bold shadow-glow hover:brightness-110 flex items-center justify-center gap-2 disabled:opacity-60"
         >
           {isUploading ? <Loader2 className="w-5 h-5 animate-spin" /> : <UploadCloud className="w-5 h-5" />}
           <span>

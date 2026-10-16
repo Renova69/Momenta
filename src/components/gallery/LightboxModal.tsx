@@ -123,7 +123,7 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
           )}
 
           {photo.questTitle && (
-            <div className="absolute bottom-4 left-4 px-3 py-1 rounded-full bg-noir-900/80 backdrop-blur-sm text-gold-300 text-xs font-semibold flex items-center gap-1.5 border border-gold-400/30">
+            <div className="absolute bottom-4 left-4 px-3 py-1 rounded-full bg-noir-900/80 backdrop-blur-xs text-gold-300 text-xs font-semibold flex items-center gap-1.5 border border-gold-400/30">
               <Trophy className="w-3.5 h-3.5 text-gold-400" />
               <span>{i18n.t('lightbox.quest_tag')} {photo.questTitle}</span>
             </div>
@@ -300,7 +300,7 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
                 value={newComment}
                 onChange={(e) => setNewComment(e.target.value)}
                 placeholder={i18n.t('lightbox.write_placeholder')}
-                className="flex-1 px-3 py-2 rounded-xl bg-noir-800 border border-cream-400/20 text-xs text-cream-100 placeholder:text-cream-400/40 focus:outline-none focus:border-gold-400"
+                className="flex-1 px-3 py-2 rounded-xl bg-noir-800 border border-cream-400/20 text-xs text-cream-100 placeholder:text-cream-400/40 focus:outline-hidden focus:border-gold-400"
               />
               <button
                 type="submit"

@@ -111,7 +111,7 @@ export const PhotographerIngestPanel: React.FC<PhotographerIngestPanelProps> = (
             type="text"
             value={label}
             onChange={(e) => setLabel(e.target.value)}
-            className="flex-1 px-3 py-2.5 rounded-xl bg-noir-900 border border-cream-400/20 text-xs text-cream-100 focus:outline-none focus:border-gold-400"
+            className="flex-1 px-3 py-2.5 rounded-xl bg-noir-900 border border-cream-400/20 text-xs text-cream-100 focus:outline-hidden focus:border-gold-400"
             placeholder={i18n.t('ingest.key_label_placeholder')}
           />
           <button

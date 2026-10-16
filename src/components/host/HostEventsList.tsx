@@ -171,7 +171,7 @@ export const HostEventsList: React.FC<HostEventsListProps> = ({
                 value={hostName}
                 onChange={(e) => setHostName(e.target.value)}
                 placeholder={i18n.t('events.hosts_example')}
-                className="w-full px-3.5 py-2.5 rounded-xl bg-noir-800 border border-cream-400/20 text-xs text-cream-100 focus:outline-none focus:border-gold-400"
+                className="w-full px-3.5 py-2.5 rounded-xl bg-noir-800 border border-cream-400/20 text-xs text-cream-100 focus:outline-hidden focus:border-gold-400"
               />
             </div>
 
@@ -185,7 +185,7 @@ export const HostEventsList: React.FC<HostEventsListProps> = ({
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
                 placeholder={i18n.t('events.title_example')}
-                className="w-full px-3.5 py-2.5 rounded-xl bg-noir-800 border border-cream-400/20 text-xs text-cream-100 focus:outline-none focus:border-gold-400"
+                className="w-full px-3.5 py-2.5 rounded-xl bg-noir-800 border border-cream-400/20 text-xs text-cream-100 focus:outline-hidden focus:border-gold-400"
               />
             </div>
 
@@ -200,7 +200,7 @@ export const HostEventsList: React.FC<HostEventsListProps> = ({
                   required
                   value={eventDate}
                   onChange={(e) => setEventDate(e.target.value)}
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-noir-800 border border-cream-400/20 text-xs text-cream-100 focus:outline-none focus:border-gold-400"
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-noir-800 border border-cream-400/20 text-xs text-cream-100 focus:outline-hidden focus:border-gold-400"
                 />
               </div>
 
@@ -214,7 +214,7 @@ export const HostEventsList: React.FC<HostEventsListProps> = ({
                   value={venueName}
                   onChange={(e) => setVenueName(e.target.value)}
                   placeholder={i18n.t('events.venue_example')}
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-noir-800 border border-cream-400/20 text-xs text-cream-100 focus:outline-none focus:border-gold-400"
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-noir-800 border border-cream-400/20 text-xs text-cream-100 focus:outline-hidden focus:border-gold-400"
                 />
               </div>
             </div>
@@ -228,7 +228,7 @@ export const HostEventsList: React.FC<HostEventsListProps> = ({
             <button
               type="submit"
               disabled={isSubmitting}
-              className="w-full py-3 rounded-xl bg-gradient-to-r from-gold-400 to-gold-500 text-noir-900 font-bold text-xs shadow-glow hover:brightness-110 active:scale-98 transition-all mt-4 flex items-center justify-center gap-2 disabled:opacity-60"
+              className="w-full py-3 rounded-xl bg-linear-to-r from-gold-400 to-gold-500 text-noir-900 font-bold text-xs shadow-glow hover:brightness-110 active:scale-98 transition-all mt-4 flex items-center justify-center gap-2 disabled:opacity-60"
             >
               <Plus className="w-4 h-4 text-noir-900" />
               <span>{isSubmitting ? i18n.t('auth.creating') : i18n.t('events.create_new')}</span>
@@ -274,7 +274,7 @@ export const HostEventsList: React.FC<HostEventsListProps> = ({
                     ) : (
                       <div
                         aria-hidden="true"
-                        className="w-14 h-14 rounded-xl border border-cream-400/15 shrink-0 bg-gradient-to-br from-gold-400/25 to-noir-900"
+                        className="w-14 h-14 rounded-xl border border-cream-400/15 shrink-0 bg-linear-to-br from-gold-400/25 to-noir-900"
                       />
                     )}
                     <div className="min-w-0">

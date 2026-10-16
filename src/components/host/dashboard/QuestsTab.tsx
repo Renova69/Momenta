@@ -64,7 +64,7 @@ export const QuestsTab: React.FC = () => {
               value={newQuestTitle}
               onChange={(e) => setNewQuestTitle(e.target.value)}
               placeholder={i18n.t('host.quest_title_example')}
-              className="w-full px-3 py-2 rounded-xl bg-noir-900 border border-cream-400/20 text-xs text-cream-100 focus:outline-none focus:border-gold-400"
+              className="w-full px-3 py-2 rounded-xl bg-noir-900 border border-cream-400/20 text-xs text-cream-100 focus:outline-hidden focus:border-gold-400"
             />
           </div>
 
@@ -76,7 +76,7 @@ export const QuestsTab: React.FC = () => {
               value={newQuestDesc}
               onChange={(e) => setNewQuestDesc(e.target.value)}
               placeholder={i18n.t('host.quest_desc_example')}
-              className="w-full px-3 py-2 rounded-xl bg-noir-900 border border-cream-400/20 text-xs text-cream-100 focus:outline-none focus:border-gold-400"
+              className="w-full px-3 py-2 rounded-xl bg-noir-900 border border-cream-400/20 text-xs text-cream-100 focus:outline-hidden focus:border-gold-400"
             />
           </div>
 
@@ -86,7 +86,7 @@ export const QuestsTab: React.FC = () => {
               id={`${fieldIds}-3`}
               value={newQuestIcon}
               onChange={(e) => setNewQuestIcon(e.target.value)}
-              className="w-full px-3 py-2 rounded-xl bg-noir-900 border border-cream-400/20 text-xs text-cream-100 focus:outline-none focus:border-gold-400"
+              className="w-full px-3 py-2 rounded-xl bg-noir-900 border border-cream-400/20 text-xs text-cream-100 focus:outline-hidden focus:border-gold-400"
             >
               {QUEST_ICONS.map((icon) => (
                 <option key={icon.value} value={icon.value}>
@@ -111,7 +111,7 @@ export const QuestsTab: React.FC = () => {
                 const parsed = Number.parseInt(e.target.value, 10);
                 setNewQuestPoints(Number.isNaN(parsed) ? 5 : Math.min(100, Math.max(5, parsed)));
               }}
-              className="w-full px-3 py-2 rounded-xl bg-noir-900 border border-cream-400/20 text-xs text-cream-100 focus:outline-none focus:border-gold-400"
+              className="w-full px-3 py-2 rounded-xl bg-noir-900 border border-cream-400/20 text-xs text-cream-100 focus:outline-hidden focus:border-gold-400"
             />
           </div>
 

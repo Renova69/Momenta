@@ -165,7 +165,7 @@ export const PricingPlansModal: React.FC<PricingPlansModalProps> = ({
       <div className="relative w-full max-w-5xl bg-noir-900 rounded-3xl border border-gold-400/30 shadow-2xl overflow-hidden flex flex-col max-h-[92vh]">
         
         {/* Header */}
-        <div className="p-6 sm:p-8 text-center border-b border-cream-400/10 relative bg-gradient-to-b from-noir-800 to-noir-900">
+        <div className="p-6 sm:p-8 text-center border-b border-cream-400/10 relative bg-linear-to-b from-noir-800 to-noir-900">
           <button
             onClick={onClose}
             aria-label={i18n.t('common.close')}
@@ -239,7 +239,7 @@ export const PricingPlansModal: React.FC<PricingPlansModalProps> = ({
                   key={tierKey}
                   className={`rounded-2xl p-5 sm:p-6 border flex flex-col justify-between transition-all relative ${
                     isHighlighted
-                      ? 'bg-gradient-to-b from-noir-800 to-[#1e190e] border-gold-400/50 shadow-glow'
+                      ? 'bg-linear-to-b from-noir-800 to-[#1e190e] border-gold-400/50 shadow-glow'
                       : 'bg-noir-800/80 border-cream-400/10 hover:border-cream-400/30'
                   } ${isCurrent ? 'ring-2 ring-gold-400' : ''}`}
                 >
@@ -278,7 +278,7 @@ export const PricingPlansModal: React.FC<PricingPlansModalProps> = ({
                     <ul className="space-y-2.5 mb-6 text-xs text-cream-200">
                       {plan.features.map((featKey, i) => (
                         <li key={i} className="flex items-start gap-2 text-[11px] leading-tight">
-                          <Check className="w-3.5 h-3.5 text-gold-400 flex-shrink-0 mt-0.5" />
+                          <Check className="w-3.5 h-3.5 text-gold-400 shrink-0 mt-0.5" />
                           <span>{i18n.t(featKey)}</span>
                         </li>
                       ))}
@@ -292,7 +292,7 @@ export const PricingPlansModal: React.FC<PricingPlansModalProps> = ({
                       isCurrent
                         ? 'bg-noir-900 border border-gold-400/50 text-gold-300'
                         : isHighlighted
-                        ? 'bg-gradient-to-r from-gold-400 to-gold-500 text-noir-900 shadow-glow hover:brightness-110'
+                        ? 'bg-linear-to-r from-gold-400 to-gold-500 text-noir-900 shadow-glow hover:brightness-110'
                         : 'bg-noir-700 hover:bg-noir-600 text-cream-100'
                     }`}
                   >

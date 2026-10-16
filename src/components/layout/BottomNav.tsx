@@ -84,7 +84,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
         <div className="flex flex-col items-center justify-center -mt-6 px-1 flex-1">
           <button
             onClick={onOpenCapture}
-            className="w-13 h-13 rounded-full bg-gradient-to-tr from-gold-500 to-gold-400 text-noir-900 flex items-center justify-center shadow-glow border-2 border-noir-900 active:scale-90 transition-transform"
+            className="w-13 h-13 rounded-full bg-linear-to-tr from-gold-500 to-gold-400 text-noir-900 flex items-center justify-center shadow-glow border-2 border-noir-900 active:scale-90 transition-transform"
             title={i18n.t('camera.title')}
           >
             <Camera className="w-6 h-6" />

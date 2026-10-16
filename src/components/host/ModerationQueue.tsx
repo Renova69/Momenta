@@ -109,7 +109,7 @@ export const ModerationQueue: React.FC<ModerationQueueProps> = ({
                 key={photo.id}
                 className="bg-noir-800 rounded-2xl border border-cream-400/15 overflow-hidden shadow-lg flex flex-col"
               >
-                <div className="relative aspect-[4/3] bg-black">
+                <div className="relative aspect-4/3 bg-black">
                   <img
                     src={photo.thumbnailUrl || photo.fullUrl}
                     alt={photoAlt(photo)}
@@ -225,7 +225,7 @@ export const ModerationQueue: React.FC<ModerationQueueProps> = ({
                 />
 
                 {isFeatured && (
-                  <div className="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded bg-gold-400 text-noir-900 text-[9px] font-bold">
+                  <div className="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded-sm bg-gold-400 text-noir-900 text-[9px] font-bold">
                     {i18n.t('host.tv_featured')}
                   </div>
                 )}
@@ -239,7 +239,7 @@ export const ModerationQueue: React.FC<ModerationQueueProps> = ({
                   <div className="absolute inset-0 bg-black/75 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-1.5 p-2">
                     <button
                       onClick={() => onSetStatus(photo.id, isFeatured ? 'approved' : 'featured')}
-                      className="w-full py-1 rounded bg-gold-400 text-noir-900 font-bold text-[10px] flex items-center justify-center gap-1"
+                      className="w-full py-1 rounded-sm bg-gold-400 text-noir-900 font-bold text-[10px] flex items-center justify-center gap-1"
                     >
                       <Sparkles className="w-3 h-3" />
                       <span>{isFeatured ? i18n.t('host.unfeature') : i18n.t('host.feature_tv')}</span>
@@ -247,7 +247,7 @@ export const ModerationQueue: React.FC<ModerationQueueProps> = ({
 
                     <button
                       onClick={() => handleSingleDelete(photo.id)}
-                      className="w-full py-1 rounded bg-rosewood-600/80 hover:bg-rosewood-600 text-white text-[10px] flex items-center justify-center gap-1"
+                      className="w-full py-1 rounded-sm bg-rosewood-600/80 hover:bg-rosewood-600 text-white text-[10px] flex items-center justify-center gap-1"
                     >
                       <Trash2 className="w-3 h-3" />
                       <span>{i18n.t('host.delete')}</span>
@@ -279,14 +279,14 @@ export const ModerationQueue: React.FC<ModerationQueueProps> = ({
                 <div className="flex gap-1 p-1.5">
                   <button
                     onClick={() => onSetStatus(photo.id, 'approved')}
-                    className="flex-1 py-1 rounded bg-sage-500/20 hover:bg-sage-500/30 text-sage-300 border border-sage-400/40 text-[10px] font-semibold flex items-center justify-center gap-1"
+                    className="flex-1 py-1 rounded-sm bg-sage-500/20 hover:bg-sage-500/30 text-sage-300 border border-sage-400/40 text-[10px] font-semibold flex items-center justify-center gap-1"
                   >
                     <RotateCcw className="w-3 h-3" />
                     <span>{i18n.t('host.restore')}</span>
                   </button>
                   <button
                     onClick={() => handleSingleDelete(photo.id)}
-                    className="flex-1 py-1 rounded bg-rosewood-600/80 hover:bg-rosewood-600 text-white text-[10px] flex items-center justify-center gap-1"
+                    className="flex-1 py-1 rounded-sm bg-rosewood-600/80 hover:bg-rosewood-600 text-white text-[10px] flex items-center justify-center gap-1"
                   >
                     <Trash2 className="w-3 h-3" />
                     <span>{i18n.t('host.delete')}</span>

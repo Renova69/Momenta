@@ -55,14 +55,14 @@ export const CameraViewfinder: React.FC<CameraViewfinderProps> = ({
   <>
     {/* Top bar — over the picture, not above it. */}
     <div
-      className="absolute inset-x-0 top-0 z-20 flex items-start justify-between gap-3 p-4 bg-gradient-to-b from-black/70 to-transparent"
+      className="absolute inset-x-0 top-0 z-20 flex items-start justify-between gap-3 p-4 bg-linear-to-b from-black/70 to-transparent"
       style={{ paddingTop: 'max(1rem, env(safe-area-inset-top))' }}
     >
       <button
         type="button"
         onClick={onClose}
         aria-label={i18n.t('common.close')}
-        className="w-10 h-10 rounded-full bg-black/50 backdrop-blur-sm text-white flex items-center justify-center active:scale-95 transition-transform"
+        className="w-10 h-10 rounded-full bg-black/50 backdrop-blur-xs text-white flex items-center justify-center active:scale-95 transition-transform"
       >
         <X className="w-5 h-5" />
       </button>
@@ -78,7 +78,7 @@ export const CameraViewfinder: React.FC<CameraViewfinderProps> = ({
           type="button"
           onClick={onFlipCamera}
           aria-label={i18n.t('camera.flip')}
-          className="w-10 h-10 rounded-full bg-black/50 backdrop-blur-sm text-white flex items-center justify-center active:scale-95 transition-transform"
+          className="w-10 h-10 rounded-full bg-black/50 backdrop-blur-xs text-white flex items-center justify-center active:scale-95 transition-transform"
         >
           <RefreshCw className="w-5 h-5" />
         </button>
@@ -89,7 +89,7 @@ export const CameraViewfinder: React.FC<CameraViewfinderProps> = ({
 
     {/* Bottom controls. */}
     <div
-      className="absolute inset-x-0 bottom-0 z-20 bg-gradient-to-t from-black/85 via-black/60 to-transparent pt-8"
+      className="absolute inset-x-0 bottom-0 z-20 bg-linear-to-t from-black/85 via-black/60 to-transparent pt-8"
       style={{ paddingBottom: 'max(1rem, env(safe-area-inset-bottom))' }}
     >
       {/* Filters, chosen before the shot the way a camera app does. */}
@@ -103,7 +103,7 @@ export const CameraViewfinder: React.FC<CameraViewfinderProps> = ({
             className={`shrink-0 px-3 py-1.5 rounded-full text-[11px] font-semibold border transition-all ${
               filter === f.id
                 ? 'bg-gold-400 text-noir-900 border-gold-400'
-                : 'bg-black/40 text-cream-200 border-white/20 backdrop-blur-sm'
+                : 'bg-black/40 text-cream-200 border-white/20 backdrop-blur-xs'
             }`}
           >
             {f.label}
@@ -116,7 +116,7 @@ export const CameraViewfinder: React.FC<CameraViewfinderProps> = ({
           type="button"
           onClick={onPickFromGallery}
           aria-label={i18n.t('camera.gallery')}
-          className="w-12 h-12 rounded-xl overflow-hidden border border-white/30 bg-black/40 backdrop-blur-sm flex items-center justify-center active:scale-95 transition-transform"
+          className="w-12 h-12 rounded-xl overflow-hidden border border-white/30 bg-black/40 backdrop-blur-xs flex items-center justify-center active:scale-95 transition-transform"
         >
           {sent[0] ? (
             <img src={sent[0]} alt="" className="w-full h-full object-cover" />
@@ -139,7 +139,7 @@ export const CameraViewfinder: React.FC<CameraViewfinderProps> = ({
           type="button"
           onClick={onUsePhoneCamera}
           aria-label={i18n.t('camera.phone_cam')}
-          className="w-12 h-12 rounded-xl border border-white/30 bg-black/40 backdrop-blur-sm flex items-center justify-center active:scale-95 transition-transform"
+          className="w-12 h-12 rounded-xl border border-white/30 bg-black/40 backdrop-blur-xs flex items-center justify-center active:scale-95 transition-transform"
         >
           <Camera className="w-5 h-5 text-gold-400" />
         </button>

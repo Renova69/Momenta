@@ -220,7 +220,7 @@ export const AudioGuestbook: React.FC<AudioGuestbookProps> = ({
     <div className="space-y-8">
       
       {/* Vintage Phone Booth Recorder Hero */}
-      <div className="bg-gradient-to-br from-noir-800 via-[#1c1813] to-noir-900 rounded-3xl p-6 sm:p-8 border border-gold-400/30 shadow-2xl relative overflow-hidden text-center">
+      <div className="bg-linear-to-br from-noir-800 via-[#1c1813] to-noir-900 rounded-3xl p-6 sm:p-8 border border-gold-400/30 shadow-2xl relative overflow-hidden text-center">
         
         {/* Glow decoration */}
         <div className="absolute left-1/2 -top-12 -translate-x-1/2 w-64 h-32 bg-gold-400/10 rounded-full blur-3xl pointer-events-none" />
@@ -260,7 +260,7 @@ export const AudioGuestbook: React.FC<AudioGuestbookProps> = ({
                 <button
                   type="button"
                   onClick={startRecording}
-                  className="w-24 h-24 rounded-full bg-gradient-to-tr from-gold-500 to-gold-400 hover:brightness-110 border-4 border-gold-300/40 shadow-glow flex flex-col items-center justify-center text-noir-900 active:scale-95 transition-all"
+                  className="w-24 h-24 rounded-full bg-linear-to-tr from-gold-500 to-gold-400 hover:brightness-110 border-4 border-gold-300/40 shadow-glow flex flex-col items-center justify-center text-noir-900 active:scale-95 transition-all"
                 >
                   <Mic className="w-8 h-8 mb-1" />
                   <span className="text-[10px] font-bold uppercase tracking-wider">{i18n.t('audio.record_btn')}</span>
@@ -309,7 +309,7 @@ export const AudioGuestbook: React.FC<AudioGuestbookProps> = ({
               placeholder={i18n.t('audio.note_placeholder')}
               rows={2}
               maxLength={150}
-              className="w-full px-3 py-2 rounded-xl bg-noir-800 border border-cream-400/20 text-cream-100 text-xs placeholder:text-cream-400/40 focus:outline-none focus:border-gold-400 resize-none"
+              className="w-full px-3 py-2 rounded-xl bg-noir-800 border border-cream-400/20 text-cream-100 text-xs placeholder:text-cream-400/40 focus:outline-hidden focus:border-gold-400 resize-none"
             />
 
             <div className="flex items-center gap-2 pt-1">
@@ -328,7 +328,7 @@ export const AudioGuestbook: React.FC<AudioGuestbookProps> = ({
                 type="button"
                 onClick={handleSaveRecording}
                 disabled={isSaving}
-                className="flex-[2] py-2.5 rounded-xl bg-gradient-to-r from-gold-400 to-gold-500 text-noir-900 font-bold text-xs shadow-glow hover:brightness-110 flex items-center justify-center gap-1.5 disabled:opacity-60 disabled:cursor-not-allowed"
+                className="flex-2 py-2.5 rounded-xl bg-linear-to-r from-gold-400 to-gold-500 text-noir-900 font-bold text-xs shadow-glow hover:brightness-110 flex items-center justify-center gap-1.5 disabled:opacity-60 disabled:cursor-not-allowed"
               >
                 <Upload className="w-4 h-4" />
                 <span>{isSaving ? i18n.t('audio.saving') : i18n.t('audio.save_btn')}</span>
@@ -382,7 +382,7 @@ export const AudioGuestbook: React.FC<AudioGuestbookProps> = ({
                     type="button"
                     aria-label={isPlaying ? i18n.t('audio.pause') : i18n.t('audio.play_message')}
                     onClick={() => togglePlayback(entry.id, entry.audioUrl)}
-                    className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 shadow-sm transition-transform active:scale-95 ${
+                    className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 shadow-xs transition-transform active:scale-95 ${
                       isPlaying
                         ? 'bg-rosewood-500 text-white animate-pulse'
                         : 'bg-gold-400 text-noir-900 hover:brightness-110'

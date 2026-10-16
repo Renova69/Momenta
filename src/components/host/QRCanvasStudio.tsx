@@ -326,7 +326,7 @@ export const QRCanvasStudio: React.FC<QRCanvasStudioProps> = ({
                   setHeadline(e.target.value);
                   onUpdateConfig({ headline: e.target.value });
                 }}
-                className="w-full px-3 py-2 rounded-xl bg-noir-900 border border-cream-400/20 text-xs text-cream-100 focus:outline-none focus:border-gold-400"
+                className="w-full px-3 py-2 rounded-xl bg-noir-900 border border-cream-400/20 text-xs text-cream-100 focus:outline-hidden focus:border-gold-400"
               />
             </div>
 
@@ -342,7 +342,7 @@ export const QRCanvasStudio: React.FC<QRCanvasStudioProps> = ({
                   onUpdateConfig({ subtext: e.target.value });
                 }}
                 rows={4}
-                className="w-full px-3 py-2 rounded-xl bg-noir-900 border border-cream-400/20 text-xs text-cream-100 focus:outline-none focus:border-gold-400 resize-y"
+                className="w-full px-3 py-2 rounded-xl bg-noir-900 border border-cream-400/20 text-xs text-cream-100 focus:outline-hidden focus:border-gold-400 resize-y"
               />
             </div>
 
@@ -369,7 +369,7 @@ export const QRCanvasStudio: React.FC<QRCanvasStudioProps> = ({
         <div className="lg:col-span-7 flex items-center justify-center p-4 bg-noir-950/60 rounded-3xl border border-cream-400/10">
           <div
             id="printable-canvas"
-            className="w-full max-w-[440px] aspect-[1/1.414] bg-[#FDFBF7] text-[#1A1817] p-8 sm:p-10 rounded-2xl shadow-2xl flex flex-col justify-between items-center text-center relative overflow-hidden transition-all duration-300"
+            className="w-full max-w-[440px] aspect-[1/1.414] bg-cream-100 text-[#1A1817] p-8 sm:p-10 rounded-2xl shadow-2xl flex flex-col justify-between items-center text-center relative overflow-hidden transition-all duration-300"
             style={{
               border: activeFrame === 'modern_clean' ? `6px solid ${accentColor}` : undefined,
             }}
@@ -377,7 +377,7 @@ export const QRCanvasStudio: React.FC<QRCanvasStudioProps> = ({
             {/* Decorative Minimalist Gold Frame */}
             {activeFrame === 'minimal_gold' && (
               <div
-                className="absolute inset-4 sm:inset-5 pointer-events-none rounded-sm"
+                className="absolute inset-4 sm:inset-5 pointer-events-none rounded-xs"
                 style={{ border: `1.5px solid ${accentColor}` }}
               >
                 <div

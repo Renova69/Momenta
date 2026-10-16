@@ -16,7 +16,7 @@ import {
 } from 'lucide-react';
 
 /** Height of the cover photo across the top of the hero, and of its scrim. */
-const COVER_BAND = 'h-72 sm:h-[26rem]';
+const COVER_BAND = 'h-72 sm:h-104';
 
 interface WeddingHeroProps {
   event: WeddingEvent;
@@ -53,7 +53,7 @@ export const WeddingHero: React.FC<WeddingHeroProps> = ({
   const hasCover = !!event.coverImageUrl;
 
   return (
-    <div className="relative overflow-hidden rounded-2xl sm:rounded-3xl mb-4 sm:mb-8 border border-gold-400/20 bg-gradient-to-b from-noir-800/90 to-noir-900 shadow-2xl">
+    <div className="relative overflow-hidden rounded-2xl sm:rounded-3xl mb-4 sm:mb-8 border border-gold-400/20 bg-linear-to-b from-noir-800/90 to-noir-900 shadow-2xl">
       {/* Background Hero Image with Dark Vignette */}
       <div className="absolute inset-0 z-0">
         {/*
@@ -82,14 +82,14 @@ export const WeddingHero: React.FC<WeddingHeroProps> = ({
               alt=""
               fetchPriority="high"
               decoding="async"
-              className={`absolute inset-x-0 top-0 w-full ${COVER_BAND} object-cover object-center [mask-image:linear-gradient(to_bottom,black_45%,transparent)]`}
+              className={`absolute inset-x-0 top-0 w-full ${COVER_BAND} object-cover object-center mask-[linear-gradient(to_bottom,black_45%,transparent)]`}
             />
             <div
-              className={`absolute inset-x-0 top-0 ${COVER_BAND} bg-gradient-to-b from-noir-900/10 via-noir-900/50 to-transparent`}
+              className={`absolute inset-x-0 top-0 ${COVER_BAND} bg-linear-to-b from-noir-900/10 via-noir-900/50 to-transparent`}
             />
           </>
         ) : (
-          <div className="absolute inset-0 bg-gradient-to-t from-noir-900 via-noir-900/80 to-noir-900/40" />
+          <div className="absolute inset-0 bg-linear-to-t from-noir-900 via-noir-900/80 to-noir-900/40" />
         )}
       </div>
 
@@ -101,7 +101,7 @@ export const WeddingHero: React.FC<WeddingHeroProps> = ({
       >
         
         {/* Top Floating Badge */}
-        <div className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full bg-gold-400/15 border border-gold-400/30 text-gold-300 text-[10px] sm:text-xs tracking-widest uppercase font-semibold mb-2 sm:mb-4 shadow-sm">
+        <div className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full bg-gold-400/15 border border-gold-400/30 text-gold-300 text-[10px] sm:text-xs tracking-widest uppercase font-semibold mb-2 sm:mb-4 shadow-xs">
           <Heart className="w-3 h-3 text-gold-400 fill-gold-400" />
           <span className="truncate max-w-[240px] sm:max-w-none">{event.title}</span>
           <Heart className="w-3 h-3 text-gold-400 fill-gold-400" />

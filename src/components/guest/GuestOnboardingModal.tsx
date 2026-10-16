@@ -189,7 +189,7 @@ export const GuestOnboardingModal: React.FC<GuestOnboardingModalProps> = ({
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder={i18n.t('profile.name_placeholder')}
-              className="w-full px-3.5 py-2.5 rounded-xl bg-noir-800 border border-cream-400/20 text-cream-100 text-sm focus:outline-none focus:border-gold-400"
+              className="w-full px-3.5 py-2.5 rounded-xl bg-noir-800 border border-cream-400/20 text-cream-100 text-sm focus:outline-hidden focus:border-gold-400"
             />
           </div>
 
@@ -203,13 +203,13 @@ export const GuestOnboardingModal: React.FC<GuestOnboardingModalProps> = ({
               value={tableNumber}
               onChange={(e) => setTableNumber(e.target.value)}
               placeholder={i18n.t('profile.table_placeholder')}
-              className="w-full px-3.5 py-2.5 rounded-xl bg-noir-800 border border-cream-400/20 text-cream-100 text-sm focus:outline-none focus:border-gold-400"
+              className="w-full px-3.5 py-2.5 rounded-xl bg-noir-800 border border-cream-400/20 text-cream-100 text-sm focus:outline-hidden focus:border-gold-400"
             />
           </div>
 
           <button
             type="submit"
-            className="w-full py-3.5 rounded-xl bg-gradient-to-r from-gold-400 to-gold-500 text-noir-900 font-bold text-sm shadow-glow hover:brightness-110 active:scale-98 transition-all mt-4"
+            className="w-full py-3.5 rounded-xl bg-linear-to-r from-gold-400 to-gold-500 text-noir-900 font-bold text-sm shadow-glow hover:brightness-110 active:scale-98 transition-all mt-4"
           >
             {i18n.t('profile.save_btn')}
           </button>

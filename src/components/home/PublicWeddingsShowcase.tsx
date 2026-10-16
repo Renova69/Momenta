@@ -341,11 +341,11 @@ export const PublicWeddingsShowcase: React.FC<PublicWeddingsShowcaseProps> = ({
                   className="w-full h-full object-cover object-center group-hover:scale-105 transition-transform duration-700"
                 />
               ) : (
-                <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-noir-800 to-noir-950">
+                <div className="w-full h-full flex items-center justify-center bg-linear-to-br from-noir-800 to-noir-950">
                   <Camera className="w-10 h-10 text-gold-400/40" />
                 </div>
               )}
-              <div className="absolute inset-0 bg-gradient-to-t from-noir-900 via-noir-900/40 to-transparent" />
+              <div className="absolute inset-0 bg-linear-to-t from-noir-900 via-noir-900/40 to-transparent" />
 
               {/* Status Badge */}
               <div className="absolute top-3 left-3 flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-noir-900/80 backdrop-blur-md border border-gold-400/40 text-gold-300 text-[10px] font-bold uppercase tracking-wider">
@@ -355,11 +355,11 @@ export const PublicWeddingsShowcase: React.FC<PublicWeddingsShowcaseProps> = ({
 
               {/* Photos & Guests count */}
               <div className="absolute bottom-3 left-3 right-3 flex items-center justify-between text-xs text-cream-200">
-                <div className="flex items-center gap-1.5 bg-noir-950/70 backdrop-blur-sm px-2.5 py-1 rounded-lg border border-cream-400/10">
+                <div className="flex items-center gap-1.5 bg-noir-950/70 backdrop-blur-xs px-2.5 py-1 rounded-lg border border-cream-400/10">
                   <Camera className="w-3.5 h-3.5 text-gold-400" />
                   <span className="font-semibold">{i18n.t('showcase.photos_count', { n: wedding.photosCount })}</span>
                 </div>
-                <div className="flex items-center gap-1.5 bg-noir-950/70 backdrop-blur-sm px-2.5 py-1 rounded-lg border border-cream-400/10">
+                <div className="flex items-center gap-1.5 bg-noir-950/70 backdrop-blur-xs px-2.5 py-1 rounded-lg border border-cream-400/10">
                   <Users className="w-3.5 h-3.5 text-gold-400" />
                   <span className="font-semibold">{i18n.t('showcase.guests_count', { n: wedding.guestsCount })}</span>
                 </div>
@@ -419,7 +419,7 @@ export const PublicWeddingsShowcase: React.FC<PublicWeddingsShowcaseProps> = ({
       </div>
 
       {/* Social Proof & Host Invitation Banner */}
-      <div className="relative rounded-3xl bg-gradient-to-r from-noir-850 via-noir-800 to-noir-850 border border-gold-400/30 p-6 sm:p-8 overflow-hidden shadow-2xl">
+      <div className="relative rounded-3xl bg-linear-to-r from-noir-850 via-noir-800 to-noir-850 border border-gold-400/30 p-6 sm:p-8 overflow-hidden shadow-2xl">
         <div className="relative z-10 flex flex-col md:flex-row items-center justify-between gap-6 text-center md:text-left">
           <div className="space-y-2 max-w-xl">
             <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-gold-400/20 text-gold-300 text-xs font-semibold">
@@ -437,7 +437,7 @@ export const PublicWeddingsShowcase: React.FC<PublicWeddingsShowcaseProps> = ({
           <div className="flex flex-col sm:flex-row items-center gap-3 shrink-0">
             <button
               onClick={onOpenCreateEvent}
-              className="w-full sm:w-auto px-6 py-3.5 rounded-2xl bg-gradient-to-r from-gold-400 to-gold-500 text-noir-900 font-bold text-xs sm:text-sm shadow-glow hover:brightness-110 active:scale-98 transition-all flex items-center justify-center gap-2"
+              className="w-full sm:w-auto px-6 py-3.5 rounded-2xl bg-linear-to-r from-gold-400 to-gold-500 text-noir-900 font-bold text-xs sm:text-sm shadow-glow hover:brightness-110 active:scale-98 transition-all flex items-center justify-center gap-2"
             >
               <PlusCircle className="w-4 h-4" />
               <span>{i18n.t('showcase.create_album_button')}</span>

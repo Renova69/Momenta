@@ -557,7 +557,7 @@ export const CameraCaptureModal: React.FC<CameraCaptureModalProps> = ({
               <button
                 type="button"
                 onClick={() => nativeCameraInputRef.current?.click()}
-                className="flex-1 py-3 px-4 rounded-xl bg-gradient-to-r from-gold-400 to-gold-500 text-noir-900 font-bold text-xs shadow-glow flex items-center justify-center gap-2 hover:brightness-110 active:scale-98 transition-transform"
+                className="flex-1 py-3 px-4 rounded-xl bg-linear-to-r from-gold-400 to-gold-500 text-noir-900 font-bold text-xs shadow-glow flex items-center justify-center gap-2 hover:brightness-110 active:scale-98 transition-transform"
               >
                 <Camera className="w-4 h-4" />
                 <span>{i18n.t('camera.open_phone_cam')}</span>

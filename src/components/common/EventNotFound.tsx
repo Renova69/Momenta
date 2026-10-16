@@ -46,7 +46,7 @@ export const EventNotFound: React.FC<EventNotFoundProps> = ({
             ) : slug ? (
               <>
                 {i18n.t('event.not_found_at')}{' '}
-                <code className="text-gold-400 font-mono bg-noir-900 px-1.5 py-0.5 rounded">/e/{slug}</code>
+                <code className="text-gold-400 font-mono bg-noir-900 px-1.5 py-0.5 rounded-sm">/e/{slug}</code>
               </>
             ) : (
               i18n.t('event.link_expired')
@@ -58,7 +58,7 @@ export const EventNotFound: React.FC<EventNotFoundProps> = ({
           {unreachable && onRetry && (
             <button
               onClick={onRetry}
-              className="w-full py-3 px-6 rounded-2xl bg-gradient-to-r from-gold-500 to-gold-400 text-noir-900 font-bold text-sm flex items-center justify-center gap-2 shadow-glow hover:opacity-95 transition-opacity"
+              className="w-full py-3 px-6 rounded-2xl bg-linear-to-r from-gold-500 to-gold-400 text-noir-900 font-bold text-sm flex items-center justify-center gap-2 shadow-glow hover:opacity-95 transition-opacity"
             >
               <RefreshCw className="w-4 h-4" />
               <span>{i18n.t('event.try_again')}</span>
@@ -69,7 +69,7 @@ export const EventNotFound: React.FC<EventNotFoundProps> = ({
             className={`w-full py-3 px-6 rounded-2xl font-bold text-sm flex items-center justify-center gap-2 transition-opacity ${
               unreachable && onRetry
                 ? 'bg-noir-700 hover:bg-noir-600 text-cream-200 border border-cream-400/10'
-                : 'bg-gradient-to-r from-gold-500 to-gold-400 text-noir-900 shadow-glow hover:opacity-95'
+                : 'bg-linear-to-r from-gold-500 to-gold-400 text-noir-900 shadow-glow hover:opacity-95'
             }`}
           >
             <Home className="w-4 h-4" />
