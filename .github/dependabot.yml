@@ -48,3 +48,9 @@ updates:
       - dependency-name: '*'
         update-types:
           - version-update:semver-major
+      # Vitest 4.1's jsdom environment reads a private field of jsdom's Blob
+      # (`_buffer`) that jsdom 30.1 renamed, so URL.createObjectURL throws in
+      # every test that makes an object URL. Lift this with the move to Vitest 5.
+      - dependency-name: jsdom
+        versions:
+          - '>=30.1.0'

@@ -11,7 +11,9 @@ module.exports = {
     node: true,
     es2022: true,
   },
-  plugins: ['@typescript-eslint', 'vitest', 'react-hooks'],
+  // @vitest/eslint-plugin is the maintained successor of eslint-plugin-vitest,
+  // whose last release pinned a vulnerable @typescript-eslint/utils 7.
+  plugins: ['@typescript-eslint', '@vitest', 'react-hooks'],
   extends: [
     'eslint:recommended',
     'plugin:@typescript-eslint/recommended',
@@ -37,18 +39,18 @@ module.exports = {
     'prefer-const': 'warn',
 
     // Prevent permanently skipped tests
-    'vitest/no-disabled-tests': 'error',
+    '@vitest/no-disabled-tests': 'error',
 
     // Prevent focused tests (.only) from being accidentally committed
-    'vitest/no-focused-tests': 'error',
+    '@vitest/no-focused-tests': 'error',
 
     // Ensure tests actually have assertions. `expectNoViolations` is one:
     // it runs axe over the rendered markup and asserts the violation list is
     // empty, reporting the rule ids and offending HTML when it is not.
-    'vitest/expect-expect': ['error', { assertFunctionNames: ['expect', 'expectNoViolations'] }],
+    '@vitest/expect-expect': ['error', { assertFunctionNames: ['expect', 'expectNoViolations'] }],
 
     // Avoid identical titles which makes debugging flaky tests impossible
-    'vitest/no-identical-title': 'error',
+    '@vitest/no-identical-title': 'error',
   },
   overrides: [
     {
