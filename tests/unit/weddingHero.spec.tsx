@@ -203,3 +203,26 @@ describe('an album with no cover (N-131)', () => {
     expect(container.querySelector('img')).toBeNull();
   });
 });
+
+// A host's own cover (N-139) was drawn at 35% opacity, blurred, under a
+// full-height gradient: it read as a faint wash, as if the upload had failed.
+// jsdom cannot see pixels, so what is pinned is that it is no longer faded.
+describe('an album with a cover', () => {
+  it('shows it as a photo, not a faded wash', () => {
+    const { container } = render(
+      <WeddingHero
+        event={makeEvent()}
+        photos={[]}
+        quests={NO_QUESTS}
+        audioEntries={NO_AUDIO}
+        guests={NO_GUESTS}
+        onOpenCapture={vi.fn()}
+        onOpenAudio={vi.fn()}
+        onOpenQuests={vi.fn()}
+      />
+    );
+    const cover = container.querySelector('img')!;
+    expect(cover).toHaveAttribute('src', 'https://cdn.example/cover.jpg');
+    expect(cover.className).not.toMatch(/\bopacity-|\bblur/);
+  });
+});

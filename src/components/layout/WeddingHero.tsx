@@ -15,6 +15,9 @@ import {
   Heart
 } from 'lucide-react';
 
+/** Height of the cover photo across the top of the hero, and of its scrim. */
+const COVER_BAND = 'h-72 sm:h-[26rem]';
+
 interface WeddingHeroProps {
   event: WeddingEvent;
   guests: Guest[];
@@ -47,6 +50,7 @@ export const WeddingHero: React.FC<WeddingHeroProps> = ({
 
   // Format event date according to EU locale
   const formattedDate = formatEuDateLong(event.eventDate);
+  const hasCover = !!event.coverImageUrl;
 
   return (
     <div className="relative overflow-hidden rounded-2xl sm:rounded-3xl mb-4 sm:mb-8 border border-gold-400/20 bg-gradient-to-b from-noir-800/90 to-noir-900 shadow-2xl">
@@ -59,24 +63,42 @@ export const WeddingHero: React.FC<WeddingHeroProps> = ({
           image existed. `fetchpriority="high"` moves it to the front of the
           queue the moment React renders it.
 
-          `alt=""`: it is behind the title, at 35% opacity, blurred. A screen
-          reader reading the album's name twice is noise, not information.
+          `alt=""`: the couple's names are the heading right over it; a screen
+          reader reading them as the picture too would be noise.
+
+          Shown as a photo across the top of the hero, not a tint under all of
+          it: at 35% opacity, blurred and under the full-height gradient, a
+          host's own cover (N-139) read as a faint wash, and looked as though
+          the upload had not worked. The scrim darkens it into the page where
+          the names and the buttons sit, so the text over it stays readable.
         */}
         {/* N-131 — no cover, no image: the gradient below carries the hero. */}
-        {event.coverImageUrl && (
-          <img
-            src={event.coverImageUrl}
-            alt=""
-            fetchPriority="high"
-            decoding="async"
-            className="w-full h-full object-cover object-center opacity-35 filter blur-[1px] scale-105"
-          />
+        {hasCover ? (
+          <>
+            {/* Faded out by a mask rather than painted over, so it meets the
+                hero's own background with no edge whatever that colour is. */}
+            <img
+              src={event.coverImageUrl}
+              alt=""
+              fetchPriority="high"
+              decoding="async"
+              className={`absolute inset-x-0 top-0 w-full ${COVER_BAND} object-cover object-center [mask-image:linear-gradient(to_bottom,black_45%,transparent)]`}
+            />
+            <div
+              className={`absolute inset-x-0 top-0 ${COVER_BAND} bg-gradient-to-b from-noir-900/10 via-noir-900/50 to-transparent`}
+            />
+          </>
+        ) : (
+          <div className="absolute inset-0 bg-gradient-to-t from-noir-900 via-noir-900/80 to-noir-900/40" />
         )}
-        <div className="absolute inset-0 bg-gradient-to-t from-noir-900 via-noir-900/80 to-noir-900/40" />
       </div>
 
-      {/* Decorative Content */}
-      <div className="relative z-10 px-4 py-6 sm:px-12 sm:py-14 text-center max-w-4xl mx-auto">
+      {/* Decorative Content — set lower when there is a cover, so the photo shows above the names. */}
+      <div
+        className={`relative z-10 px-4 sm:px-12 text-center max-w-4xl mx-auto ${
+          hasCover ? 'pt-36 pb-6 sm:pt-56 sm:pb-14' : 'py-6 sm:py-14'
+        }`}
+      >
         
         {/* Top Floating Badge */}
         <div className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full bg-gold-400/15 border border-gold-400/30 text-gold-300 text-[10px] sm:text-xs tracking-widest uppercase font-semibold mb-2 sm:mb-4 shadow-sm">
