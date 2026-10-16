@@ -31,6 +31,15 @@ vi.mock('stripe', () => ({
   },
 }));
 
+// The key is pinned here, not read from .env. Without one the client is never
+// built and every answer below is 'unknown' for that reason alone: CI has no
+// key, so four of these passed only on a machine whose .env held one. The
+// constructor above is mocked, so the value is never sent anywhere.
+vi.mock('../../server/lib/config', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../server/lib/config')>();
+  return { ...actual, CONFIG: { ...actual.CONFIG, STRIPE_SECRET_KEY: 'sk_test_liveness_spec' } };
+});
+
 afterEach(() => {
   vi.clearAllMocks();
 });

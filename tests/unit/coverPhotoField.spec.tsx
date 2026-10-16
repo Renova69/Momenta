@@ -130,8 +130,7 @@ describe('the album cover in the studio (N-139)', () => {
   });
 
   it('says why a cover was not saved', async () => {
-    const { onSetCover } = field({ photos: [photo('p1')] });
-    onSetCover.mockRejectedValue(new Error(i18n.t('error.photo_not_public')));
+    field({ photos: [photo('p1')], onSetCover: vi.fn().mockRejectedValue(new Error(i18n.t('error.photo_not_public'))) });
 
     fireEvent.click(screen.getByRole('button', { name: i18n.t('host.cover_pick') }));
     fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: photoAlt(photo('p1')) }));
