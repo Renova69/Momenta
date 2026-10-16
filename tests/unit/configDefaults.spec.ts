@@ -42,6 +42,45 @@ describe('CONFIG defaults', () => {
     return mod.CONFIG;
   }
 
+  // A credential pasted into a secret store often brings the line break, or
+  // the quotes from its .env line, with it. In a request signature that is an
+  // invalid header and every R2 call failed ("Invalid character in header
+  // content"), which is what the first run of the live-storage job met.
+  describe('R2 credentials as pasted', () => {
+    it('drops a trailing line break and surrounding quotes', async () => {
+      process.env.R2_ACCESS_KEY_ID = `"0123456789abcdef0123456789abcdef"${'\n'}`;
+      process.env.R2_SECRET_ACCESS_KEY = `  secret-value ${'\r\n'}`;
+      process.env.R2_ACCOUNT_ID = "'account-id'";
+
+      const config = await loadConfig();
+
+      expect(config.R2_ACCESS_KEY_ID).toBe('0123456789abcdef0123456789abcdef');
+      expect(config.R2_SECRET_ACCESS_KEY).toBe('secret-value');
+      expect(config.R2_ACCOUNT_ID).toBe('account-id');
+    });
+
+    it('says which variable needed cleaning, never its value', async () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+      process.env.R2_SECRET_ACCESS_KEY = `top-secret-value${'\n'}`;
+
+      await loadConfig();
+
+      const said = warn.mock.calls.map((call) => call.join(' ')).join(' | ');
+      expect(said).toContain('R2_SECRET_ACCESS_KEY');
+      expect(said).not.toContain('top-secret-value');
+    });
+
+    it('leaves a clean value alone, and says nothing', async () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+      process.env.R2_ACCESS_KEY_ID = '0123456789abcdef0123456789abcdef';
+
+      const config = await loadConfig();
+
+      expect(config.R2_ACCESS_KEY_ID).toBe('0123456789abcdef0123456789abcdef');
+      expect(warn.mock.calls.flat().join(' ')).not.toContain('R2_ACCESS_KEY_ID');
+    });
+  });
+
   describe('booleans default to the safe answer', () => {
     it('leaves the in-process FTP server off', async () => {
       blankEnv('FTP_ENABLED');

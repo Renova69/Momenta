@@ -99,6 +99,33 @@ if (!TRUST_PROXY_IS_SET) {
 // or under-configured STORAGE_PROVIDER loses every wedding photo on the next
 // redeploy, with nothing logged — the app looks completely healthy. Crash at
 // startup instead, matching how JWT_SECRET is handled above.
+/**
+ * An R2 setting as it was meant, not as it was pasted. A value copied into a
+ * secret store often brings its line break, or the quotes from its .env line
+ * (which dotenv strips for .env itself). In a request signature that is an
+ * invalid header, and every R2 call failed with "Invalid character in header
+ * content", which is what the live-storage job met on its first run. The
+ * variable is named when it had to be cleaned; its value never is.
+ */
+function r2Setting(name: string): string {
+  const raw = process.env[name] || '';
+  let value = raw.trim();
+  const quoted = /^(["'])(.*)\1$/s.exec(value);
+  if (quoted) value = quoted[2].trim();
+  if (value !== raw) {
+    console.warn(
+      `[CONFIG] ${name} had surrounding spaces, a line break or quotes, which were removed. ` +
+        'Store it as the bare value.'
+    );
+    // Written back so anything else reading the environment sees the same.
+    process.env[name] = value;
+  }
+  return value;
+}
+for (const name of ['R2_ACCOUNT_ID', 'R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY', 'R2_BUCKET_NAME', 'R2_PUBLIC_URL']) {
+  r2Setting(name);
+}
+
 const VALID_STORAGE_PROVIDERS = ['local', 'r2'];
 const STORAGE_PROVIDER = (process.env.STORAGE_PROVIDER || 'local').toLowerCase();
 if (!VALID_STORAGE_PROVIDERS.includes(STORAGE_PROVIDER)) {
