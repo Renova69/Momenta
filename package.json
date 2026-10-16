@@ -21,6 +21,7 @@
     "bounce:clear": "tsx scripts/bounces.ts clear",
     "notify:report": "tsx scripts/retention-notify.ts",
     "notify:send": "cross-env NOTICE_SEND=true tsx scripts/retention-notify.ts",
+    "admin:reset-password": "tsx scripts/reset-password.ts",
     "retention:report": "tsx scripts/retention-sweep.ts",
     "retention:sweep": "cross-env RETENTION_ENFORCED=true tsx scripts/retention-sweep.ts",
     "retention:rehearse": "tsx scripts/retention-rehearsal.ts",

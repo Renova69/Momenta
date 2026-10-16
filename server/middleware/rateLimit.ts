@@ -74,6 +74,19 @@ export const authLimiter = rateLimit({
   message: { error: 'Too many login attempts. Please try again in a few minutes.', code: 'TOO_MANY_ATTEMPTS' },
 });
 
+// Changing the password and deleting the account (N-122) both check the
+// current password, so they are a way to guess it for whoever holds a session.
+// Counted per account, after requireAuth, rather than per IP: the caller is
+// already known, and sharing the sign-in budget would let one lock the other.
+export const accountActionLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  keyGenerator: (req) => `account:${(req as { user?: { userId?: string } }).user?.userId ?? 'anonymous'}`,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many attempts. Please try again in a few minutes.', code: 'TOO_MANY_ATTEMPTS' },
+});
+
 // Live reactions are cheap but spammable — one every ~2 seconds per guest keeps
 // the projector wall celebratory rather than a wall of noise.
 export const reactionLimiter = rateLimit({

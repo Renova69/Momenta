@@ -357,3 +357,71 @@ describe('Auth Service Client Spec', () => {
     unsub();
   });
 });
+
+/**
+ * N-122 — the account itself: the password can be changed, and the account
+ * deleted, from the host's own profile.
+ */
+describe('the host account (N-122)', () => {
+  const HOST = { id: 'h1', email: 'host@example.com', fullName: 'Host', role: 'couple' } as HostUser;
+
+  async function signedIn() {
+    global.fetch = vi.fn().mockResolvedValue(createMockResponse({ user: HOST, token: 'old-token', event: {} }));
+    await authService.login(HOST.email, 'Password123!');
+  }
+
+  beforeEach(() => {
+    localStorage.clear();
+    authService.logout();
+    vi.restoreAllMocks();
+  });
+
+  it('changes the password and carries on with the new session', async () => {
+    await signedIn();
+    global.fetch = vi.fn().mockResolvedValue(createMockResponse({ token: 'new-token' }));
+
+    const result = await authService.changePassword('Password123!', 'NewPassword456!');
+
+    expect(result.success).toBe(true);
+    expect(authService.getToken()).toBe('new-token');
+    expect(authService.getUser()?.email).toBe(HOST.email);
+    expect(global.fetch).toHaveBeenCalledWith(
+      expect.stringContaining('/api/auth/password'),
+      expect.objectContaining({ method: 'POST' })
+    );
+  });
+
+  it('says the current password was wrong, not that the sign-in failed', async () => {
+    await signedIn();
+    global.fetch = vi.fn().mockResolvedValue(createMockResponse({ code: 'INVALID_CREDENTIALS' }, 401, false));
+
+    const result = await authService.changePassword('wrong', 'NewPassword456!');
+
+    expect(result.error).toBe(i18n.t('account.password_wrong'));
+    expect(authService.getToken()).toBe('old-token');
+  });
+
+  it('signs this browser out once the account is deleted', async () => {
+    await signedIn();
+    global.fetch = vi.fn().mockResolvedValue(createMockResponse({ deleted: true }));
+
+    const result = await authService.deleteAccount('Password123!');
+
+    expect(result.success).toBe(true);
+    expect(authService.isAuthenticated()).toBe(false);
+    expect(global.fetch).toHaveBeenCalledWith(
+      expect.stringContaining('/api/auth/account'),
+      expect.objectContaining({ method: 'DELETE' })
+    );
+  });
+
+  it('says nothing was deleted when the plan could not be cancelled', async () => {
+    await signedIn();
+    global.fetch = vi.fn().mockResolvedValue(createMockResponse({ code: 'BILLING_UNVERIFIABLE' }, 503, false));
+
+    const result = await authService.deleteAccount('Password123!');
+
+    expect(result.error).toBe(i18n.t('account.delete_billing_unreachable'));
+    expect(authService.isAuthenticated()).toBe(true);
+  });
+});

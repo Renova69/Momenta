@@ -288,6 +288,22 @@ describe('the host profile dialog', () => {
     );
     await expectNoViolations(container);
   });
+
+  // N-122 — with the password and account section, and its delete panel open.
+  it('passes an axe pass with the account section', async () => {
+    const { container } = render(
+      <HostProfileModal
+        isOpen
+        onClose={vi.fn()}
+        hostUser={HOST}
+        onSaveName={vi.fn()}
+        onChangePassword={vi.fn()}
+        onDeleteAccount={vi.fn()}
+      />
+    );
+    fireEvent.click(screen.getByRole('button', { name: i18n.t('account.delete_title') }));
+    await expectNoViolations(container);
+  });
 });
 
 describe('the page language', () => {

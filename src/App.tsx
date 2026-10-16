@@ -122,7 +122,7 @@ function WeddingAppContent() {
     resetDefaults,
   } = useApp();
 
-  const { user: currentHostUser, logout: hostLogout, updateProfile } = useAuth();
+  const { user: currentHostUser, logout: hostLogout, updateProfile, changePassword, deleteAccount } = useAuth();
 
   // Modals state
   const [isCaptureOpen, setIsCaptureOpen] = useState(false);
@@ -632,6 +632,17 @@ function WeddingAppContent() {
             onClose={() => setIsHostProfileOpen(false)}
             hostUser={currentHostUser}
             onSaveName={updateProfile}
+            onChangePassword={changePassword}
+            onDeleteAccount={async (password) => {
+              const result = await deleteAccount(password);
+              if (result.success) {
+                // N-122 — nothing of the account is left to show. Drop this
+                // browser's copy of its albums and start again from the front.
+                resetDefaults();
+                window.location.replace('/');
+              }
+              return result;
+            }}
           />
         )}
       </Suspense>

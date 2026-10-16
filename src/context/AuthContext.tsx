@@ -10,6 +10,10 @@ interface AuthContextType {
   register: (email: string, fullName: string, password?: string, role?: 'couple' | 'planner', companyName?: string) => Promise<AuthResult>;
   loginWithDemo: (demoUser: HostUser) => Promise<AuthResult>;
   updateProfile: (fullName: string) => Promise<AuthResult>;
+  /** N-122 — keeps this session, ends every other. */
+  changePassword: (currentPassword: string, newPassword: string) => Promise<AuthResult>;
+  /** N-122 — erases the account and its albums; signs this browser out. */
+  deleteAccount: (password: string) => Promise<AuthResult>;
   logout: () => void;
 }
 
@@ -43,6 +47,11 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     return authService.updateProfile(fullName);
   };
 
+  const changePassword = (currentPassword: string, newPassword: string) =>
+    authService.changePassword(currentPassword, newPassword);
+
+  const deleteAccount = (password: string) => authService.deleteAccount(password);
+
   const logout = () => {
     authService.logout();
   };
@@ -57,6 +66,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         register,
         loginWithDemo,
         updateProfile,
+        changePassword,
+        deleteAccount,
         logout,
       }}
     >

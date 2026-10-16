@@ -9,6 +9,7 @@ import { computeExpiry } from '../lib/retention';
 import { authLimiter } from '../middleware/rateLimit';
 import { errorLabel, isUniqueViolation } from '../lib/errors';
 import { wsManager } from '../ws/wsServer';
+import { accountRouter, NewPasswordSchema } from './authAccount';
 
 export const authRouter = Router();
 
@@ -51,12 +52,8 @@ const EmailSchema = z
 const RegisterSchema = z.object({
   email: EmailSchema,
   fullName: z.string().min(2, 'Full name must be at least 2 characters').max(100),
-  password: z.string()
-    .min(6, 'Password must be at least 6 characters')
-    .max(128)
-    .refine((pw) => Buffer.byteLength(pw, 'utf8') <= 72, {
-      message: 'Password must be at most 72 bytes (roughly 72 characters of plain text).',
-    }),
+  // Shared with changing the password (N-122); SEC-A7 is explained there.
+  password: NewPasswordSchema,
   role: z.enum(['couple', 'planner', 'venue', 'photographer']).default('couple'),
   // VARCHAR(150) in the users table. A wider cap here does not accept more,
   // it only moves the refusal from Zod to Postgres, where it arrives as 22001
@@ -424,3 +421,6 @@ authRouter.post('/logout', requireAuth, async (req, res) => {
     res.status(500).json({ error: 'Could not complete sign-out' });
   }
 });
+
+// POST /password and DELETE /account (N-122).
+authRouter.use(accountRouter);

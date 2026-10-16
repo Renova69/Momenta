@@ -27,15 +27,21 @@ const AUTH_STATUS_KEYS: Record<number, string> = {
  * a host reading Bulgarian got each error in English. The server's code is
  * read first, then the status, then the caller's general message.
  */
-async function refusalMessage(res: Response, fallbackKey: string): Promise<string> {
+async function refusalMessage(
+  res: Response,
+  fallbackKey: string,
+  /** What a code means in this action, over its general meaning. */
+  codeKeys: Record<string, string> = {}
+): Promise<string> {
   const body = (await res.json().catch(() => ({}))) as { code?: unknown; details?: unknown };
   const code = typeof body.code === 'string' ? body.code : '';
   // N-132 — a password under six characters said only "check your details",
   // and the field's hint had gone with the first keystroke.
-  if (res.status === 400 && Array.isArray(body.details) && body.details.some((d) => d?.field === 'password')) {
+  const PASSWORD_FIELDS = ['password', 'newPassword'];
+  if (res.status === 400 && Array.isArray(body.details) && body.details.some((d) => PASSWORD_FIELDS.includes(d?.field))) {
     return i18n.t('auth.password_too_short');
   }
-  return i18n.t(ERROR_CODE_KEYS[code] || AUTH_STATUS_KEYS[res.status] || fallbackKey);
+  return i18n.t(codeKeys[code] || ERROR_CODE_KEYS[code] || AUTH_STATUS_KEYS[res.status] || fallbackKey);
 }
 
 const AUTH_USER_KEY = 'wedmoments_host_user';
@@ -211,6 +217,61 @@ export class AuthService {
       return { success: false, error: errJson.error || 'Update failed' };
     } catch (e) {
       return { success: false, error: e instanceof Error ? e.message : 'Network error' };
+    }
+  }
+
+  /**
+   * Change the password (N-122). The server ends every other session and hands
+   * this one a fresh token, which replaces the old one here.
+   */
+  public async changePassword(currentPassword: string, newPassword: string): Promise<AuthResult> {
+    const user = this.currentUser;
+    if (!this.token || !user) return { success: false, error: i18n.t('account.password_change_failed') };
+    try {
+      const res = await fetch(`${this.apiHost}/api/auth/password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${this.token}` },
+        body: JSON.stringify({ currentPassword, newPassword }),
+      });
+      if (!res.ok) {
+        return {
+          success: false,
+          error: await refusalMessage(res, 'account.password_change_failed', { INVALID_CREDENTIALS: 'account.password_wrong' }),
+        };
+      }
+      const data = (await res.json()) as { token: string };
+      this.setSession(user, data.token);
+      return { success: true, user };
+    } catch {
+      return { success: false, error: i18n.t('auth.network_error') };
+    }
+  }
+
+  /**
+   * Delete the account and everything in it (N-122). Once the server has done
+   * so this browser's session is cleared; there is nothing left to revoke.
+   */
+  public async deleteAccount(password: string): Promise<AuthResult> {
+    if (!this.token) return { success: false, error: i18n.t('account.delete_failed') };
+    try {
+      const res = await fetch(`${this.apiHost}/api/auth/account`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${this.token}` },
+        body: JSON.stringify({ password }),
+      });
+      if (!res.ok) {
+        return {
+          success: false,
+          error: await refusalMessage(res, 'account.delete_failed', {
+            INVALID_CREDENTIALS: 'account.password_wrong',
+            BILLING_UNVERIFIABLE: 'account.delete_billing_unreachable',
+          }),
+        };
+      }
+      this.clearLocalSession();
+      return { success: true };
+    } catch {
+      return { success: false, error: i18n.t('auth.network_error') };
     }
   }
 

@@ -3,12 +3,18 @@ import { HostUser } from '../../types';
 import { i18n } from '../../i18n';
 import { useDialog } from '../../hooks/useDialog';
 import { X, User, Mail, Check, Loader2 } from 'lucide-react';
+import { AccountSecurity } from './AccountSecurity';
+
+type Outcome = { success: boolean; error?: string };
 
 interface HostProfileModalProps {
   isOpen: boolean;
   onClose: () => void;
   hostUser: HostUser;
   onSaveName: (fullName: string) => Promise<{ success: boolean; error?: string }>;
+  /** N-122 — the password and account section shows when both are given. */
+  onChangePassword?: (currentPassword: string, newPassword: string) => Promise<Outcome>;
+  onDeleteAccount?: (password: string) => Promise<Outcome>;
 }
 
 export const HostProfileModal: React.FC<HostProfileModalProps> = ({
@@ -16,6 +22,8 @@ export const HostProfileModal: React.FC<HostProfileModalProps> = ({
   onClose,
   hostUser,
   onSaveName,
+  onChangePassword,
+  onDeleteAccount,
 }) => {
   const [nameDraft, setNameDraft] = useState(hostUser.fullName);
   const [isSaving, setIsSaving] = useState(false);
@@ -60,7 +68,7 @@ export const HostProfileModal: React.FC<HostProfileModalProps> = ({
       {...dialogProps}
       className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-fade-in"
     >
-      <div className="relative w-full max-w-md bg-noir-900 rounded-3xl border border-gold-400/30 shadow-2xl p-6 overflow-hidden">
+      <div className="relative w-full max-w-md max-h-[90vh] overflow-y-auto bg-noir-900 rounded-3xl border border-gold-400/30 shadow-2xl p-6">
         <button
           onClick={onClose}
           aria-label={i18n.t('common.close')}
@@ -120,6 +128,10 @@ export const HostProfileModal: React.FC<HostProfileModalProps> = ({
             <span>{saved ? i18n.t('host_profile.saved') : i18n.t('host_profile.save_button')}</span>
           </button>
         </div>
+
+        {onChangePassword && onDeleteAccount && (
+          <AccountSecurity onChangePassword={onChangePassword} onDeleteAccount={onDeleteAccount} />
+        )}
       </div>
     </div>
   );
