@@ -1483,7 +1483,7 @@ produce failures that are read as kills.
 
 | # | Action | Why it matters |
 |---|---|---|
-| 1 | Add the R2 repository secrets | Without them the `live-storage` job skips nightly and M-4 is closed only on paper. |
+| 1 | ~~Add the R2 repository secrets~~ **Done 2026-10-16.** The first run failed every R2 call ("Invalid character in header content"): four of the pasted values carried quotes or a line break. Since `975e0db` the config strips those and names the variable it cleaned; the live-storage job passed on the next run. | Without them the `live-storage` job skips nightly and M-4 is closed only on paper. |
 | 2 | Regenerate the exposed R2 keys | `.env` still carries the warning that the stored keys were exposed and must be replaced in the Cloudflare dashboard (OPEN_ITEMS M14). Not verifiable from the repository. **Deferred by the owner on 2026-09-19** while this is a development environment. It becomes a go-live prerequisite: the exposed keys reach the same account as production storage. |
 | 3 | Configure SMTP, then notices, then `RETENTION_ENFORCED=true` — in that order | U-1 and U-4. Nothing deletes until the third step; `npm run retention:rehearse` passes 24/24 against a local sink. **Deferred by the owner on 2026-09-19**: no mail provider has been chosen yet. Retention stays off, which is the safe resting state. |
 
