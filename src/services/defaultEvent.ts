@@ -21,7 +21,7 @@ export const INITIAL_EVENT: WeddingEvent = {
   hostEmail: 'monika.alexander@wedmoments.bg',
   eventDate: '2026-09-18T16:30:00.000Z',
   venueName: 'Резиденция Бояна, София',
-  coverImageUrl: 'https://images.unsplash.com/photo-1519741497674-611481863552?auto=format&fit=crop&w=1600&q=80',
+  coverImageUrl: '/demo/wedding-2-1200.jpg',
   themePalette: 'champagne_gold',
   welcomeMessage: 'Добре дошли на нашия сватбен ден! Сканирайте QR кода, снимайте весели и неподправени моменти и ни помогнете да запечатаме всеки миг заедно.',
   isModerationEnabled: false,

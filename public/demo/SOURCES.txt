@@ -1,0 +1,19 @@
+Demo photos for the landing page's sample weddings and the 1-Click Demo album.
+
+Copies of Unsplash photos, resized, used under the Unsplash License
+(https://unsplash.com/license): free to use, including commercially, with no
+permission or attribution required. Served from here because the production
+Content Security Policy refuses images from images.unsplash.com.
+
+wedding-1  https://unsplash.com/photos/photo-1520854221256-17451cc331bf
+wedding-2  https://unsplash.com/photos/photo-1519741497674-611481863552
+wedding-3  https://unsplash.com/photos/photo-1519225421980-715cb0215aed
+wedding-4  https://unsplash.com/photos/photo-1511285560929-80b456fea0bc
+wedding-5  https://unsplash.com/photos/photo-1465495976277-4387d4b0b4c6
+wedding-6  https://unsplash.com/photos/photo-1583939003579-730e3918a45a
+wedding-7  https://unsplash.com/photos/photo-1532712938310-34cb3982ef74
+guest-1    https://unsplash.com/photos/photo-1534528741775-53994a69daeb
+guest-2    https://unsplash.com/photos/photo-1507003211169-0a1dd7228f2d
+guest-3    https://unsplash.com/photos/photo-1500648767791-00dcc994a43e
+guest-4    https://unsplash.com/photos/photo-1573496359142-b8d87734a5a2
+guest-5    https://unsplash.com/photos/photo-1517841905240-472988babdf9

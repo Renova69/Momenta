@@ -18,8 +18,12 @@ import { i18n } from '../../src/i18n';
  * photos and 88 guests in place of its real zeros.
  */
 
-/** The bundled demo weddings' images are all hosted here. */
-const DEMO_IMAGE_HOST = 'images.unsplash.com';
+/**
+ * The bundled demo weddings' images are all served from here. They were
+ * hotlinked from images.unsplash.com, which the production CSP refuses, so on
+ * the live site every demo card was an empty box (N-112).
+ */
+const DEMO_IMAGE_HOST = '/demo/';
 const imageSources = (container: HTMLElement) =>
   Array.from(container.querySelectorAll('img')).map((i) => i.getAttribute('src') ?? '');
 
@@ -69,6 +73,16 @@ describe('falling back to the bundled demo weddings', () => {
 
     // Never an empty landing page while a request is in flight.
     expect(container.querySelectorAll('img').length).toBeGreaterThan(0);
+  });
+
+  it('serves every demo image from the app itself, which the CSP allows', () => {
+    vi.spyOn(eventsApi, 'getShowcaseFeed').mockReturnValue(new Promise(() => {}));
+
+    const { container } = renderShowcase();
+
+    const sources = imageSources(container);
+    expect(sources.length).toBeGreaterThan(0);
+    expect(sources.every((src) => src.startsWith(DEMO_IMAGE_HOST))).toBe(true);
   });
 
   it('keeps the demo content when the feed request fails', async () => {
