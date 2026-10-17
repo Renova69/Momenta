@@ -110,6 +110,8 @@ describe('POST /api/billing/checkout-session', () => {
       }),
     });
     expect(res.status).toBe(400);
+    // N-156 — with a code, so the host reads the reason in their own language.
+    expect((await res.json()).code).toBe('INVALID_REDIRECT');
   });
 
   it('accepts a redirect back to PUBLIC_BASE_URL even when it is absent from CORS_ORIGIN', async () => {
@@ -145,6 +147,97 @@ describe('POST /api/billing/checkout-session', () => {
     });
     expect(res.status).toBe(503);
     expect((await res.json()).code).toBe('STRIPE_NOT_CONFIGURED');
+  });
+});
+
+/**
+ * N-152 — a failed renewal keeps the plan for a grace period, then drops it.
+ * The studio has to be able to say so while there is still time to fix the
+ * card: nothing else will, as long as no email can be sent.
+ */
+describe('GET /api/billing/status', () => {
+  it('needs a signed-in host', async () => {
+    const res = await fetch(`${BASE_URL}/api/billing/status`);
+    expect(res.status).toBe(401);
+  });
+
+  it('reports nothing wrong for a plan that is paid up', async () => {
+    const { token, userId } = await registerHost();
+    await applyTierUpgrade(userId, 'pro_planner', {
+      billingType: 'monthly',
+      stripeCustomerId: 'cus_status_ok',
+      stripeSubscriptionId: 'sub_status_ok',
+    });
+
+    const res = await fetch(`${BASE_URL}/api/billing/status`, { headers: { Authorization: `Bearer ${token}` } });
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      tier: 'pro_planner',
+      paymentFailed: false,
+      planEndsAt: null,
+      keepsTier: null,
+      planSuspended: false,
+    });
+  });
+
+  it('says when a failed payment will end the plan', async () => {
+    const { token, userId } = await registerHost();
+    await applyTierUpgrade(userId, 'pro_planner', {
+      billingType: 'monthly',
+      stripeCustomerId: 'cus_status_failed',
+      stripeSubscriptionId: 'sub_status_failed',
+    });
+    const deadline = new Date(Date.now() + 5 * 24 * 60 * 60 * 1000);
+    await query("UPDATE subscriptions SET past_due_grace_expiry = $1 WHERE user_id = $2 AND status = 'active'", [
+      deadline,
+      userId,
+    ]);
+
+    const res = await fetch(`${BASE_URL}/api/billing/status`, { headers: { Authorization: `Bearer ${token}` } });
+    const body = await res.json();
+
+    expect(body.paymentFailed).toBe(true);
+    expect(new Date(body.planEndsAt).getTime()).toBe(deadline.getTime());
+  });
+
+  // N-164 — the "switch to free" question said everything would be lost,
+  // while a one-time pass bought earlier stays: the account falls back to it.
+  it('names the one-time pass a subscriber keeps when the subscription ends', async () => {
+    const { token, userId } = await registerHost();
+    await applyTierUpgrade(userId, 'celebration_pass', { billingType: 'one_time', amountPaidCents: 4900 });
+    await applyTierUpgrade(userId, 'pro_planner', {
+      billingType: 'monthly',
+      stripeCustomerId: 'cus_status_keeps',
+      stripeSubscriptionId: 'sub_status_keeps',
+    });
+
+    const res = await fetch(`${BASE_URL}/api/billing/status`, { headers: { Authorization: `Bearer ${token}` } });
+
+    expect((await res.json()).keepsTier).toBe('celebration_pass');
+  });
+
+  // Once the grace runs out the deadline is cleared and the plan parked in
+  // lapsed_tier; the studio must still say why the plan dropped.
+  it('says when the plan was suspended for non-payment', async () => {
+    const { token, userId } = await registerHost();
+    await query(
+      `UPDATE subscriptions SET tier = 'free', lapsed_tier = 'pro_planner', stripe_subscription_id = 'sub_status_lapsed'
+        WHERE user_id = $1 AND status = 'active'`,
+      [userId]
+    );
+
+    const res = await fetch(`${BASE_URL}/api/billing/status`, { headers: { Authorization: `Bearer ${token}` } });
+
+    expect((await res.json()).planSuspended).toBe(true);
+  });
+
+  it('reports the free plan for a host who never paid', async () => {
+    const { token } = await registerHost();
+
+    const res = await fetch(`${BASE_URL}/api/billing/status`, { headers: { Authorization: `Bearer ${token}` } });
+
+    expect(await res.json()).toEqual({ tier: 'free', paymentFailed: false, planEndsAt: null, keepsTier: null, planSuspended: false });
   });
 });
 

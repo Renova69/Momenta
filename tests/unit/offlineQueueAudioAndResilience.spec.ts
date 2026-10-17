@@ -452,6 +452,56 @@ describe('replaying after the signal comes back (N-59, N-60, N-61)', () => {
     expect(dropped).toHaveBeenCalledTimes(1);
   });
 
+  /**
+   * N-150 — a full album answers 403, which the queue counted as a passing
+   * failure: five more tries, then a message blaming the connection.
+   */
+  it('drops at once a photo the full album refused, with the server’s reason', async () => {
+    await queuedPhoto();
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      jsonResponse({ error: 'Plan limit', code: 'TIER_LIMIT_REACHED' }, 403)
+    );
+    const dropped = vi.fn();
+    queue.onItemDropped(dropped);
+
+    await queue.flushQueue();
+
+    expect(await queue.getQueue()).toHaveLength(0);
+    expect(dropped).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'photo' }),
+      expect.objectContaining({ refused: true, code: 'TIER_LIMIT_REACHED', message: 'Plan limit' })
+    );
+  });
+
+  it("drops at once a photo past the guest's own limit, though it came as a 429", async () => {
+    await queuedPhoto();
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      jsonResponse({ error: 'Photo limit reached (3 per guest).', code: 'GUEST_PHOTO_LIMIT_REACHED', max: 3 }, 429)
+    );
+
+    await queue.flushQueue();
+
+    expect(await queue.getQueue()).toHaveLength(0);
+  });
+
+  it('keeps a photo met by a bare 403, which came from the network, not the app', async () => {
+    await queuedPhoto();
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse({ error: 'Forbidden' }, 403));
+
+    await queue.flushQueue();
+
+    expect(await queue.getQueue()).toHaveLength(1);
+  });
+
+  it('keeps a photo the rate limiter turned away, for a later pass', async () => {
+    await queuedPhoto();
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse({ error: 'Too many uploads' }, 429));
+
+    await queue.flushQueue();
+
+    expect(await queue.getQueue()).toHaveLength(1);
+  });
+
   it('says so when it gives up after repeated server errors', async () => {
     await queuedPhoto();
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse({ error: 'boom' }, 503));

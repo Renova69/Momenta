@@ -92,6 +92,32 @@ describe('the built client (N-134)', () => {
     expect(res.headers['cache-control']).toBe('no-cache');
   });
 
+  it('keeps an album out of search engines', async () => {
+    // N-153 — a link a guest posts publicly is all a crawler needs; the
+    // couple's names, venue and guests' photos would then come up in search.
+    const album = await get('/e/ana-i-boris');
+    const studio = await get('/host');
+
+    expect(album.headers['x-robots-tag']).toBe('noindex, nofollow');
+    expect(studio.headers['x-robots-tag']).toBe('noindex, nofollow');
+  });
+
+  it('keeps the pricing page out of search when it names an album', async () => {
+    // /pricing?event=<slug> is what the studio links to; it carries the
+    // album's address.
+    const res = await get('/pricing?event=ana-i-boris');
+
+    expect(res.headers['x-robots-tag']).toBe('noindex, nofollow');
+  });
+
+  it('leaves the landing and pricing pages indexable', async () => {
+    const landing = await get('/');
+    const pricing = await get('/pricing');
+
+    expect(landing.headers['x-robots-tag']).toBeUndefined();
+    expect(pricing.headers['x-robots-tag']).toBeUndefined();
+  });
+
   it('leaves the API alone', async () => {
     const ping = await get('/api/ping');
     const missing = await get('/api/nothing-here', 'identity');

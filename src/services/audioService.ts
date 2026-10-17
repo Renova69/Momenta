@@ -4,6 +4,8 @@ import { offlineQueue } from './offlineQueueService';
 import { STORAGE_KEYS } from './storageKeys';
 import { ServiceContext } from './storageServiceContext';
 import { i18n } from '../i18n';
+import { ApiError } from '../api/apiClient';
+import { isRefusedForGood, refusedUploadMessage } from './uploadRefusal';
 
 // FE-04 — a blob: URL only lives as long as the page load that created it.
 // Tracks which events' audio have already been swept for dead blob: URLs
@@ -103,6 +105,14 @@ export function addAudioEntry(
       ctx.notify();
     })
     .catch((err) => {
+      // N-150 — as for photos: an answer no retry can change is said now.
+      if (err instanceof ApiError && isRefusedForGood(err.status, err.code)) {
+        console.warn('Voice message refused by the server, not queued:', err.status, err.code);
+        discardLocalAudioEntry(ctx, event.id, localId);
+        URL.revokeObjectURL(localBlobUrl);
+        ctx.notifyError(refusedUploadMessage('audio', err.code, err.message));
+        return;
+      }
       console.warn('Backend sync failed for audio guestbook, enqueuing offline:', err);
       offlineQueue.enqueue('audio', {
         eventId: event.id,
@@ -119,4 +129,11 @@ export function addAudioEntry(
     });
 
   return newEntry;
+}
+
+/** Take a voice message that will never reach the server off this phone (N-150). */
+export function discardLocalAudioEntry(ctx: ServiceContext, eventId: string, localId: string): void {
+  const remaining = getAudioEntries(ctx, eventId).filter((e) => e.id !== localId);
+  localStorage.setItem(STORAGE_KEYS.AUDIO(eventId), JSON.stringify(remaining));
+  ctx.notify();
 }

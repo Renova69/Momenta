@@ -86,6 +86,14 @@ describe('Navbar', () => {
     expect(screen.getByText('3')).toBeInTheDocument();
   });
 
+  // N-158 — the palette is the couple's choice and saved to the album. A
+  // guest's pick was refused by the server and repainted only their phone.
+  it('offers no palette to someone who cannot change the album', () => {
+    render(<Navbar {...baseProps({ onThemeChange: undefined })} />);
+
+    expect(screen.queryByTitle(i18n.t('nav.theme'))).not.toBeInTheDocument();
+  });
+
   it('lets a host pick a different theme from the palette dropdown', () => {
     const onThemeChange = vi.fn();
     render(<Navbar {...baseProps({ onThemeChange })} />);

@@ -144,6 +144,7 @@ export const HostAuthPage: React.FC<HostAuthPageProps> = ({ onSuccess, initialTa
                 <Mail className="w-4 h-4 text-cream-400/60 absolute left-3.5 top-1/2 -translate-y-1/2" />
                 <input
                   id={`${fieldIds}-1`}
+                  autoComplete="email"
                   type="email"
                   required
                   value={email}
@@ -162,6 +163,7 @@ export const HostAuthPage: React.FC<HostAuthPageProps> = ({ onSuccess, initialTa
                 <Lock className="w-4 h-4 text-cream-400/60 absolute left-3.5 top-1/2 -translate-y-1/2" />
                 <input
                   id={`${fieldIds}-2`}
+                  autoComplete="current-password"
                   type="password"
                   required
                   value={password}
@@ -193,6 +195,7 @@ export const HostAuthPage: React.FC<HostAuthPageProps> = ({ onSuccess, initialTa
                 <User className="w-4 h-4 text-cream-400/60 absolute left-3.5 top-1/2 -translate-y-1/2" />
                 <input
                   id={`${fieldIds}-3`}
+                  autoComplete="name"
                   type="text"
                   required
                   value={fullName}
@@ -211,6 +214,7 @@ export const HostAuthPage: React.FC<HostAuthPageProps> = ({ onSuccess, initialTa
                 <Mail className="w-4 h-4 text-cream-400/60 absolute left-3.5 top-1/2 -translate-y-1/2" />
                 <input
                   id={`${fieldIds}-4`}
+                  autoComplete="email"
                   type="email"
                   required
                   value={email}
@@ -229,6 +233,7 @@ export const HostAuthPage: React.FC<HostAuthPageProps> = ({ onSuccess, initialTa
                 <Lock className="w-4 h-4 text-cream-400/60 absolute left-3.5 top-1/2 -translate-y-1/2" />
                 <input
                   id={`${fieldIds}-5`}
+                  autoComplete="new-password"
                   type="password"
                   required
                   value={password}

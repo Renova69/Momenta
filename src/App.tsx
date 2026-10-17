@@ -277,6 +277,20 @@ function WeddingAppContent() {
   };
   const safeGuest = currentGuest || fallbackGuest;
 
+  // N-151 / N-158 — the plan and the palette are the couple's to change. A
+  // guest was offered both: an upgrade that ended in "Unauthorized", and a
+  // palette whose save the server refused. Only the album's own host gets them.
+  const isAlbumHost = !!currentHostUser?.id && event.hostUserId === currentHostUser.id;
+  const openPricingForHost = isAlbumHost ? () => setIsPricingOpen(true) : undefined;
+  // A visitor with no account who picks a plan is sent to make one.
+  const sendVisitorToSignIn = currentHostUser
+    ? undefined
+    : () => {
+        setIsPricingOpen(false);
+        setHostAuthTab('signup');
+        navigateView('host');
+      };
+
   return (
     <div className={`min-h-screen bg-linear-to-b ${currentTheme.bgGradient} text-cream-100 flex flex-col`}>
       {/* Network Status Indicators */}
@@ -344,7 +358,7 @@ function WeddingAppContent() {
         }}
         isHomePage={!router.getRoute().slug}
         currentTheme={event.themePalette}
-        onThemeChange={(newTheme: ThemePalette) => updateEvent({ themePalette: newTheme })}
+        onThemeChange={isAlbumHost ? (newTheme: ThemePalette) => updateEvent({ themePalette: newTheme }) : undefined}
         currentGuest={safeGuest}
         onOpenGuestProfile={() => setIsGuestProfileOpen(true)}
         onOpenPricing={() => setIsPricingOpen(true)}
@@ -439,7 +453,7 @@ function WeddingAppContent() {
                     photos={photos}
                     currentGuest={safeGuest}
                     eventPlanTier={event.planTier}
-                    onOpenPricing={() => setIsPricingOpen(true)}
+                    onOpenPricing={openPricingForHost}
                     onLike={handleLikeWithPrompt}
                     onReact={handleReactWithPrompt}
                     onOpenComments={handleOpenLightbox}
@@ -452,7 +466,7 @@ function WeddingAppContent() {
                 {activeGuestTab === 'quests' && (
                   !isFeatureUnlocked(event.planTier, 'scavenger_quests') ? (
                     <div className="py-8">
-                      <LockedFeatureCard feature="scavenger_quests" onOpenPricing={() => setIsPricingOpen(true)} />
+                      <LockedFeatureCard feature="scavenger_quests" onOpenPricing={openPricingForHost} />
                     </div>
                   ) : (
                     <ScavengerHunt
@@ -469,7 +483,7 @@ function WeddingAppContent() {
                 {activeGuestTab === 'audio' && (
                   !isFeatureUnlocked(event.planTier, 'audio_guestbook') ? (
                     <div className="py-8">
-                      <LockedFeatureCard feature="audio_guestbook" onOpenPricing={() => setIsPricingOpen(true)} />
+                      <LockedFeatureCard feature="audio_guestbook" onOpenPricing={openPricingForHost} />
                     </div>
                   ) : (
                     <AudioGuestbook
@@ -526,7 +540,7 @@ function WeddingAppContent() {
         {activeView === 'projector' && (
           !isFeatureUnlocked(event.planTier, 'live_tv') ? (
             <div className="py-12 px-4 max-w-xl mx-auto">
-              <LockedFeatureCard feature="live_tv" onOpenPricing={() => setIsPricingOpen(true)} />
+              <LockedFeatureCard feature="live_tv" onOpenPricing={openPricingForHost} />
             </div>
           ) : (
             <LiveProjectorScreen
@@ -555,6 +569,7 @@ function WeddingAppContent() {
               currentPlanTier={event.planTier || 'free'}
               onUpgradePlan={handleUpgradePlan}
               eventSlug={event.slug}
+              onSignInRequired={sendVisitorToSignIn}
             />
           </div>
         )}
@@ -612,6 +627,7 @@ function WeddingAppContent() {
         isPricingOpen={isPricingOpen}
         onClosePricing={() => setIsPricingOpen(false)}
         onUpgradePlan={handleUpgradePlan}
+        onSignInRequired={sendVisitorToSignIn}
         isEventsListOpen={isEventsListOpen}
         onCloseEventsList={() => setIsEventsListOpen(false)}
         onSelectEvent={handleSelectEvent}

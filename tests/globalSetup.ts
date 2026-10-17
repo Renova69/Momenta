@@ -1,6 +1,7 @@
 import { purgeTestData } from '../scripts/purge-test-data';
 import { pool } from '../server/lib/db';
 import { CONFIG } from '../server/lib/config';
+import { sweepOrphanAlbumDirs } from './helpers/orphanSweep';
 
 /**
  * True when this teardown is allowed to delete media.
@@ -46,7 +47,14 @@ import { CONFIG } from '../server/lib/config';
  */
 let runStartedAt: string | null = null;
 
+/**
+ * The same moment by this machine's clock, for the orphan sweep: folders on
+ * local disk are stamped by it, not by the database's (N-162).
+ */
+let runStartedLocally = 0;
+
 export async function setup(): Promise<void> {
+  runStartedLocally = Date.now();
   const { rows } = await pool.query<{ now: string }>('SELECT now()::text AS now');
   runStartedAt = rows[0].now;
 }
@@ -104,6 +112,8 @@ export async function teardown(): Promise<void> {
       const mb = (mediaBytes / 1024 / 1024).toFixed(1);
       console.log(`[teardown] removed ${events} test event(s), ${users} test user(s), ${mb} MB of media`);
     }
+    const orphans = await sweepOrphanAlbumDirs([CONFIG.UPLOADS_DIR, CONFIG.QUARANTINE_DIR], runStartedLocally);
+    if (orphans > 0) console.log(`[teardown] removed ${orphans} album folder(s) this run left with no album`);
   } catch (err) {
     console.warn('[teardown] could not purge test data:', err instanceof Error ? err.message : String(err));
   } finally {

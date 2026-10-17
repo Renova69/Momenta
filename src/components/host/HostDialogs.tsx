@@ -22,6 +22,8 @@ interface HostDialogsProps {
   isPricingOpen: boolean;
   onClosePricing: () => void;
   onUpgradePlan: (newTier: PlanTier) => Promise<void>;
+  /** Set while nobody is signed in: choosing a plan goes to sign-in (N-151). */
+  onSignInRequired?: () => void;
   isEventsListOpen: boolean;
   onCloseEventsList: () => void;
   onSelectEvent: (event: WeddingEvent) => void;
@@ -34,6 +36,7 @@ export const HostDialogs: React.FC<HostDialogsProps> = ({
   isPricingOpen,
   onClosePricing,
   onUpgradePlan,
+  onSignInRequired,
   isEventsListOpen,
   onCloseEventsList,
   onSelectEvent,
@@ -51,6 +54,7 @@ export const HostDialogs: React.FC<HostDialogsProps> = ({
         currentPlanTier={event.planTier || 'free'}
         onUpgradePlan={onUpgradePlan}
         eventSlug={event.slug}
+        onSignInRequired={onSignInRequired}
       />
     )}
     {isEventsListOpen && (

@@ -146,6 +146,25 @@ describe('LiveFeed visibility rules', () => {
     expect(screen.getByText(/45\s*\/\s*50/)).toBeInTheDocument();
   });
 
+  // N-151 — a guest saw the couple's upsell, upgrade button and all.
+  it('tells a guest only that a full album takes no more photos', () => {
+    const photos = Array.from({ length: 50 }, (_, i) => photo({ id: `p${i}` }));
+
+    renderFeed(photos, ME, { eventPlanTier: 'free' });
+
+    expect(screen.getByText(i18n.t('feed.album_full_guest', { max: 50 }))).toBeInTheDocument();
+    expect(screen.queryByText(i18n.t('ui.live_feed.2'))).not.toBeInTheDocument();
+    expect(screen.queryByText(i18n.t('ui.live_feed.1'))).not.toBeInTheDocument();
+  });
+
+  it('gives a guest no countdown before the album is full', () => {
+    const photos = Array.from({ length: 46 }, (_, i) => photo({ id: `p${i}` }));
+
+    renderFeed(photos, ME, { eventPlanTier: 'free' });
+
+    expect(screen.queryByText(/46\s*\/\s*50/)).not.toBeInTheDocument();
+  });
+
   it('says nothing about limits on a paid plan', () => {
     const photos = Array.from({ length: 60 }, (_, i) => photo({ id: `p${i}` }));
 

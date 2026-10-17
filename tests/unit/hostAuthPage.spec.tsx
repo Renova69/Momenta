@@ -104,3 +104,25 @@ describe('arriving to create an album (N-132)', () => {
     expect(screen.getByRole('button', { name: i18n.t('host.signup_btn') })).toBeInTheDocument();
   });
 });
+
+/**
+ * N-154 — WCAG 1.3.5 (Identify Input Purpose): without `autocomplete`, a
+ * password manager cannot tell sign-in from sign-up, and a phone cannot
+ * offer the address or the saved password.
+ */
+describe('what each field is for (N-154)', () => {
+  it('marks the sign-in fields as the saved email and password', () => {
+    const { container } = render(<HostAuthPage onSuccess={vi.fn()} />);
+
+    expect(container.querySelector('input[type="email"]')).toHaveAttribute('autocomplete', 'email');
+    expect(container.querySelector('input[type="password"]')).toHaveAttribute('autocomplete', 'current-password');
+  });
+
+  it('marks the sign-up fields as a name, an email and a new password', () => {
+    const { container } = render(<HostAuthPage onSuccess={vi.fn()} initialTab="signup" />);
+
+    expect(container.querySelector('input[type="text"]')).toHaveAttribute('autocomplete', 'name');
+    expect(container.querySelector('input[type="email"]')).toHaveAttribute('autocomplete', 'email');
+    expect(container.querySelector('input[type="password"]')).toHaveAttribute('autocomplete', 'new-password');
+  });
+});

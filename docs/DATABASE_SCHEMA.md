@@ -75,7 +75,7 @@ This schema is designed for PostgreSQL 14+ and is 100% compatible with local Doc
   cancellation can overwrite (MASTER_AUDIT M-5).
 - `currency` (VARCHAR(10)): `'EUR'`
 - `event_limit` (INT): Number of simultaneous active events
-- `storage_limit_gb` (INT): Storage quota
+- `storage_limit_gb` (INT): Unused. Never written after the row is created and never read, so it holds its default whatever the plan. The storage allowance comes from the plan itself (`PLAN_LIMITS` in `server/lib/planLimits.ts`, applied by `server/middleware/tierGate.ts`), measured against `events.storage_bytes`.
 - `expires_at` (TIMESTAMPTZ, Nullable)
 - `stripe_customer_id`, `stripe_subscription_id` (TEXT, Nullable — migration 016): set once a tier is applied via a real Stripe Checkout, so a later webhook event (Stripe only ever sends its own IDs) can be traced back to the account, and a recurring Pro Planner subscription can be looked up again for cancellation/dunning. `idx_subscriptions_stripe_subscription_id` is what makes that reverse lookup cheap; it is the fallback path for any subscription event arriving without `metadata.userId`.
   - Both columns `COALESCE` on upsert rather than overwrite — a write that doesn't carry an id must not erase one already on file. A one-time pass bought on top of a live subscription comes from a `mode: 'payment'` session with no subscription id, and blanking it there would strand the real subscription with nothing to match its eventual cancellation against. Only an actual cancellation clears `stripe_subscription_id`, via `applyTierDowngradeToFree()`. A plan suspended for non-payment keeps it (see `lapsed_tier`).

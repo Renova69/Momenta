@@ -235,6 +235,25 @@ describe('PricingPlansModal', () => {
       expect(screen.getByText(i18n.t('pricing.confirm_free_title', { plan: passName() }))).toBeInTheDocument();
     });
 
+    // N-164 — a subscriber who bought a one-time pass first keeps it when
+    // the subscription ends; the question said they would lose everything.
+    it('names the one-time pass a subscriber keeps, rather than promising Free', async () => {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn().mockResolvedValue(
+          mockFetchResponse(200, { tier: 'pro_planner', paymentFailed: false, planEndsAt: null, keepsTier: 'celebration_pass' })
+        )
+      );
+      render(<PricingPlansModal isOpen onClose={vi.fn()} currentPlanTier="pro_planner" onUpgradePlan={vi.fn()} />);
+
+      fireEvent.click(choosePlanButton('free'));
+
+      const pro = i18n.t(PLANS.pro_planner.name);
+      const kept = i18n.t(PLANS.celebration_pass.name);
+      expect(await screen.findByText(i18n.t('pricing.confirm_free_title_keeps', { plan: pro, kept }))).toBeInTheDocument();
+      expect(screen.getByText(i18n.t('pricing.confirm_free_body_keeps', { kept }))).toBeInTheDocument();
+    });
+
     it('keeps the plan when the host backs out', () => {
       const onUpgradePlan = vi.fn().mockResolvedValue(undefined);
       render(
@@ -286,6 +305,72 @@ describe('PricingPlansModal', () => {
 
       expect(onUpgradePlan).toHaveBeenCalledWith('free');
       expect(confetti).not.toHaveBeenCalled();
+    });
+  });
+
+  /**
+   * N-155 — a Pro Planner host was offered "Choose plan" on both one-time
+   * passes, which the server then refused as already included.
+   */
+  it('shows the plans the current one already includes as included, not for sale', () => {
+    render(
+      <PricingPlansModal isOpen onClose={vi.fn()} currentPlanTier="pro_planner" onUpgradePlan={vi.fn()} />
+    );
+
+    for (const tier of ['celebration_pass', 'deluxe_keepsake'] as PlanTier[]) {
+      expect(choosePlanButton(tier)).toBeDisabled();
+      expect(choosePlanButton(tier)).toHaveTextContent(i18n.t('pricing.included'));
+    }
+  });
+
+  it('still offers a higher plan, and the free one', () => {
+    render(
+      <PricingPlansModal isOpen onClose={vi.fn()} currentPlanTier="celebration_pass" onUpgradePlan={vi.fn()} />
+    );
+
+    expect(choosePlanButton('deluxe_keepsake')).toBeEnabled();
+    expect(choosePlanButton('free')).toBeEnabled();
+  });
+
+  /**
+   * N-151 — opened from a guest's phone, choosing a plan went to checkout
+   * without a session and came back as "Unauthorized: Missing or invalid
+   * token". A visitor is sent to sign in instead, and no plan is "theirs".
+   */
+  describe('for a visitor who is not signed in', () => {
+    it('sends them to sign in instead of starting a checkout', () => {
+      const onSignInRequired = vi.fn();
+      render(
+        <PricingPlansModal
+          isOpen
+          onClose={vi.fn()}
+          currentPlanTier="celebration_pass"
+          onUpgradePlan={vi.fn()}
+          onSignInRequired={onSignInRequired}
+        />
+      );
+
+      fireEvent.click(choosePlanButton('deluxe_keepsake'));
+
+      expect(onSignInRequired).toHaveBeenCalledTimes(1);
+      expect(fetch).not.toHaveBeenCalled();
+    });
+
+    it('marks no plan as theirs: the album’s plan is the couple’s, not the visitor’s', () => {
+      render(
+        <PricingPlansModal
+          isOpen
+          onClose={vi.fn()}
+          currentPlanTier="celebration_pass"
+          onUpgradePlan={vi.fn()}
+          onSignInRequired={vi.fn()}
+        />
+      );
+
+      for (const tier of Object.keys(PLANS) as PlanTier[]) {
+        expect(choosePlanButton(tier)).toBeEnabled();
+        expect(choosePlanButton(tier)).toHaveTextContent(i18n.t('pricing.choose_plan'));
+      }
     });
   });
 

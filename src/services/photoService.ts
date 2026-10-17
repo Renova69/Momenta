@@ -5,6 +5,8 @@ import { getOrCreateDeviceFingerprint } from './storageKeys';
 import { readPhotos, persistPhotos, rememberPendingPreview, forgetPendingPreview } from './photoStore';
 import { runThrottledPhotoUpload } from './photoUploadThrottle';
 import { ServiceContext } from './storageServiceContext';
+import { ApiError } from '../api/apiClient';
+import { isRefusedForGood, refusedUploadMessage } from './uploadRefusal';
 
 
 /**
@@ -128,12 +130,30 @@ export async function addPhoto(
         }
       })
       .catch((e) => {
+        // N-150 — refused, not lost: no retry can get it in, so it comes off
+        // the phone now and the guest is told why, instead of being queued.
+        if (e instanceof ApiError && isRefusedForGood(e.status, e.code)) {
+          console.warn('Photo refused by the server, not queued:', e.status, e.code);
+          discardLocalPhoto(ctx, event.id, localPhoto.id);
+          ctx.notifyError(refusedUploadMessage('photo', e.code, e.message));
+          return;
+        }
         console.warn('Could not post photo to backend, enqueuing for offline sync:', e);
         offlineQueue.enqueue('photo', uploadPayload);
       })
   );
 
   return localPhoto;
+}
+
+/**
+ * Take a photo that will never reach the server off this phone: out of the
+ * feed, "Моите снимки" and the counts, which otherwise showed it as sent.
+ */
+export function discardLocalPhoto(ctx: ServiceContext, eventId: string, localId: string): void {
+  persistPhotos(eventId, getPhotos(ctx, eventId).filter((p) => p.id !== localId));
+  forgetPendingPreview(localId);
+  ctx.notify();
 }
 
 export function toggleLikePhoto(ctx: ServiceContext, photoId: string, guestId: string): void {

@@ -125,8 +125,11 @@ const LiveFeedComponent: React.FC<LiveFeedProps> = ({
 
   const displayedPhotos = filteredPhotos.slice(0, renderedLimit);
   const isFreeTier = eventPlanTier === 'free';
-  const isApproachingLimit = isFreeTier && photos.length >= FREE_TIER_MAX_PHOTOS - 5;
   const isAtLimit = isFreeTier && photos.length >= FREE_TIER_MAX_PHOTOS;
+  // N-151 — the warning and its upgrade are the couple's. Without a pricing
+  // handler this is a guest, who is told only that the album is full.
+  const isHostView = !!onOpenPricing;
+  const isApproachingLimit = isFreeTier && photos.length >= FREE_TIER_MAX_PHOTOS - 5 && (isHostView || isAtLimit);
 
   return (
     <section className="space-y-6">
@@ -143,14 +146,21 @@ const LiveFeedComponent: React.FC<LiveFeedProps> = ({
             <AlertCircle className={`w-5 h-5 shrink-0 ${isAtLimit ? 'text-rosewood-400' : 'text-gold-400'}`} />
             <div className="text-xs">
               <span className="font-bold block sm:inline">
-                {isAtLimit
+                {!isHostView
+                  ? i18n.t('feed.album_full_guest', { max: FREE_TIER_MAX_PHOTOS })
+                  : isAtLimit
                   ? i18n.t('feed.free_limit_reached')
                   : i18n.t('feed.approaching_limit', {
                       used: photos.length,
                       max: FREE_TIER_MAX_PHOTOS,
                     })}
-              </span>{' '}
-              <span className="opacity-80">{i18n.t('ui.live_feed.1')}</span>
+              </span>
+              {isHostView && (
+                <>
+                  {' '}
+                  <span className="opacity-80">{i18n.t('ui.live_feed.1')}</span>
+                </>
+              )}
             </div>
           </div>
 

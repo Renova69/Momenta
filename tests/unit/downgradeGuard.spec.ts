@@ -180,6 +180,28 @@ describe('downgrade guard (H7)', () => {
     expect(row.rows[0]).toEqual({ tier: 'free', one_time_tier: null });
   });
 
+  // N-164 — the question a subscriber answers says the pass underneath stays.
+  // With the subscription already over at Stripe (or no Stripe at all), the
+  // route used to set free and forget the pass: the opposite of the promise.
+  it('falls back to the one-time pass a subscriber holds, as the question promised', async () => {
+    const host = await registerHost();
+    await query(
+      `UPDATE subscriptions SET tier = 'pro_planner', one_time_tier = 'celebration_pass',
+              stripe_subscription_id = $2, billing_type = 'monthly'
+        WHERE user_id = $1 AND status = 'active'`,
+      [host.userId, `sub_ended_${Date.now()}`] // never added to LIVE_SUBSCRIPTIONS
+    );
+
+    const res = await downgrade(host);
+
+    expect(res.status).toBe(200);
+    const row = await query<{ tier: string; one_time_tier: string | null; stripe_subscription_id: string | null }>(
+      "SELECT tier, one_time_tier, stripe_subscription_id FROM subscriptions WHERE user_id = $1 AND status = 'active'",
+      [host.userId]
+    );
+    expect(row.rows[0]).toEqual({ tier: 'celebration_pass', one_time_tier: 'celebration_pass', stripe_subscription_id: null });
+  });
+
   it('allows the downgrade once the subscription is no longer live at Stripe', async () => {
     const host = await registerHost();
     await givePaidPlan(host, `sub_dead_${Date.now()}`); // never added to LIVE_SUBSCRIPTIONS

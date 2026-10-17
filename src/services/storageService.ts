@@ -25,6 +25,8 @@ import * as guestService from './guestService';
 import * as photoService from './photoService';
 import * as questService from './questService';
 import * as audioService from './audioService';
+import { refusedUploadMessage } from './uploadRefusal';
+import { translatedRefusal } from '../api/apiClient';
 import * as qrCanvasService from './qrCanvasService';
 import * as syncService from './storageSyncService';
 
@@ -101,7 +103,20 @@ class WedStorageService {
       });
       // N-60 — a photo or message the queue gave up on is said out loud, not
       // left as a console warning the guest never sees.
-      offlineQueue.onItemDropped((item) => {
+      offlineQueue.onItemDropped((item, reason) => {
+        // N-150 — the message said the item "was removed from this phone",
+        // and nothing removed it: it stayed in the feed as if it had been sent.
+        const payload = item.payload as { eventId?: string; localId?: string };
+        const eventId = payload.eventId || this.ctx.getEvent().id;
+        if (payload.localId) {
+          if (item.type === 'audio') audioService.discardLocalAudioEntry(this.ctx, eventId, payload.localId);
+          else photoService.discardLocalPhoto(this.ctx, eventId, payload.localId);
+        }
+        if (reason.refused) {
+          const words = translatedRefusal(reason.code, reason.message || i18n.t('error.forbidden'), reason.body);
+          this.notifyError(refusedUploadMessage(item.type, reason.code, words));
+          return;
+        }
         this.notifyError(i18n.t(item.type === 'audio' ? 'offline.audio_dropped' : 'offline.photo_dropped'));
       });
       // N-61 — uploads queued before the app was closed go up when it opens,

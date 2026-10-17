@@ -1,5 +1,6 @@
 import { ENV } from '../config/env';
 import { getOrCreateDeviceFingerprint } from './storageKeys';
+import { isRefusedForGood } from './uploadRefusal';
 
 /**
  * The JSON body of a queued upload, replayed verbatim against /api/photos or
@@ -20,7 +21,19 @@ type OfflineQueueListener = (queuedCount: number, isOnline: boolean) => void;
 /** Fired once per successfully-uploaded item with the parsed server response, so a caller can reconcile an optimistic local entry (still under its temp id) with the real one (FE-03). */
 type FlushSuccessListener = (item: QueuedUpload, serverResponse: Record<string, unknown>) => void;
 /** Fired when an item is given up on, so the guest is told rather than finding out later (N-60). */
-type ItemDroppedListener = (item: QueuedUpload) => void;
+/**
+ * Why an item left the queue unsent. `refused` is the server saying no for
+ * good (N-150), with its code and its words; otherwise the queue gave up
+ * after its retries.
+ */
+export interface DropReason {
+  refused: boolean;
+  code?: string;
+  message?: string;
+  /** The whole refusal, for the values its translation names. */
+  body?: Record<string, unknown>;
+}
+type ItemDroppedListener = (item: QueuedUpload, reason: DropReason) => void;
 
 // [FIX H-13] Max items and max retries to prevent runaway growth
 const MAX_QUEUE_SIZE = 50;
@@ -30,10 +43,25 @@ const MAX_RETRIES = 5;
 const REPLAY_TIMEOUT_MS = 120_000;
 
 /**
- * Answers a retry cannot change: malformed, the album gone, too large, the
- * wrong type. Anything else — a 5xx, 401, 403, 408, 429 — may succeed later.
+ * Which answers a retry cannot change is decided in uploadRefusal.ts, shared
+ * with the live upload: malformed, the album gone, too large, the wrong type,
+ * or a plan's limit (N-150). A 5xx, 401, 408, a 403 without the app's code
+ * (a venue's captive portal), or the rate limiter's 429 may succeed later.
  */
-const PERMANENT_HTTP_STATUSES = new Set([400, 404, 413, 415, 422]);
+
+/** The code and words of a refusal, when the server sent them as JSON. */
+async function readRefusal(res: Response): Promise<Omit<DropReason, 'refused'>> {
+  try {
+    const body = (await res.json()) as Record<string, unknown>;
+    return {
+      code: typeof body.code === 'string' ? body.code : undefined,
+      message: typeof body.error === 'string' ? body.error : undefined,
+      body,
+    };
+  } catch {
+    return {};
+  }
+}
 
 const DB_NAME = 'wedmoments_offline_queue';
 const DB_VERSION = 1;
@@ -230,7 +258,7 @@ export class OfflineQueueService {
         // Drop items that exceeded max retries
         if (item.retryCount >= MAX_RETRIES) {
           console.warn('[OfflineQueue] Dropping item after max retries:', item.id);
-          await this.dropItem(item);
+          await this.dropItem(item, { refused: false });
           continue;
         }
 
@@ -291,11 +319,12 @@ export class OfflineQueueService {
             clearTimeout(deadline);
           }
           if (!res.ok) {
-            if (PERMANENT_HTTP_STATUSES.has(res.status)) {
+            const refusal = await readRefusal(res);
+            if (isRefusedForGood(res.status, refusal.code)) {
               // Retrying cannot make a malformed, oversized or orphaned upload
-              // succeed. Drop it now, and say so.
-              console.warn('[OfflineQueue] Upload refused for good, dropping:', item.id, res.status);
-              await this.dropItem(item);
+              // succeed, nor get one into a full album. Drop it now, and say so.
+              console.warn('[OfflineQueue] Upload refused for good, dropping:', item.id, res.status, refusal.code);
+              await this.dropItem(item, { refused: true, ...refusal });
               continue;
             }
             throw new Error(`Upload failed with HTTP ${res.status}`);
@@ -337,9 +366,9 @@ export class OfflineQueueService {
   }
 
   /** Remove an item for good and tell whoever is listening. */
-  private async dropItem(item: QueuedUpload): Promise<void> {
+  private async dropItem(item: QueuedUpload, reason: DropReason): Promise<void> {
     await this.removeItem(item.id);
-    this.itemDroppedListeners.forEach((listener) => listener(item));
+    this.itemDroppedListeners.forEach((listener) => listener(item, reason));
   }
 
   public onFlushSuccess(listener: FlushSuccessListener): () => void {

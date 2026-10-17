@@ -22,6 +22,7 @@ import { apiLimiter } from './middleware/rateLimit';
 import { runMigrations } from './lib/migrate';
 import { healthHandler } from './lib/health';
 import { builtClient } from './lib/builtClient';
+import { compressGuestFeed, apiNotFound, NOINDEX } from './lib/httpEdges';
 import { drainHttpServer } from './lib/httpDrain';
 
 const app = express();
@@ -106,8 +107,12 @@ app.post('/api/billing/webhook', express.raw({ type: 'application/json' }), hand
 app.use(express.json({ limit: `${CONFIG.MAX_UPLOAD_SIZE_MB}mb` }));
 app.use(express.urlencoded({ extended: true, limit: `${CONFIG.MAX_UPLOAD_SIZE_MB}mb` }));
 
-// 4. Static Uploads File Serving
-app.use('/uploads', express.static(CONFIG.UPLOADS_DIR));
+// 4. Static Uploads File Serving — guests' photos, kept out of image search
+// like the album pages they appear on (N-153).
+app.use(
+  '/uploads',
+  express.static(CONFIG.UPLOADS_DIR, { setHeaders: (res) => res.setHeader('X-Robots-Tag', NOINDEX) })
+);
 
 // 5. [FIX M-6] Apply global API rate limiter to all /api routes
 app.use('/api', apiLimiter);
@@ -115,6 +120,7 @@ app.use('/api', apiLimiter);
 // 6. API Routes
 app.use('/api/auth', authRouter);
 app.use('/api/events', eventsRouter);
+app.get('/api/photos', compressGuestFeed());
 app.use('/api/photos', photosRouter);
 app.use('/api', questsRouter);
 app.use('/api/audio', audioRouter);
@@ -125,6 +131,9 @@ app.use('/api/billing', billingRouter);
 
 // 6b. Health check — see server/lib/health.ts for why it probes the database.
 app.get('/api/health', healthHandler());
+
+// 6c. Anything else under /api is a 404 the client can read (N-160).
+app.use('/api', apiNotFound);
 
 // 7. Serve Built Frontend in Production & Handle SPA Routing Fallback
 const DIST_DIR = path.join(process.cwd(), 'dist');

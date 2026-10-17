@@ -203,6 +203,15 @@ describe('LockedFeatureBadge', () => {
     expect(onOpenPricing).toHaveBeenCalled();
   });
 
+  // N-151 — a guest was shown the upgrade button too, and choosing a plan
+  // from a guest's phone ended in an English "Unauthorized".
+  it('offers no upgrade to a guest, and says who can turn the feature on', () => {
+    render(<LockedFeatureCard feature="live_tv" />);
+
+    expect(screen.queryByRole('button')).not.toBeInTheDocument();
+    expect(screen.getByText(i18n.t('gate.guest_note'))).toBeInTheDocument();
+  });
+
   it('renders a compact badge for inline use', () => {
     const { container } = render(<LockedFeatureBadge feature="zip_export" compact />);
     expect(container.firstChild).not.toBeNull();

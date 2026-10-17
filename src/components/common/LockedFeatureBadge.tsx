@@ -57,7 +57,7 @@ export const LockedFeatureBadge: React.FC<LockedFeatureBadgeProps> = ({
 
 interface LockedFeatureCardProps {
   feature: GatedFeature;
-  /** Optional: the card still explains the locked feature without an upgrade handler. */
+  /** The album's host only: without it the card explains the feature and offers no upgrade. */
   onOpenPricing?: () => void;
 }
 
@@ -87,16 +87,22 @@ export const LockedFeatureCard: React.FC<LockedFeatureCardProps> = ({
         </p>
       </div>
 
-      <div className="pt-2">
-        <button
-          type="button"
-          onClick={onOpenPricing}
-          className="w-full sm:w-auto px-8 py-3.5 rounded-xl bg-linear-to-r from-gold-400 to-gold-500 text-noir-900 font-bold text-sm shadow-glow hover:brightness-110 active:scale-98 transition-all inline-flex items-center justify-center gap-2"
-        >
-          <Sparkles className="w-4 h-4" />
-          <span>{i18n.t('gate.upgrade_for', { price: plan.price })}</span>
-        </button>
-      </div>
+      {/* N-151 — only the album's host can buy the plan. Without a handler
+          this is a guest, who is told who can turn the feature on instead. */}
+      {onOpenPricing ? (
+        <div className="pt-2">
+          <button
+            type="button"
+            onClick={onOpenPricing}
+            className="w-full sm:w-auto px-8 py-3.5 rounded-xl bg-linear-to-r from-gold-400 to-gold-500 text-noir-900 font-bold text-sm shadow-glow hover:brightness-110 active:scale-98 transition-all inline-flex items-center justify-center gap-2"
+          >
+            <Sparkles className="w-4 h-4" />
+            <span>{i18n.t('gate.upgrade_for', { price: plan.price })}</span>
+          </button>
+        </div>
+      ) : (
+        <p className="text-xs text-cream-300/80">{i18n.t('gate.guest_note')}</p>
+      )}
     </div>
   );
 };

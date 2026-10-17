@@ -38,6 +38,7 @@ import {
 import { HostDashboardProvider, HostTab, HostDashboardValue } from './dashboard/context';
 import { formatDateDDMMYYYY, formatTime24h, parseDateAndTime } from './dashboard/dateFields';
 import { TabNav } from './dashboard/TabNav';
+import { BillingNotice } from './BillingNotice';
 import type { CoverSource } from '../../api/eventsApi';
 import { OverviewTab } from './dashboard/OverviewTab';
 import { QuestsTab } from './dashboard/QuestsTab';
@@ -274,6 +275,7 @@ export const HostDashboard: React.FC<HostDashboardProps> = ({
             thing on screen. A page with no h1 gives a screen reader nothing to
             land on and no way to tell one album's dashboard from another's. */}
         <h1 className="sr-only">{i18n.t('host.studio_heading', { title: event.title })}</h1>
+        <BillingNotice eventSlug={event.slug} />
         <TabNav />
 
         {/* 1. OVERVIEW & EVENT SETTINGS TAB */}

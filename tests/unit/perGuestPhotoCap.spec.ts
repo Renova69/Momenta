@@ -150,7 +150,13 @@ describe('a host who sets a real cap', () => {
     const refused = await uploadPhoto(eventId, device);
 
     expect(refused.status).toBe(429);
-    expect((await refused.json()).error).toContain('1');
+    const body = await refused.json();
+    expect(body.error).toContain('1');
+    // N-150 — a code tells the phone this is the guest's limit, not the
+    // rate limiter's "slow down": retrying later cannot change it, and the
+    // guest has to be told rather than queued for retries that never land.
+    expect(body.code).toBe('GUEST_PHOTO_LIMIT_REACHED');
+    expect(body.max).toBe(1);
   }, 30_000);
 });
 

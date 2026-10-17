@@ -10,6 +10,9 @@ import {
   reconcileFlushedPhoto,
 } from '../../src/services/photoService';
 import { photosApi } from '../../src/api/photosApi';
+import { ApiError } from '../../src/api/apiClient';
+import { offlineQueue } from '../../src/services/offlineQueueService';
+import { i18n } from '../../src/i18n';
 import { STORAGE_KEYS } from '../../src/services/storageKeys';
 import { ServiceContext } from '../../src/services/storageServiceContext';
 import { Photo, WeddingEvent } from '../../src/types';
@@ -566,5 +569,86 @@ describe('setPhotoStatus rollback', () => {
 
     await vi.waitFor(() => expect(stored().find((p) => p.id === 'p1')?.status).toBe('pending'));
     expect(stored().find((p) => p.id === 'p2')?.status).toBe('rejected');
+  });
+});
+
+/**
+ * N-150 — the server refusing a photo is not the network failing.
+ *
+ * Every failed upload used to go to the offline queue. On a full album the
+ * guest was told the photo was sent, saw it at the top of the feed and in
+ * "Моите снимки", and the phone retried it five times before dropping it
+ * with a message about having had no connection. A refusal no retry can
+ * change has to come off the phone at once, with the reason said.
+ */
+describe('addPhoto when the server refuses the photo', () => {
+  const capture = { guestId: 'g1', guestName: 'Ana', fullUrl: 'data:image/jpeg;base64,AAAA' };
+
+  it('takes a photo the full album refused off the phone and says why', async () => {
+    const { ctx, notifyError } = harness();
+    vi.spyOn(photosApi, 'create').mockRejectedValue(
+      new ApiError('Достигнахте лимита на снимките за вашия план.', 403, undefined, 'TIER_LIMIT_REACHED')
+    );
+    const enqueue = vi.spyOn(offlineQueue, 'enqueue').mockResolvedValue(null);
+
+    await addPhoto(ctx, capture);
+
+    await vi.waitFor(() => expect(notifyError).toHaveBeenCalledWith(i18n.t('upload.album_full')));
+    expect(enqueue).not.toHaveBeenCalled();
+    expect(stored()).toHaveLength(0);
+  });
+
+  it("takes off a photo past the guest's own limit, giving the limit", async () => {
+    const { ctx, notifyError } = harness();
+    vi.spyOn(photosApi, 'create').mockRejectedValue(
+      new ApiError('Достигнахте лимита от 3 снимки.', 429, undefined, 'GUEST_PHOTO_LIMIT_REACHED')
+    );
+    const enqueue = vi.spyOn(offlineQueue, 'enqueue').mockResolvedValue(null);
+
+    await addPhoto(ctx, capture);
+
+    await vi.waitFor(() =>
+      expect(notifyError).toHaveBeenCalledWith(i18n.t('upload.photo_not_sent', { reason: 'Достигнахте лимита от 3 снимки.' }))
+    );
+    expect(enqueue).not.toHaveBeenCalled();
+    expect(stored()).toHaveLength(0);
+  });
+
+  it('still queues a photo when the network failed', async () => {
+    const { ctx, notifyError } = harness();
+    vi.spyOn(photosApi, 'create').mockRejectedValue(new TypeError('Failed to fetch'));
+    const enqueue = vi.spyOn(offlineQueue, 'enqueue').mockResolvedValue(null);
+
+    await addPhoto(ctx, capture);
+
+    await vi.waitFor(() => expect(enqueue).toHaveBeenCalledTimes(1));
+    expect(notifyError).not.toHaveBeenCalled();
+    expect(stored()).toHaveLength(1);
+  });
+
+  // A 403 the app sends always carries a code. One without came from
+  // something between the phone and the server - a venue's captive portal or
+  // proxy - and the photo must survive it.
+  it('still queues a photo met by a bare 403 from the venue network', async () => {
+    const { ctx, notifyError } = harness();
+    vi.spyOn(photosApi, 'create').mockRejectedValue(new ApiError('Нямате право да направите това.', 403));
+    const enqueue = vi.spyOn(offlineQueue, 'enqueue').mockResolvedValue(null);
+
+    await addPhoto(ctx, capture);
+
+    await vi.waitFor(() => expect(enqueue).toHaveBeenCalledTimes(1));
+    expect(notifyError).not.toHaveBeenCalled();
+    expect(stored()).toHaveLength(1);
+  });
+
+  it('still queues a photo the rate limiter turned away, which a later try can send', async () => {
+    const { ctx } = harness();
+    vi.spyOn(photosApi, 'create').mockRejectedValue(new ApiError('Too many uploads', 429));
+    const enqueue = vi.spyOn(offlineQueue, 'enqueue').mockResolvedValue(null);
+
+    await addPhoto(ctx, capture);
+
+    await vi.waitFor(() => expect(enqueue).toHaveBeenCalledTimes(1));
+    expect(stored()).toHaveLength(1);
   });
 });

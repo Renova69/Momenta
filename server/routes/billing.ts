@@ -108,7 +108,10 @@ billingRouter.post(
     // regardless of Stripe's configuration state, and this ordering also
     // means the check is exercisable by tests even without real keys.
     if (!isAllowedRedirect(successUrl) || !isAllowedRedirect(cancelUrl)) {
-      return res.status(400).json({ error: 'Invalid redirect URL' });
+      // N-156 — reached by a host who opened the site at an address other
+      // than PUBLIC_BASE_URL (www against the bare domain, say), so it needs
+      // words they can read, not the English of a developer error.
+      return res.status(400).json({ error: 'Invalid redirect URL', code: 'INVALID_REDIRECT' });
     }
 
     if (!isStripeConfigured()) {
@@ -208,6 +211,52 @@ billingRouter.post(
   }
 );
 
+/**
+ * GET /api/billing/status — what the studio must tell the host about paying.
+ *
+ * N-152 — when a renewal fails, the webhook keeps the plan until
+ * `past_due_grace_expiry` and the grace sweep ends it there. Nothing told the
+ * host in between: no email can go out while SMTP is unset, and the studio
+ * looked exactly as it did on a paid-up plan, so the first sign of trouble
+ * was the plan disappearing a week later. Read from the database only, so
+ * opening the studio never waits on Stripe.
+ */
+billingRouter.get('/status', requireAuth, async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT tier, past_due_grace_expiry, one_time_tier, lapsed_tier, stripe_subscription_id FROM subscriptions
+        WHERE user_id = $1 AND status = 'active' ORDER BY updated_at DESC LIMIT 1`,
+      [req.user!.userId]
+    );
+    const row = rows[0] as
+      | {
+          tier: string;
+          past_due_grace_expiry: Date | null;
+          one_time_tier: string | null;
+          lapsed_tier: string | null;
+          stripe_subscription_id: string | null;
+        }
+      | undefined;
+    // N-164 — a one-time pass bought before a subscription is what the account
+    // falls back to when the subscription ends, so leaving it is not leaving
+    // everything.
+    const keepsTier =
+      row?.one_time_tier && row.one_time_tier !== 'free' && row.one_time_tier !== row.tier ? row.one_time_tier : null;
+    res.json({
+      tier: row?.tier ?? 'free',
+      paymentFailed: !!row?.past_due_grace_expiry,
+      planEndsAt: row?.past_due_grace_expiry ?? null,
+      keepsTier,
+      // Past the grace: the plan is parked in lapsed_tier, and a payment on
+      // the subscription still on file brings it back (restoreLapsedTier).
+      planSuspended: !!row?.lapsed_tier && !!row.stripe_subscription_id,
+    });
+  } catch (err) {
+    console.error('[Billing] status error:', errorLabel(err));
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 const PortalSessionSchema = z.object({
   returnUrl: z.string().url(),
 });
@@ -229,7 +278,7 @@ billingRouter.post('/portal-session', requireAuth, validateBody(PortalSessionSch
   const { returnUrl } = req.body as { returnUrl: string };
 
   if (!isAllowedRedirect(returnUrl)) {
-    return res.status(400).json({ error: 'Invalid return URL' });
+    return res.status(400).json({ error: 'Invalid return URL', code: 'INVALID_REDIRECT' });
   }
 
   if (!isStripeConfigured()) {

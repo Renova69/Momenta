@@ -4,7 +4,8 @@ import { requireAuth } from '../middleware/auth';
 import { validateBody } from '../middleware/validate';
 import { errorLabel } from '../lib/errors';
 import { BackendPlanTier } from '../middleware/tierGate';
-import { applyTierUpgrade } from '../lib/subscriptionUpgrade';
+import { applyTierUpgrade, applyTierDowngradeToFree } from '../lib/subscriptionUpgrade';
+import { isPaidTier } from '../lib/stripePlans';
 import { isStripeConfigured, subscriptionLivenessAtStripe } from '../lib/stripe';
 import { pool } from '../lib/db';
 
@@ -86,6 +87,25 @@ subscriptionsRouter.post('/upgrade', requireAuth, validateBody(UpgradeSchema), a
           error: 'We could not check your subscription with our payment provider. Please try again in a few minutes.',
           code: 'BILLING_UNVERIFIABLE',
         });
+      }
+    }
+
+    // N-164 — a subscriber holding a one-time pass underneath gives up the
+    // subscription, not the pass: the question they answered names the pass
+    // they keep, and an ending subscription falls back to it everywhere else.
+    if (tier === 'free') {
+      const held = await pool.query<{ tier: string; one_time_tier: string | null }>(
+        "SELECT tier, one_time_tier FROM subscriptions WHERE user_id = $1 AND status = 'active' LIMIT 1",
+        [userId]
+      );
+      const { tier: currentTier, one_time_tier: pass } = held.rows[0] ?? {};
+      if (isPaidTier(pass) && pass !== currentTier) {
+        await applyTierDowngradeToFree(userId);
+        const after = await pool.query(
+          "SELECT id, tier, status, event_limit FROM subscriptions WHERE user_id = $1 AND status = 'active' LIMIT 1",
+          [userId]
+        );
+        return res.json(after.rows[0]);
       }
     }
 

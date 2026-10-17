@@ -1,6 +1,7 @@
 import express, { type Response, type Router } from 'express';
 import compression from 'compression';
 import path from 'path';
+import { NOINDEX } from './httpEdges';
 
 /**
  * The built client, as production serves it: the SPA's files, and its page
@@ -36,9 +37,26 @@ export function builtClient(distDir: string): Router {
   router.use((req, res, next) => {
     if (req.method === 'GET' && !req.path.startsWith('/api') && !req.path.startsWith('/uploads')) {
       res.setHeader('Cache-Control', ALWAYS_CHECK);
+      if (!isPublicPage(req.path, req.originalUrl)) res.setHeader('X-Robots-Tag', NOINDEX);
       return res.sendFile(page);
     }
     next();
   });
   return router;
+}
+
+/**
+ * The pages meant to be found: the landing page and the pricing page.
+ *
+ * N-153 — every other address is an album, a studio or a screen of one, and
+ * had nothing keeping it out of search results: a guest posting the album's
+ * link publicly was all a crawler needed. They are marked rather than
+ * listed in robots.txt, because a crawler kept out by robots.txt never reads
+ * the page, so never learns not to index the address it was linked from.
+ */
+function isPublicPage(urlPath: string, originalUrl: string): boolean {
+  // With a query it is a page of one album: the studio links to
+  // /pricing?event=<slug>, which carries the album's address.
+  if (originalUrl.includes('?')) return false;
+  return urlPath === '/' || urlPath === '/index.html' || urlPath === '/pricing' || urlPath.startsWith('/pricing/');
 }

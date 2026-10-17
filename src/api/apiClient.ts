@@ -58,12 +58,35 @@ export const ERROR_CODE_KEYS: Record<string, string> = {
   PHOTO_NOT_PUBLIC: 'error.photo_not_public',
   STORAGE_DELETE_FAILED: 'error.storage_delete_failed',
   ALREADY_ENTITLED: 'error.already_entitled',
+  GUEST_PHOTO_LIMIT_REACHED: 'error.guest_photo_limit_reached',
+  INVALID_REDIRECT: 'error.invalid_redirect',
   BILLING_UNVERIFIABLE: 'error.billing_unverifiable',
   // Translating this does not disturb `isStripeNotConfigured`, which reads
   // `ApiError.code` and never the message: the pre-Stripe upgrade route still
   // takes over silently.
   STRIPE_NOT_CONFIGURED: 'error.stripe_not_configured',
 };
+
+/** The plain values in an error body, for the `{{placeholders}}` of its translation. */
+function interpolationValues(body: Record<string, unknown>): Record<string, string | number> {
+  const values: Record<string, string | number> = {};
+  for (const [name, value] of Object.entries(body)) {
+    if (typeof value === 'string' || typeof value === 'number') values[name] = value;
+  }
+  return values;
+}
+
+/**
+ * A refusal in the app's language when its code has a translation, else the
+ * server's own words. The body's plain values fill the translation's
+ * placeholders, such as the `max` of a guest's photo limit.
+ */
+export function translatedRefusal(code: string | undefined, serverWords: string, body: Record<string, unknown> = {}): string {
+  const key = code ? ERROR_CODE_KEYS[code] : undefined;
+  if (!key) return serverWords;
+  const translated = i18n.t(key, interpolationValues(body));
+  return translated !== key ? translated : serverWords;
+}
 
 /**
  * N-125 — a refusal the server sends without a code is said by its status, in
@@ -72,6 +95,9 @@ export const ERROR_CODE_KEYS: Record<string, string> = {
  * keeps the server's words, which say what was wrong with the request.
  */
 function statusMessage(status: number): string | undefined {
+  // A visitor with no session reached a host-only action, such as choosing
+  // a plan from a guest's phone: said as what to do, not as "Unauthorized".
+  if (status === 401) return i18n.t('error.unauthorized');
   if (status === 403) return i18n.t('error.forbidden');
   if (status === 404) return i18n.t('error.not_found');
   if (status >= 500) return i18n.t('error.server');
@@ -131,10 +157,8 @@ export async function apiFetch<T>(endpoint: string, options: RequestInit = {}): 
       details = errorJson.details;
       code = errorJson.code;
 
-      const translationKey = code ? ERROR_CODE_KEYS[code] : undefined;
-      if (translationKey) {
-        const translated = i18n.t(translationKey);
-        if (translated !== translationKey) errorMsg = translated;
+      if (code && ERROR_CODE_KEYS[code]) {
+        errorMsg = translatedRefusal(code, errorMsg, errorJson);
       } else if (!code) {
         errorMsg = statusMessage(res.status) ?? errorMsg;
       }

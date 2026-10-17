@@ -26,7 +26,8 @@ interface NavbarProps {
   onLogoClick?: () => void;
   isHomePage?: boolean;
   currentTheme: ThemePalette;
-  onThemeChange: (theme: ThemePalette) => void;
+  /** The album's host only (N-158): without it there is no palette to pick. */
+  onThemeChange?: (theme: ThemePalette) => void;
   currentGuest: Guest;
   onOpenGuestProfile: () => void;
   onOpenPricing: () => void;
@@ -202,50 +203,52 @@ export const Navbar: React.FC<NavbarProps> = ({
           </button>
 
           {/* Theme Palette Switcher Dropdown */}
-          <div className="relative">
-            <button
-              onClick={() => setShowThemePicker(!showThemePicker)}
-              title={i18n.t('nav.theme')}
-              className="p-1.5 sm:p-2 rounded-full bg-noir-800 text-cream-300 hover:text-cream-100 border border-cream-400/10 hover:border-gold-400/40 transition-colors"
-            >
-              <Palette className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-            </button>
+          {onThemeChange && (
+            <div className="relative">
+              <button
+                onClick={() => setShowThemePicker(!showThemePicker)}
+                title={i18n.t('nav.theme')}
+                className="p-1.5 sm:p-2 rounded-full bg-noir-800 text-cream-300 hover:text-cream-100 border border-cream-400/10 hover:border-gold-400/40 transition-colors"
+              >
+                <Palette className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+              </button>
 
-            {showThemePicker && (
-              <div className="absolute right-0 mt-2 w-56 rounded-2xl bg-noir-800 border border-cream-400/20 shadow-2xl p-2 z-50 animate-fade-in">
-                <div className="text-[11px] uppercase tracking-wider text-cream-400/70 font-semibold px-2.5 py-1">
-                  {i18n.t('nav.theme')}
+              {showThemePicker && (
+                <div className="absolute right-0 mt-2 w-56 rounded-2xl bg-noir-800 border border-cream-400/20 shadow-2xl p-2 z-50 animate-fade-in">
+                  <div className="text-[11px] uppercase tracking-wider text-cream-400/70 font-semibold px-2.5 py-1">
+                    {i18n.t('nav.theme')}
+                  </div>
+                  {(Object.keys(THEMES) as ThemePalette[]).map((themeKey) => {
+                    const t = THEMES[themeKey];
+                    const isSelected = currentTheme === themeKey;
+                    return (
+                      <button
+                        key={themeKey}
+                        onClick={() => {
+                          onThemeChange(themeKey);
+                          setShowThemePicker(false);
+                        }}
+                        className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-left text-xs transition-colors ${
+                          isSelected
+                            ? 'bg-gold-400/20 text-gold-300 font-medium'
+                            : 'text-cream-200 hover:bg-noir-700'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <span
+                            className="w-3.5 h-3.5 rounded-full border border-white/20"
+                            style={{ backgroundColor: t.accent }}
+                          />
+                          <span>{i18n.t(t.name)}</span>
+                        </div>
+                        {isSelected && <Check className="w-3.5 h-3.5 text-gold-400" />}
+                      </button>
+                    );
+                  })}
                 </div>
-                {(Object.keys(THEMES) as ThemePalette[]).map((themeKey) => {
-                  const t = THEMES[themeKey];
-                  const isSelected = currentTheme === themeKey;
-                  return (
-                    <button
-                      key={themeKey}
-                      onClick={() => {
-                        onThemeChange(themeKey);
-                        setShowThemePicker(false);
-                      }}
-                      className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-left text-xs transition-colors ${
-                        isSelected
-                          ? 'bg-gold-400/20 text-gold-300 font-medium'
-                          : 'text-cream-200 hover:bg-noir-700'
-                      }`}
-                    >
-                      <div className="flex items-center gap-2">
-                        <span
-                          className="w-3.5 h-3.5 rounded-full border border-white/20"
-                          style={{ backgroundColor: t.accent }}
-                        />
-                        <span>{i18n.t(t.name)}</span>
-                      </div>
-                      {isSelected && <Check className="w-3.5 h-3.5 text-gold-400" />}
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-          </div>
+              )}
+            </div>
+          )}
 
           {/* Identity badge — the authenticated host's own name whenever one
               is signed in, on every view.

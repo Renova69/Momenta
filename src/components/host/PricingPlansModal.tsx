@@ -10,12 +10,16 @@ import {
   createBillingPortalSession,
 } from '../../api/billingApi';
 import { hostReturnUrl } from '../../router';
+import { TIER_WEIGHTS } from '../../config/tierGating';
 import confetti from 'canvas-confetti';
 import {
   X,
   Check,
   Crown,
 } from 'lucide-react';
+
+/** The one plan billed monthly (server/lib/stripePlans.ts). */
+const SUBSCRIPTION_TIER: PlanTier = 'pro_planner';
 
 interface PricingPlansModalProps {
   isOpen: boolean;
@@ -24,6 +28,11 @@ interface PricingPlansModalProps {
   onUpgradePlan: (newTier: PlanTier) => Promise<void>;
   /** Event to return to after checkout. Omitted, the host lands on /host. */
   eventSlug?: string;
+  /**
+   * Set when nobody is signed in: choosing a plan calls this instead of
+   * starting a checkout that has no account to charge (N-151).
+   */
+  onSignInRequired?: () => void;
 }
 
 export const PricingPlansModal: React.FC<PricingPlansModalProps> = ({
@@ -32,12 +41,15 @@ export const PricingPlansModal: React.FC<PricingPlansModalProps> = ({
   currentPlanTier,
   onUpgradePlan,
   eventSlug,
+  onSignInRequired,
 }) => {
   const [, setSelectedTier] = useState<PlanTier>(currentPlanTier || 'celebration_pass');
   const [pendingTier, setPendingTier] = useState<PlanTier | null>(null);
   const [upgradeError, setUpgradeError] = useState<string | null>(null);
   // N-51 — giving up a paid plan is asked about first, never done on one click.
   const [confirmingFree, setConfirmingFree] = useState(false);
+  // N-164 — the one-time pass an ending subscription falls back to, if any.
+  const [keptTier, setKeptTier] = useState<PlanTier | null>(null);
   const titleId = useId();
   const confirmTitleId = useId();
   const confirmBodyId = useId();
@@ -59,6 +71,23 @@ export const PricingPlansModal: React.FC<PricingPlansModalProps> = ({
   useEffect(() => {
     if (confirmingFree) keepPlanRef.current?.focus();
   }, [confirmingFree]);
+
+  // Asked when the question opens, and only of a subscriber: a pass can sit
+  // underneath a subscription, never underneath another pass. Without an
+  // answer the question says what it always said.
+  useEffect(() => {
+    if (!confirmingFree || currentPlanTier !== SUBSCRIPTION_TIER) return;
+    let isCurrent = true;
+    billingApi
+      .getStatus()
+      .then((status) => {
+        if (isCurrent && status.keepsTier && status.keepsTier in PLANS) setKeptTier(status.keepsTier);
+      })
+      .catch(() => undefined);
+    return () => {
+      isCurrent = false;
+    };
+  }, [confirmingFree, currentPlanTier]);
 
   if (!isOpen) return null;
 
@@ -83,6 +112,11 @@ export const PricingPlansModal: React.FC<PricingPlansModalProps> = ({
 
   const handleSelectPlan = async (tier: PlanTier, confirmed = false) => {
     setUpgradeError(null);
+
+    if (onSignInRequired) {
+      onSignInRequired();
+      return;
+    }
 
     // N-51 — a one-time pass was paid for once, is not refunded, and does not
     // come back. Name what is about to be lost and wait for a yes.
@@ -198,10 +232,17 @@ export const PricingPlansModal: React.FC<PricingPlansModalProps> = ({
               className="mt-5 mx-auto max-w-xl rounded-2xl border border-red-400/40 bg-red-500/10 p-4 text-left"
             >
               <p id={confirmTitleId} className="text-sm font-semibold text-cream-100">
-                {i18n.t('pricing.confirm_free_title', { plan: i18n.t(PLANS[currentPlanTier].name) })}
+                {keptTier
+                  ? i18n.t('pricing.confirm_free_title_keeps', {
+                      plan: i18n.t(PLANS[currentPlanTier].name),
+                      kept: i18n.t(PLANS[keptTier].name),
+                    })
+                  : i18n.t('pricing.confirm_free_title', { plan: i18n.t(PLANS[currentPlanTier].name) })}
               </p>
               <p id={confirmBodyId} className="mt-1 text-xs text-cream-300">
-                {i18n.t('pricing.confirm_free_body')}
+                {keptTier
+                  ? i18n.t('pricing.confirm_free_body_keeps', { kept: i18n.t(PLANS[keptTier].name) })
+                  : i18n.t('pricing.confirm_free_body')}
               </p>
               <div className="mt-4 flex flex-col-reverse sm:flex-row gap-2 sm:justify-end">
                 <button
@@ -229,7 +270,15 @@ export const PricingPlansModal: React.FC<PricingPlansModalProps> = ({
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
             {(Object.keys(PLANS) as PlanTier[]).map((tierKey) => {
               const plan = PLANS[tierKey];
-              const isCurrent = currentPlanTier === tierKey;
+              // A visitor has no plan: the one passed in is the album's.
+              const isCurrent = !onSignInRequired && currentPlanTier === tierKey;
+              // N-155 — a paid plan the current one already includes is not
+              // for sale; the server refuses it as ALREADY_ENTITLED.
+              const isIncluded =
+                !onSignInRequired &&
+                !isCurrent &&
+                tierKey !== 'free' &&
+                (TIER_WEIGHTS[tierKey] ?? 0) < (TIER_WEIGHTS[currentPlanTier] ?? 0);
               const isHighlighted = plan.highlighted;
 
               const priceDisplay = plan.price;
@@ -287,9 +336,9 @@ export const PricingPlansModal: React.FC<PricingPlansModalProps> = ({
 
                   <button
                     onClick={() => handleSelectPlan(tierKey)}
-                    disabled={isCurrent || pendingTier !== null}
+                    disabled={isCurrent || isIncluded || pendingTier !== null}
                     className={`w-full py-2.5 rounded-xl font-bold text-xs transition-all disabled:opacity-60 disabled:cursor-not-allowed ${
-                      isCurrent
+                      isCurrent || isIncluded
                         ? 'bg-noir-900 border border-gold-400/50 text-gold-300'
                         : isHighlighted
                         ? 'bg-linear-to-r from-gold-400 to-gold-500 text-noir-900 shadow-glow hover:brightness-110'
@@ -300,6 +349,8 @@ export const PricingPlansModal: React.FC<PricingPlansModalProps> = ({
                       ? i18n.t('pricing.upgrading')
                       : isCurrent
                       ? i18n.t('pricing.current_plan')
+                      : isIncluded
+                      ? i18n.t('pricing.included')
                       : i18n.t('pricing.choose_plan')}
                   </button>
                 </div>

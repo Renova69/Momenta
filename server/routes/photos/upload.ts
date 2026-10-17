@@ -189,7 +189,13 @@ async function checkPerGuestCap(
       ).rows[0].count;
 
   if (guestPhotoCount >= maxAllowed) {
-    return fail(429, { error: `Photo limit reached (${maxAllowed} per guest).` });
+    // N-150 — the code is what tells the phone this differs from the rate
+    // limiter's 429: no retry will get the photo in, so it must not be queued.
+    return fail(429, {
+      error: `Photo limit reached (${maxAllowed} per guest).`,
+      code: 'GUEST_PHOTO_LIMIT_REACHED',
+      max: maxAllowed,
+    });
   }
   return { ok: true, value: null };
 }

@@ -5,6 +5,18 @@ export interface CheckoutSessionResult {
   url: string;
 }
 
+/** What the studio must say about paying (N-152). */
+export interface BillingStatus {
+  tier: PlanTier;
+  /** A renewal failed; the plan is kept until `planEndsAt`, then ends. */
+  paymentFailed: boolean;
+  planEndsAt: string | null;
+  /** A one-time pass the account falls back to when the subscription ends (N-164). */
+  keepsTier: PlanTier | null;
+  /** The grace ran out and the plan is suspended until the subscription is paid. */
+  planSuspended: boolean;
+}
+
 export const billingApi = {
   /**
    * Starts a real Stripe Checkout for a paid tier. Throws an ApiError with
@@ -22,6 +34,8 @@ export const billingApi = {
       body: JSON.stringify({ tier, successUrl, cancelUrl }),
     });
   },
+
+  getStatus: async (): Promise<BillingStatus> => apiFetch<BillingStatus>('/api/billing/status'),
 };
 
 export function isStripeNotConfiguredError(err: unknown): boolean {
