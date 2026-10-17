@@ -10,6 +10,7 @@
 **Review of the §3g fixes:** 2026-10-10 (§3h). **All 12 findings fixed.**
 **Running-app feature pass:** 2026-10-14 (§3i). **26 of 27 fixed; N-112 kept by the owner's decision.**
 **Follow-up on the production build (speed, keyboard, screen reader):** 2026-10-15 (§3j). **All 16 fixed** (N-139 and N-149 after the owner's decision).
+**Stripe end to end in the sandbox, a load test, and a third running-app pass:** 2026-10-16 to 17 (§3k). **13 of 15 fixed; N-159 and N-163 wait on the owner.**
 
 > **Read this first.** The audit below is preserved as written — each finding
 > still describes the code as it was on 2026-09-15, because a finding rewritten
@@ -1146,6 +1147,126 @@ TalkBack), which still needs a person; a real phone on a real venue's
 Wi-Fi.
 
 ---
+## 3k. Stripe End to End, a Load Test, and a Third Pass Over the Running App (2026-10-16 to 17)
+
+**15 findings: 13 fixed, 2 waiting on the owner (N-159, N-163).**
+
+Three things the earlier passes had left open. Stripe's paid flow had never
+run for real: the webhook had only met mocks, and §3i applied the purchased
+plan by hand because Stripe could not reach a local server. The service's
+capacity had never been measured past the uplink of the machine running it
+(V-4). And the app had been used end to end twice, by people who knew where
+to look; this pass looked at what a guest meets when something goes wrong.
+Numbered N-150 onwards.
+
+### Stripe in the sandbox (V-1)
+
+The production build, served by Express, with the Stripe CLI (v1.53.1, a
+standalone tool on this machine, not a project dependency; its download was
+checked against Stripe's published SHA-256) forwarding the sandbox's events to
+the local webhook under its own signing secret. Payments were made on Stripe's
+real hosted Checkout in a browser, with the 4242 test card. Each step was
+followed from the screen to the CLI's delivery log and to the `subscriptions`
+row.
+
+| Step | What Stripe sent | What the app did |
+|---|---|---|
+| Buy Celebration Pass (€49, one-time) | `checkout.session.completed` | Plan applied, €49 recorded, 10 GB, album kept 90 days after the wedding; "payment confirmed" banner on return |
+| Buy Pro Planner (€49/month) on top | `invoice.paid`, then `checkout.session.completed` (invoice first) | Plan applied, monthly, customer and subscription ids stored, the pass kept underneath as `one_time_tier`, album retention open-ended |
+| Choose a lower plan while subscribed | — | Refused as already included, in Bulgarian |
+| Cancel in the billing portal (at period end) | `customer.subscription.updated` | Plan kept until the period ends, as it should be |
+| Renewal fails (card 4000 0000 0000 0341 charged) | `invoice.payment_failed`, `customer.subscription.updated` (`past_due`) | Plan kept, 7-day grace set; the failed-invoice event is recorded and needs no handler |
+| Card fixed, invoice paid | `invoice.paid`, `customer.subscription.updated` (`active`) | Grace cleared |
+| Grace runs out (`npm run grace:sweep`) | — | Falls back to the pass the host owns; Pro Planner parked as `lapsed_tier` |
+| Paid late, after the lapse | `invoice.paid`, `customer.subscription.updated` | Pro Planner restored |
+| Subscription ended at once | `customer.subscription.deleted` | Falls back to the pass, subscription id cleared, album retention back to the pass's |
+| Account deleted from the studio, Stripe customer on file | — | Account and album gone (N-122) |
+
+Every forwarded event was answered 200 and none was retried. One detail for
+whoever repeats this: on API version 2026-08-26.dahlia, resetting the billing
+anchor with `proration_behavior=none` issued no invoice, so the failed renewal
+was forced by a quantity change billed at once. Found on the way: N-152, N-155,
+N-156 and N-164. Still not covered: live keys, and Stripe's own customer emails,
+which the sandbox does not send.
+
+### Load test (V-4, on this machine)
+
+The image's own command (`tsx server/index.ts`) in production mode, a load
+script with no packages beyond the repository's, both on one machine: an
+i7-11700 (8 cores, 16 threads), 32 GB, Windows 10, Postgres in Docker Desktop.
+Each virtual user sent its own `X-Forwarded-For` address with
+`TRUST_PROXY=loopback`, so the per-IP limiter did not stand in for the server,
+the way guests at many venues arrive from many NATs. Storage was local disk,
+so the R2 bucket was not filled with test photos. Album opens are an album's
+record plus its first 100 photos; uploads are a 1600 px, 347 kB JPEG, the
+size the camera sends.
+
+| Load | Throughput | p50 / p95 | Errors |
+|---|---|---|---|
+| Album opens, 10 users | 422 requests/s | 23 / 33 ms | 0 |
+| Album opens, 100 users | 479 requests/s | 206 / 230 ms | 0 |
+| Album opens, 400 users | 470 requests/s | 841 / 913 ms | 0 |
+| Landing page, 200 users | 4,629 requests/s | 42 / 58 ms | 0 |
+| Uploads into one album, 5 users | 9 photos/s | 528 / 745 ms | 0 |
+| Uploads into one album, 40 users | 7 photos/s | 5.6 / 6.2 s | 0 |
+| Uploads into four albums, 20 users | 23 photos/s | 875 ms (p50) | 0 |
+| 1,000 sockets in one album's room | joined in 0.5 s; all 197,000 broadcasts of the busiest phase delivered | — | 0 |
+
+Memory was 100 MB idle and 590 MB at the peak, with 400 users reading and
+1,000 sockets open.
+
+**Where it tops out, and why.** Reading is bound by the one Node thread:
+the feed alone does about 570 requests a second (an album's record 2,800,
+the health check 5,700), because each page of 100 photos is built and
+serialised on the main thread. That is roughly 230 album opens a second.
+Uploads into a single album stop at about 9.5 a second because the album's
+upload lock is held until `COMMIT`, and one insert and commit takes 78 ms
+(p50) on this machine's Docker Desktop volume, where every commit waits on
+fsync; four albums together reach 23 a second. A Linux host or a managed
+Postgres commits in a few milliseconds, which moves that ceiling far up.
+Sixteen libuv threads instead of four changed nothing. Image encoding is not
+the limit here: `mozjpeg` costs 192 ms a photo against 24 ms without it, for
+display files about a fifth smaller on the test image, which is worth knowing
+if uploads ever become CPU-bound. For scale: a wedding of 200 guests at its
+busiest sends a few photos a second. Found on the way: N-157. Still open from
+V-4: a run on real hosting with the generator elsewhere.
+
+### The pass
+
+| ID | Finding | Severity | Files | Verified | Fixed |
+|---|---|---|---|---|---|
+| **N-150** | **A guest's photo that a full album refused was shown as sent.** Every failed upload went to the offline queue, as if the network had failed. On a free album at its 50 photos the server answers 403, and the guest was told "1 sent to the album", saw the photo at the top of the feed and in "Моите снимки", and watched "uploading to the live wall…" for as long as the phone retried it, five times, before it was dropped with a message about having had no connection. The per-guest cap answered 429 with no code, the rate limiter's status, so it was retried as well. Voice messages took the same path. The drop message said the item "was removed from this phone", and nothing removed it. A refusal is now recognised by the app's own code (every 403 the app sends carries one), so a bare 403 from a venue's captive portal or proxy still leaves the photo queued. | High | `src/services/photoService.ts`, `src/services/audioService.ts`, `src/services/offlineQueueService.ts`, `src/services/storageService.ts`, `server/routes/photos/upload.ts` | Yes | `67f4781` |
+| **N-151** | **Guests were shown the couple's upsells.** The free-plan limit banner, with its "Надгради" button, and the upgrade button on every locked feature, appeared on guests' phones. A guest who chose a plan reached checkout with no session and read "Unauthorized: Missing or invalid token", in English. Guests now see that the album is full, or that the couple can turn a feature on; a visitor with no account who picks a plan from the pricing page is taken to sign-up; a bare 401 is said in the app's language. | Medium | `src/App.tsx`, `src/components/gallery/LiveFeed.tsx`, `src/components/common/LockedFeatureBadge.tsx`, `src/components/host/PricingPlansModal.tsx`, `src/api/apiClient.ts` | Yes | `67f4781` |
+| **N-152** | **A failed renewal was silent.** The webhook keeps the plan for seven days after a failed charge and the grace sweep ends it then, but nothing told the host: no email can be sent while SMTP is unset, and the studio looked like any paid-up plan. The studio now says the payment failed and when the plan will end, and once the grace has run out that the plan is suspended until the subscription is paid, each with a button to the billing portal to fix the card (`GET /api/billing/status`). | Medium | `server/routes/billing.ts`, `src/components/host/BillingNotice.tsx` | Yes | `67f4781` |
+| **N-153** | **Albums were open to search engines.** No page carried `noindex` and there was no robots.txt: a guest posting the album's link publicly was all a crawler needed to index the couple's names, venue and guests' photos. `/robots.txt` and `/favicon.ico` answered with the app's page. Every page but the landing and pricing pages (and those too when they carry an album's address in their query), and every uploaded file, now carries `X-Robots-Tag: noindex, nofollow`; robots.txt keeps crawlers off `/api/` only, since a crawler kept off a page never reads its `noindex`. Photos served from the R2 domain are outside this server and cannot carry the header from here. | Medium | `server/lib/builtClient.ts`, `server/index.ts`, `public/robots.txt` | Yes | `67f4781` |
+| **N-154** | The sign-in and sign-up fields had no `autocomplete`, so password managers could not tell sign-in from sign-up and phones could not offer the saved address or password (WCAG 1.3.5). | Low | `src/components/host/HostAuthPage.tsx` | Yes | `67f4781` |
+| **N-155** | The pricing dialog offered "Choose plan" on plans the host's plan already includes: a Pro Planner subscriber could pick either one-time pass, which the server then refused. They now read "Included in your plan". | Low | `src/components/host/PricingPlansModal.tsx` | Yes | `67f4781` |
+| **N-156** | Opening the site at an address other than `PUBLIC_BASE_URL` (the `www.` form against the bare domain, say) made checkout and the billing portal fail with "Invalid redirect URL" in English. The refusal is right; it now has a code and words the host can act on. | Low | `server/routes/billing.ts`, `src/api/apiClient.ts` | Yes | `67f4781` |
+| **N-157** | The guest feed went out uncompressed: 96 kB for a page of 100 photos, 9 kB gzipped, loaded by every guest on the venue's Wi-Fi. API answers stay uncompressed on purpose (N-134), because a secret next to text a caller chose can leak through the compressed size; the guest feed carries no secret, so it alone is now compressed. The host's copy, which carries signed preview links, is not. | Low | `server/lib/httpEdges.ts`, `server/index.ts` | Yes | `67f4781` |
+| **N-158** | The navigation bar's palette picker was shown to guests. A guest's choice repainted the phone, was sent as an album edit, which the server refused (401), and then changed back with the refusal shown in English. It is now the album host's alone. | Low | `src/components/layout/Navbar.tsx`, `src/App.tsx` | Yes | `67f4781` |
+| **N-159** | **An album keeps taking photos after its time is up.** No route reads `expires_at`: the free plan sells "7 days of active access", but an album stays fully open to guests, uploads included, until the retention sweep deletes it, and that is switched off (U-4, decision D1). U-4 covers the deletion only. Recommended: from `expires_at` an album turns read-only (viewing and download stay, uploads, comments and reactions stop) and the host is told why, with deletion still left to D1. | Low | `server/routes/photos/upload.ts`, `server/routes/audio.ts` | Yes | **For the owner** |
+| **N-160** | An `/api` address no route answers fell through to Express's HTML "Cannot GET" page instead of a 404 the client can read. | Low | `server/lib/httpEdges.ts`, `server/index.ts` | Yes | `67f4781` |
+| **N-161** | `docs/DATABASE_SCHEMA.md` described `subscriptions.storage_limit_gb` as the storage quota. It is never read, and holds its default of 10 on every plan, a Pro Planner's included (whose allowance is 100 GB). | Low | `docs/DATABASE_SCHEMA.md` | Yes | `67f4781` |
+| **N-162** | A full unit run still left two or three album folders on disk: an upload whose response came back after its spec had cleaned up, which happens only with the suite running in parallel, never with a spec alone. The teardown now removes folders created during the run whose album no longer exists, and nothing older; the first run with it removed three. The 1,334 such folders already under `uploads/events/` and 371 under `uploads-quarantine/events/` (1.7 GB, September and October) were left in place for the owner. | Low | `tests/globalSetup.ts`, `tests/helpers/orphanSweep.ts` | Yes | `67f4781` |
+| **N-163** | **There is no privacy notice, no terms and no operator identity anywhere in the app.** It collects guests' names, table numbers and selfies, photos of people, hosts' emails and payments, but nothing says who runs it, what is kept, for how long, who processes it (Stripe, Cloudflare, the host) or how to have it removed — not on the landing page, not at the guest's first screen, not before payment. For an EU service that is a GDPR Article 13 notice owed at the point of collection, plus the operator details and terms of sale owed to consumers before they pay. The text needs the operator's legal details, so it was not written here. | High | — | Yes | **For the owner** |
+| **N-164** | Ending a subscription from the pricing dialog asked "give up Pro Planner and switch to Free?" and warned that everything would be lost, while a one-time pass bought earlier stays: the account falls back to it. The question now names the pass that is kept, and the review of the fix found the promise could still break: with the subscription already over at Stripe, or Stripe not configured, choosing Free set the account to free and forgot the pass. It now falls back to the pass there too. | Low | `server/routes/billing.ts`, `server/routes/subscriptions.ts`, `src/components/host/PricingPlansModal.tsx` | Yes | `67f4781` |
+
+**Checked and found working, recorded so they are not re-tested:** the whole
+Stripe round trip above; password change (a wrong current password, a
+mismatched repeat, then success, with the other devices signed out) and the
+profile name; account deletion from the studio; the account dialog in English;
+an album address that does not exist; the host studio at 390 px, with no
+sideways scroll (the section strip scrolls, as designed); the free album's
+50-photo cap itself.
+
+**Seen and left as they are:** a signed-in host who opens the pricing page from someone else's album sees that album's plan as theirs; the server still refuses anything their own plan includes, with a clear message. The test teardown's sweep assumes the test database is the one the uploads folder belongs to, which holds for one database per checkout.
+
+**Not covered:** live Stripe keys; a load run on real hosting; R2 under load
+(local disk here); and, as before, a real screen reader and a real venue's
+Wi-Fi.
+
+---
+
 ## 4. Confirmed Low
 
 **All eight fixed in `9e6f239`**, except L-1, which was not a defect: `vercel.json`
@@ -1238,10 +1359,10 @@ including conversation logs) are all correctly gitignored and not exposed.
 
 | ID | Area | Why unresolved |
 |---|---|---|
-| **V-1** | Stripe with live keys | Webhook signature verification and the checkout → webhook → tier round trip have run only against mocks and `sk_test`. |
+| **V-1** | Stripe with live keys | **Sandbox half done 2026-10-16 (§3k):** real hosted Checkout, the Stripe CLI delivering signed events to the local webhook, and every path — one-time pass, subscription, period-end and immediate cancellation, failed renewal, grace, lapse and recovery — applied correctly. What is left needs live keys: a real charge, and Stripe's own customer emails. |
 | **V-2** | SMTP with a real provider | Deliverability, SPF/DKIM, bounce-webhook ingestion. The rehearsal used a local sink. |
 | **V-3** | FTP ingest against real photographer software | Lightroom tethering / camera FTP. The integration test drives `basic-ftp` only. |
-| **V-4** | Service capacity ceiling (G2, second half) | The 2026-09-13 benchmark saturated the host uplink at 8.7 MB/s — CPU 17–49%, pool 12/40 — so the service's own limit was never reached. Needs real hosting with the generator elsewhere. |
+| **V-4** | Service capacity ceiling (G2, second half) | The 2026-09-13 benchmark saturated the host uplink at 8.7 MB/s — CPU 17–49%, pool 12/40 — so the service's own limit was never reached. **Measured on one machine 2026-10-16 (§3k):** about 230 album opens a second, bound by the Node thread; uploads into one album about 9.5 a second, bound by commit latency on Docker Desktop's volume; 1,000 sockets with every broadcast delivered; no errors at any load. Still wanted: a run on real hosting with the generator elsewhere. |
 | **V-5** | ~84 unread spec files | **Substantially addressed, by a different method than proposed.** Reading was the wrong instrument: every bad test found this session was invisible on the page. A mechanical scan of all 126 spec files for shapes that cannot fail found two more (N-11), and mutation testing — breaking the source and checking the suite notices — found gaps in files that *had* been read. 35 modules swept, every one under `server/` and `shared/` bar three named in §8; see §8 for scores and what is left. |
 
 ---
@@ -1486,6 +1607,7 @@ produce failures that are read as kills.
 | 1 | ~~Add the R2 repository secrets~~ **Done 2026-10-16.** The first run failed every R2 call ("Invalid character in header content"): four of the pasted values carried quotes or a line break. Since `975e0db` the config strips those and names the variable it cleaned; the live-storage job passed on the next run. | Without them the `live-storage` job skips nightly and M-4 is closed only on paper. |
 | 2 | Regenerate the exposed R2 keys | `.env` still carries the warning that the stored keys were exposed and must be replaced in the Cloudflare dashboard (OPEN_ITEMS M14). Not verifiable from the repository. **Deferred by the owner on 2026-09-19** while this is a development environment. It becomes a go-live prerequisite: the exposed keys reach the same account as production storage. |
 | 3 | Configure SMTP, then notices, then `RETENTION_ENFORCED=true` — in that order | U-1 and U-4. Nothing deletes until the third step; `npm run retention:rehearse` passes 24/24 against a local sink. **Deferred by the owner on 2026-09-19**: no mail provider has been chosen yet. Retention stays off, which is the safe resting state. |
+| 4 | Publish a privacy notice, terms and the operator's details (N-163, §3k) | The app collects guests' names, selfies and photos of people, hosts' emails and payments, and says nowhere who runs it, what is kept or how to have it removed. For an EU service that notice is owed where the data is collected, and the operator details and terms before payment. Needs the owner's legal details; the text can then be drafted from what the code does, for legal review. |
 
 Done 2026-09-19: the R2 lifecycle policy, H-4's last net, confirmed on the
 bucket with an Admin Read & Write token.
