@@ -132,17 +132,34 @@ export function runToFile(target: PgTarget, tool: 'pg_dump' | 'pg_restore', args
   });
 }
 
-/** Run a tool with a file on its standard input. Resolves with its standard output. */
+/**
+ * Run a tool on a dump file. Resolves with its standard output.
+ *
+ * Local tools are given the file's path. Inside a container the file is not
+ * there, so it is fed on standard input; a tool may stop reading early
+ * (`pg_restore --list` needs only the table of contents), and the write that
+ * then finds the pipe closed is expected, not an error — the tool's exit code
+ * says whether it worked. Unhandled, that EPIPE crashed the test run.
+ */
 export function runFromFile(target: PgTarget, tool: 'pg_dump' | 'pg_restore', args: string[], inFile: string): Promise<string> {
-  const { command, args: argv } = toolCommand(target, tool, args);
+  const viaStdin = target.mode === 'docker';
+  const { command, args: argv } = toolCommand(target, tool, viaStdin ? args : [...args, inFile]);
   return new Promise((resolve, reject) => {
-    const child = spawn(command, argv, { env: target.env, stdio: ['pipe', 'pipe', 'pipe'] });
+    const child = spawn(command, argv, { env: target.env, stdio: [viaStdin ? 'pipe' : 'ignore', 'pipe', 'pipe'] });
     let stdout = '';
     let stderr = '';
-    child.stdout.on('data', (chunk) => (stdout += chunk.toString()));
-    child.stderr.on('data', (chunk) => (stderr += chunk.toString()));
+    child.stdout?.on('data', (chunk) => (stdout += chunk.toString()));
+    child.stderr?.on('data', (chunk) => (stderr += chunk.toString()));
     child.on('error', reject);
     child.on('close', (code) => (code === 0 ? resolve(stdout) : reject(new Error(`${tool} failed (${code}): ${stderr.trim()}`))));
-    fs.createReadStream(inFile).pipe(child.stdin);
+    if (viaStdin && child.stdin) {
+      const input = fs.createReadStream(inFile);
+      child.stdin.on('error', (err: NodeJS.ErrnoException) => {
+        if (err.code !== 'EPIPE') reject(err);
+        input.destroy();
+      });
+      input.on('error', reject);
+      input.pipe(child.stdin);
+    }
   });
 }
