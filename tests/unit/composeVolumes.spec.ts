@@ -89,7 +89,9 @@ describe('docker-compose volumes', () => {
 
     for (const [service, config] of Object.entries(compose.services)) {
       for (const mount of config.volumes ?? []) {
-        const source = mount.split(':')[0];
+        // A source may be a variable with a default, `${BACKUP_DIR:-./backups}`:
+        // read as its default, or its own `:-` would split it.
+        const source = mount.replace(/\$\{\w+:-([^}]*)\}/g, '$1').split(':')[0];
         // Bind mounts (./x:/y) are paths, not named volumes.
         if (source.startsWith('.') || source.startsWith('/')) continue;
         expect({ service, source, declared: declared.has(source) }).toEqual({
