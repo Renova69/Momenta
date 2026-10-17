@@ -95,18 +95,29 @@ export default defineConfig({
     exclude: ['tests/**/*.test.ts', 'tests/integration/**', 'node_modules', 'dist'],
     coverage: {
       provider: 'v8',
-      reporter: ['text', 'json', 'html', 'lcov'],
-      include: [
-        'src/components/**',
-        'src/services/**',
-        'src/router/**',
-        'src/i18n/**',
-        'src/config/**',
-        'src/api/**',
-        'server/lib/**',
-        'server/middleware/**',
-        'server/routes/**',
+      reporter: ['text', 'json', 'json-summary', 'html', 'lcov'],
+      // All of the app's own code. The list used to name nine folders, which
+      // left the hooks, utils, contexts, App.tsx, the WebSocket and FTP
+      // servers and shared/ out of the number without saying so.
+      include: ['src/**', 'server/**', 'shared/**'],
+      exclude: [
+        // Process entry points: they only start the app. server/index.ts is
+        // exercised by the e2e suite, which runs in its own process.
+        'src/main.tsx',
+        'server/index.ts',
+        // Declarations only; nothing to execute.
+        'src/types/**',
+        '**/*.d.ts',
       ],
+      // A floor, a few points under what the suite measures (2026-10-17:
+      // 90% of lines, 85% of branches), so coverage cannot quietly slide
+      // below the project's 80% standard.
+      thresholds: {
+        lines: 85,
+        statements: 85,
+        functions: 80,
+        branches: 80,
+      },
     },
   },
 });
