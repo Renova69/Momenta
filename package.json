@@ -45,6 +45,7 @@
     "test:storage:r2": "vitest run --config vitest.r2.config.ts",
     "test:coverage": "cross-env STORAGE_PROVIDER=local vitest run --coverage",
     "test:e2e": "tsx tests/e2e.test.ts",
+    "test:browser": "vite build && playwright test",
     "ingest:watch": "tsx scripts/ingest-watcher.ts",
     "tunnel": "node start-tunnel.cjs",
     "lint": "eslint \"src/**/*.{ts,tsx}\" \"server/**/*.ts\" \"shared/**/*.ts\" \"scripts/**/*.ts\" \"tests/**/*.{ts,tsx}\"",
@@ -83,6 +84,7 @@
     "zod": "^4.6.7"
   },
   "devDependencies": {
+    "@playwright/test": "1.64.1",
     "@tailwindcss/vite": "^4.3.3",
     "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.3.3",

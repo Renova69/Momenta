@@ -49,3 +49,7 @@ tmp_test_*
 
 # Database backups (npm run db:backup) hold every guest's personal data. Never commit them.
 backups/
+
+# Browser test output (npm run test:browser)
+playwright-report/
+test-results/

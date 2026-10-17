@@ -107,7 +107,7 @@ jobs:
   test:
     name: Tests
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 30
 
     services:
       # The suite is not mocked at the database boundary — specs insert real
@@ -187,6 +187,27 @@ jobs:
       # evidence, and because a failure here should be readable on its own.
       - name: End-to-end tests
         run: npm run test:e2e
+
+      # The guest and host journeys in a real browser, against the production
+      # build served by Express (playwright.config.ts). Only Chromium, and
+      # only the headless shell: the journeys are about the app, not about
+      # browser differences.
+      - name: Install the browser for browser tests
+        run: npx playwright install --with-deps --only-shell chromium
+
+      - name: Browser tests
+        run: npm run test:browser
+
+      - name: Upload browser test report
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-report-${{ github.run_id }}
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 14
+          if-no-files-found: ignore
 
       # Kept even when the tests fail — a coverage report is most useful
       # precisely when something went wrong.
