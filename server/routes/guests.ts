@@ -11,6 +11,7 @@ import { verifyGuestOwnership } from '../lib/guestIdentity';
 import { wsManager } from '../ws/wsServer';
 import { guestCountSql } from './events/shared';
 import { buildAvatar } from '../lib/images';
+import { isAlbumClosed, albumClosedRefusal } from '../lib/albumClosed';
 import { decodeDataUrl, isStoredAvatarUrl, saveBuffer, storageAdapter, toAbsoluteUrl, toStoragePath } from '../lib/storage';
 
 export const guestsRouter = Router();
@@ -197,6 +198,13 @@ guestsRouter.post(
         return res.status(401).json({ error: 'Guest session invalid or expired.', code: 'GUEST_TOKEN_REQUIRED' });
       }
 
+      // N-159 — a closed album stores nothing new, a selfie included. Checked
+      // before the picture is decoded and saved, and again under the lock.
+      const album = await pool.query<{ expires_at: Date | null }>('SELECT expires_at FROM events WHERE id = $1', [eventId]);
+      if (isAlbumClosed(album.rows[0]?.expires_at)) {
+        return res.status(403).json(albumClosedRefusal(album.rows[0]?.expires_at));
+      }
+
       const decoded = decodeDataUrl(image);
       let picture: Buffer;
       try {
@@ -222,6 +230,7 @@ guestsRouter.post(
               AND old.id = g.id
               AND e.id = g.event_id
               AND (e.deleting_at IS NULL OR e.deleting_at < NOW() - INTERVAL '1 hour')
+              AND (e.expires_at IS NULL OR e.expires_at > NOW())
           RETURNING old.avatar_url AS previous`,
           [avatarUrl, guestId, eventId]
         );
@@ -237,6 +246,12 @@ guestsRouter.post(
       }
 
       if (!written) {
+        // Refused under the lock: the album closed while the picture was being
+        // made, or it is being deleted.
+        const now = await pool.query<{ expires_at: Date | null }>('SELECT expires_at FROM events WHERE id = $1', [eventId]);
+        if (isAlbumClosed(now.rows[0]?.expires_at)) {
+          return res.status(403).json(albumClosedRefusal(now.rows[0]?.expires_at));
+        }
         return res.status(409).json({ error: 'This album is being deleted.', code: 'DELETION_IN_PROGRESS' });
       }
 

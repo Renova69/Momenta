@@ -5,6 +5,7 @@ import sharp from 'sharp';
 import { authRouter } from '../../server/routes/auth';
 import { photosRouter } from '../../server/routes/photos';
 import { eventsRouter } from '../../server/routes/events';
+import { guestsRouter } from '../../server/routes/guests';
 import { checkUploadAllowance, type UploadContext } from '../../server/middleware/tierGate';
 import { pool } from '../../server/lib/db';
 import { deleteEventFixtures } from '../helpers/cleanup';
@@ -63,6 +64,7 @@ beforeAll(async () => {
   app.use('/api/auth', authRouter);
   app.use('/api/photos', photosRouter);
   app.use('/api/events', eventsRouter);
+  app.use('/api/guests', guestsRouter);
   await new Promise<void>((resolve) => server.listen(TEST_PORT, () => resolve()));
 
   const jpeg = await sharp({ create: { width: 64, height: 64, channels: 3, background: { r: 120, g: 160, b: 200 } } })
@@ -105,6 +107,14 @@ describe('an album past its expires_at (N-159)', () => {
     expect(await refusal(await post(`/api/photos/${photoId}/like`, { guestId, guestToken }))).toEqual(CLOSED);
     expect(await refusal(await post(`/api/photos/${photoId}/reactions`, { guestId, guestToken, reaction: 'heart' }))).toEqual(CLOSED);
     expect(await refusal(await post(`/api/photos/${photoId}/comments`, { guestId, guestToken, commentText: 'Честито!' }))).toEqual(CLOSED);
+  });
+
+  // Found by a security review of the change: the selfie route stored a new
+  // file in the closed album, like a photo would.
+  it('takes no new selfie', async () => {
+    await setExpiry('past');
+    const res = await post(`/api/guests/${guestId}/avatar`, { eventId, guestToken, image: jpegDataUrl });
+    expect(await refusal(res)).toEqual(CLOSED);
   });
 
   it('takes no live reaction for the screen', async () => {
