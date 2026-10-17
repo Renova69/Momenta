@@ -120,7 +120,8 @@ export function runToFile(target: PgTarget, tool: 'pg_dump' | 'pg_restore', args
   const { command, args: argv } = toolCommand(target, tool, args);
   return new Promise((resolve, reject) => {
     const child = spawn(command, argv, { env: target.env, stdio: ['ignore', 'pipe', 'pipe'] });
-    const out = fs.createWriteStream(outFile);
+    // Owner-only: what is written here is a dump of every guest's data.
+    const out = fs.createWriteStream(outFile, { mode: 0o600 });
     let stderr = '';
     child.stdout.pipe(out);
     child.stderr.on('data', (chunk) => (stderr += chunk.toString()));

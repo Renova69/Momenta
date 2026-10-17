@@ -88,7 +88,10 @@ export async function runBackup(options: {
   env?: NodeJS.ProcessEnv;
 }): Promise<BackupResult> {
   const now = options.now ?? new Date();
-  fs.mkdirSync(options.dir, { recursive: true });
+  // Owner-only: a dump holds every guest's data. (Ignored on Windows, where
+  // the folder's permissions come from its parent.)
+  fs.mkdirSync(options.dir, { recursive: true, mode: 0o700 });
+  fs.chmodSync(options.dir, 0o700);
   const file = path.join(options.dir, backupFileName(now));
   const partial = `${file}.partial`;
 
@@ -143,7 +146,7 @@ export async function runBackup(options: {
       bytes: fs.statSync(file).size,
       sha256: sha256File(file),
     };
-    fs.writeFileSync(`${file}.json`, JSON.stringify(manifest, null, 2));
+    fs.writeFileSync(`${file}.json`, JSON.stringify(manifest, null, 2), { mode: 0o600 });
 
     const pruned = backupsToPrune(fs.readdirSync(options.dir), options.keep);
     for (const name of pruned) {

@@ -15,6 +15,8 @@
 # hand: `docker compose run --rm -e BACKUP_ONCE=1 backup`.
 # See docs/OPERATIONS.md, section 6.
 set -u
+# Dumps and manifests readable by their owner only: they hold every guest's data.
+umask 077
 
 INTERVAL_HOURS="${BACKUP_INTERVAL_HOURS:-24}"
 KEEP="${BACKUP_KEEP:-14}"

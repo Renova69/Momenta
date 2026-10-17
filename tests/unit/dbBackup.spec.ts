@@ -134,3 +134,16 @@ describe.runIf(pgToolsReachable())('the round trip against the real database', (
     expect(left.rows).toHaveLength(0);
   }, 120_000);
 });
+
+// A dump holds every guest's data: on a shared Linux host it must not be
+// readable by other users. (Windows keeps no Unix permissions to check.)
+describe.runIf(process.platform !== 'win32' && pgToolsReachable())('backup file permissions', () => {
+  it('writes the folder, the dump and the manifest for their owner only', async () => {
+    const sub = path.join(dir, 'private');
+    const backup = await runBackup({ databaseUrl: String(CONFIG.DATABASE_URL), dir: sub, keep: 1 });
+
+    expect(fs.statSync(sub).mode & 0o077).toBe(0);
+    expect(fs.statSync(backup.file).mode & 0o077).toBe(0);
+    expect(fs.statSync(`${backup.file}.json`).mode & 0o077).toBe(0);
+  }, 120_000);
+});
