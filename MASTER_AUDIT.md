@@ -11,6 +11,7 @@
 **Running-app feature pass:** 2026-10-14 (§3i). **26 of 27 fixed; N-112 kept by the owner's decision.**
 **Follow-up on the production build (speed, keyboard, screen reader):** 2026-10-15 (§3j). **All 16 fixed** (N-139 and N-149 after the owner's decision).
 **Stripe end to end in the sandbox, a load test, and a third running-app pass:** 2026-10-16 to 17 (§3k). **All 15 fixed;** N-163's pages show placeholders until the owner gives the operator's details.
+**Backups, coverage, a security scan and browser tests:** 2026-10-17 (§3l). **One finding (N-165), fixed.**
 
 > **Read this first.** The audit below is preserved as written — each finding
 > still describes the code as it was on 2026-09-15, because a finding rewritten
@@ -1267,6 +1268,85 @@ Wi-Fi.
 
 ---
 
+## 3l. Backups, Coverage, a Security Scan and Browser Tests (2026-10-17)
+
+**One finding (N-165), fixed; four gaps closed.** Work the owner chose once
+the remaining items were on hold: none of it needed anything from outside.
+
+### Backups and a proven restore (`8233fb0`, `7ae7428`, `e94c470`)
+
+Nothing backed the database up, and it is the only record of whose album is
+whose and which file is which photo. `npm run db:backup` dumps it with
+PostgreSQL's own `pg_dump` (installed locally, or inside the database
+container, whichever matches the server), writes a manifest of exact row
+counts taken in the same snapshot plus the dump's SHA-256, refuses to keep a
+dump it cannot read back, and keeps the newest 14. `npm run db:restore-check`
+restores a dump into a throwaway database, never the live one, and compares
+every table with the manifest. The compose file gains a daily `backup`
+service in the postgres image. Practice restores here: 17 tables, 26,919
+rows, every table matching, for both paths; CI runs the round trip on every
+change. Two automated security reviews of the change were acted on: dumps and
+their folder are readable by their owner only, and a broken pipe when
+`pg_restore` stops reading early no longer fails the run. Recovery, the photo
+files and restoring the live database are in docs/OPERATIONS.md, section 6.
+Not done: a copy somewhere other than the database's own disk (§9).
+
+### Test coverage (`406e476`)
+
+Coverage had been measured over nine named folders, which left the hooks,
+utils, contexts, `App.tsx`, the WebSocket and FTP servers and `shared/` out
+of the number without saying so. Across all of the app's code it stood at 90%
+of lines and 84% of branches; nothing touched `AuthContext`, `App.tsx`, or
+the N-150 refusal paths in the queue and the voice guestbook. Tests for those
+were added, the measurement now covers everything but the process entry
+points, and the run fails below 85% of lines and statements or 80% of
+functions and branches. Now: 89.7% lines, 88.1% statements, 83.7% branches,
+82.5% functions. The Bulgarian translation table, at 805 lines, was split.
+
+### A security scan (`ca76c68`)
+
+OWASP ZAP, run in Docker against the production build: a baseline scan of
+the pages, then 5½ minutes of active attacks on 22 API requests (sign-in,
+guests, photos, comments, likes, reactions, live reactions, album and profile
+edits, with a host's session where the route needs one). No failure, and no
+injection, cross-site scripting, path traversal or request forgery. Deletes,
+account deletion, password change and checkout were left out on purpose, and
+the app's own rate limits turned part of the attack traffic away, so those
+routes were tested less deeply. Acted on:
+
+| Seen | Changed |
+|---|---|
+| `connect-src ws: wss:` — WebSockets to any host, a way out for injected script | The page's own host only, named per request for older Safari; none for a malformed Host header |
+| No Permissions-Policy | Camera and microphone for this site only; features the app never uses switched off |
+| API answers any cache could keep | `Cache-Control: no-store` on every API answer |
+| (from the browser tests) the confetti's worker refused by `script-src`, on every photo sent | `worker-src 'self' blob:` |
+
+Left as they are: COEP, which would block the photos on the R2 host; the
+private address in local-storage photo URLs, which is the development
+`.env`'s `PUBLIC_BASE_URL`; comments left in the page's HTML. The scan's own
+test album was removed afterwards; nothing else was created.
+
+### Browser tests (`d82d9cc`)
+
+The journeys three running-app passes walked by hand now run in a real
+browser against the production build on every change (`npm run
+test:browser`): a guest joins, sends a photo and sees it, with the live
+socket open and no content-security-policy violation; a full album and a
+closed album, as a guest meets them; a couple signs up, and a welcome message
+they write is what guests read; a visitor who picks a plan goes to sign-up;
+the legal pages from the footer. New dev dependency, reviewed before it was
+added: `@playwright/test` 1.64.1, pinned — three packages in all, Microsoft,
+Apache-2.0, nothing else pulled in, not in the production image.
+
+| ID | Finding | Severity | Files | Verified | Fixed |
+|---|---|---|---|---|---|
+| **N-165** | **The guest's join form wiped what they were typing.** App passes the form a stand-in guest it builds afresh on every render, and the form re-filled its fields whenever that object changed: any re-render while it was open — the album's photos arriving, a live update — emptied the name, table and selfie the guest had entered. On slow venue Wi-Fi that is exactly when guests are typing. Found by the new browser tests on CI, where the album loaded slowly enough to show it. The form now fills itself when it opens or when it becomes a different guest. | Medium | `src/components/guest/GuestOnboardingModal.tsx` | Yes | `fc34f25` |
+
+**Along the way:** Docker Desktop stopped answering during the scan and was
+restarted; the database came back intact.
+
+---
+
 ## 4. Confirmed Low
 
 **All eight fixed in `9e6f239`**, except L-1, which was not a defect: `vercel.json`
@@ -1611,6 +1691,7 @@ produce failures that are read as kills.
 | 2 | Regenerate the exposed R2 keys | `.env` still carries the warning that the stored keys were exposed and must be replaced in the Cloudflare dashboard (OPEN_ITEMS M14). Not verifiable from the repository. **Deferred by the owner on 2026-09-19** while this is a development environment. It becomes a go-live prerequisite: the exposed keys reach the same account as production storage. |
 | 3 | Configure SMTP, then notices, then `RETENTION_ENFORCED=true` — in that order | U-1 and U-4. Nothing deletes until the third step; `npm run retention:rehearse` passes 24/24 against a local sink. **Deferred by the owner on 2026-09-19**: no mail provider has been chosen yet. Retention stays off, which is the safe resting state. |
 | 4 | Fill in the operator's details and have the legal pages reviewed (N-163, §3k) | The privacy policy and terms exist since `4deb9c4`, written from what the code does, with a visible placeholder for every operator detail (`src/config/operator.ts`): legal name, company number, address, contact, hosting and email providers, VAT, transfer safeguards, the effective date and the retention period after an album closes. Publishing them with placeholders, or unreviewed, does not meet the obligation. |
+| 5 | Copy the database backups somewhere other than the database's own disk (§3l) | The daily backup protects against mistakes, not against losing the disk or the server. It needs a second place: another machine, or a storage bucket that is not the one holding the photos. The photo files want the same (docs/OPERATIONS.md, section 6). |
 
 Done 2026-09-19: the R2 lifecycle policy, H-4's last net, confirmed on the
 bucket with an Admin Read & Write token.
