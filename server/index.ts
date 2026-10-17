@@ -1,6 +1,5 @@
 import express from 'express';
 import cors from 'cors';
-import helmet from 'helmet';
 import { createServer } from 'http';
 import path from 'path';
 import fs from 'fs';
@@ -23,6 +22,7 @@ import { runMigrations } from './lib/migrate';
 import { healthHandler } from './lib/health';
 import { builtClient } from './lib/builtClient';
 import { compressGuestFeed, apiNotFound, NOINDEX } from './lib/httpEdges';
+import { securityHeaders, noStore } from './lib/securityHeaders';
 import { drainHttpServer } from './lib/httpDrain';
 
 const app = express();
@@ -46,52 +46,11 @@ const corsOrigin = CONFIG.CORS_ORIGIN
   ? CONFIG.CORS_ORIGIN.toString().split(',').map((s) => s.trim()).filter(Boolean)
   : false;
 
-// Security response headers. Nothing was setting any before this: no CSP, no
-// HSTS, no nosniff, no clickjacking protection, on an app where guests upload
-// files and hosts authenticate.
-//
-// The CSP is written out rather than taking helmet's defaults because two of
-// those defaults break this app:
-//   - `upgrade-insecure-requests` would rewrite the LAN URLs the QR codes hand
-//     out (http://192.168.0.35:6500) to https and make them unreachable.
-//   - `cross-origin-resource-policy: same-origin` would stop the SPA on :6500
-//     loading /uploads media served from :6501 under STORAGE_PROVIDER=local.
-//
-// Photos and audio live on the R2 public host, so that origin has to be allowed
-// for img/media and is added only when configured. 'unsafe-inline' is required
-// for styles because the app sets inline `style` attributes (theme accent
-// colours in Navbar.tsx, animation transforms); scripts need no such exemption —
-// the Vite build emits a single external module and no inline script.
-const R2_ORIGIN = CONFIG.R2_PUBLIC_URL ? [CONFIG.R2_PUBLIC_URL] : [];
-const MEDIA_SRC = ["'self'", 'data:', 'blob:', ...R2_ORIGIN];
-
+// Security response headers: see server/lib/securityHeaders.ts.
 app.use(
-  helmet({
-    contentSecurityPolicy: {
-      useDefaults: false,
-      directives: {
-        defaultSrc: ["'self'"],
-        scriptSrc: ["'self'"],
-        styleSrc: ["'self'", "'unsafe-inline'"],
-        imgSrc: MEDIA_SRC,
-        mediaSrc: MEDIA_SRC,
-        // ws:/wss: for the event-scoped WebSocket in ws/wsServer.ts.
-        connectSrc: ["'self'", 'ws:', 'wss:', ...R2_ORIGIN],
-        fontSrc: ["'self'", 'data:'],
-        objectSrc: ["'none'"],
-        frameAncestors: ["'none'"],
-        baseUri: ["'self'"],
-        formAction: ["'self'"],
-      },
-    },
-    crossOriginResourcePolicy: { policy: 'cross-origin' },
-    // Match frame-ancestors 'none' above. helmet's default is SAMEORIGIN,
-    // which would be the weaker of the two for any browser falling back to
-    // X-Frame-Options, and disagreeing headers are their own bug.
-    frameguard: { action: 'deny' },
-    // Only meaningful over TLS, and pinning it while a domain is still served
-    // over http would lock browsers out until certificates are in place.
-    hsts: process.env.NODE_ENV === 'production' ? { maxAge: 31536000, includeSubDomains: true } : false,
+  securityHeaders({
+    r2Origin: CONFIG.R2_PUBLIC_URL || undefined,
+    production: process.env.NODE_ENV === 'production',
   })
 );
 
@@ -116,6 +75,8 @@ app.use(
 
 // 5. [FIX M-6] Apply global API rate limiter to all /api routes
 app.use('/api', apiLimiter);
+// No cache keeps an API answer (server/lib/securityHeaders.ts).
+app.use('/api', noStore);
 
 // 6. API Routes
 app.use('/api/auth', authRouter);
