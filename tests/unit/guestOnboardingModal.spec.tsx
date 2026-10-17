@@ -131,3 +131,42 @@ describe('GuestOnboardingModal', () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 });
+
+/**
+ * N-165 — found by the browser tests on CI. App passes a stand-in guest it
+ * builds afresh on every render, and the form re-synced whenever the object
+ * changed: any re-render while it was open (the album's photos arriving, a
+ * live update) wiped what the guest had typed. On venue Wi-Fi that is exactly
+ * when guests are typing.
+ */
+describe('a guest typing while the app updates around them (N-165)', () => {
+  it('keeps what they typed when the stand-in guest is rebuilt', () => {
+    const props = { isOpen: true, onClose: vi.fn(), onSaveGuest: vi.fn() };
+    const { rerender } = render(<GuestOnboardingModal {...props} currentGuest={{ ...ANONYMOUS_GUEST }} />);
+
+    fireEvent.change(nameInput(), { target: { value: 'Мария' } });
+    rerender(<GuestOnboardingModal {...props} currentGuest={{ ...ANONYMOUS_GUEST, createdAt: new Date().toISOString() }} />);
+
+    expect(nameInput().value).toBe('Мария');
+  });
+
+  it('still starts empty each time it opens for someone new', () => {
+    const props = { onClose: vi.fn(), onSaveGuest: vi.fn() };
+    const { rerender } = render(<GuestOnboardingModal {...props} isOpen currentGuest={{ ...ANONYMOUS_GUEST }} />);
+    fireEvent.change(nameInput(), { target: { value: 'Мария' } });
+
+    rerender(<GuestOnboardingModal {...props} isOpen={false} currentGuest={{ ...ANONYMOUS_GUEST }} />);
+    rerender(<GuestOnboardingModal {...props} isOpen currentGuest={{ ...ANONYMOUS_GUEST }} />);
+
+    expect(nameInput().value).toBe('');
+  });
+
+  it('shows the returning guest’s details once they are known', () => {
+    const props = { isOpen: true, onClose: vi.fn(), onSaveGuest: vi.fn() };
+    const { rerender } = render(<GuestOnboardingModal {...props} currentGuest={{ ...ANONYMOUS_GUEST }} />);
+
+    rerender(<GuestOnboardingModal {...props} currentGuest={RETURNING_GUEST} />);
+
+    expect(nameInput().value).toBe('Silvia');
+  });
+});

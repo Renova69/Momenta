@@ -35,20 +35,26 @@ export const GuestOnboardingModal: React.FC<GuestOnboardingModalProps> = ({
   const tableId = useId();
   const { dialogRef, dialogProps } = useDialog({ onClose, labelledBy: titleId, enabled: isOpen });
 
-  // Synchronize state whenever modal opens or currentGuest changes
+  // Fill the form when it opens, or when it becomes a different guest.
+  // N-165 — keyed on the guest's id, not the object: App passes a stand-in
+  // guest it builds afresh on every render, and syncing on each new object
+  // wiped what the guest was typing whenever anything re-rendered the app.
+  const latestGuest = useRef(currentGuest);
+  latestGuest.current = currentGuest;
+  const guestId = currentGuest?.id;
   useEffect(() => {
-    if (isOpen && currentGuest) {
-      if (currentGuest.id === 'anonymous') {
-        setName('');
-        setTableNumber('');
-        setAvatarUrl('');
-      } else {
-        setName(currentGuest.name || '');
-        setTableNumber(currentGuest.tableNumber || '');
-        setAvatarUrl(currentGuest.avatarUrl || '');
-      }
+    const guest = latestGuest.current;
+    if (!isOpen || !guest) return;
+    if (guest.id === 'anonymous') {
+      setName('');
+      setTableNumber('');
+      setAvatarUrl('');
+    } else {
+      setName(guest.name || '');
+      setTableNumber(guest.tableNumber || '');
+      setAvatarUrl(guest.avatarUrl || '');
     }
-  }, [isOpen, currentGuest]);
+  }, [isOpen, guestId]);
 
   if (!isOpen) return null;
 
