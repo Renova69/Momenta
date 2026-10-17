@@ -39,6 +39,8 @@ import { HostDashboardProvider, HostTab, HostDashboardValue } from './dashboard/
 import { formatDateDDMMYYYY, formatTime24h, parseDateAndTime } from './dashboard/dateFields';
 import { TabNav } from './dashboard/TabNav';
 import { BillingNotice } from './BillingNotice';
+import { AlbumClosedNotice } from '../common/AlbumClosedNotice';
+import { isAlbumClosed } from '../../utils/albumStatus';
 import type { CoverSource } from '../../api/eventsApi';
 import { OverviewTab } from './dashboard/OverviewTab';
 import { QuestsTab } from './dashboard/QuestsTab';
@@ -276,6 +278,10 @@ export const HostDashboard: React.FC<HostDashboardProps> = ({
             land on and no way to tell one album's dashboard from another's. */}
         <h1 className="sr-only">{i18n.t('host.studio_heading', { title: event.title })}</h1>
         <BillingNotice eventSlug={event.slug} />
+        {/* N-159 — guests can no longer add to it; a longer plan reopens it. */}
+        {isAlbumClosed(event.expiresAt) && event.expiresAt && (
+          <AlbumClosedNotice closedAt={event.expiresAt} onOpenPricing={onOpenPricing} />
+        )}
         <TabNav />
 
         {/* 1. OVERVIEW & EVENT SETTINGS TAB */}

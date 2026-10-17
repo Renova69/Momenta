@@ -26,6 +26,8 @@ const CODES_REFUSED_FOR_GOOD = new Set([
   'GUEST_PHOTO_LIMIT_REACHED',
   'TIER_REQUIRED',
   'DELETION_IN_PROGRESS',
+  // N-159 — reopened only by the couple buying a longer plan.
+  'ALBUM_CLOSED',
 ]);
 
 /** Codes meaning the album as a whole has reached its plan's limit. */

@@ -15,7 +15,7 @@ import { cleanSlug } from '../../lib/storage';
 import { SLUG_MAX_LENGTH } from '../../../shared/transliterate';
 import { requireAuth, optionalAuth } from '../../middleware/auth';
 import { getEffectiveTierForEvent, getEffectiveTierForUser, meetsTier, acquireUserEventCreationLock } from '../../middleware/tierGate';
-import { computeExpiry } from '../../lib/retention';
+import { computeExpiry, refreshExpiryDates } from '../../lib/retention';
 import { eraseAlbum, AlbumBeingDeletedError, type AlbumErasure } from '../../lib/albumErasure';
 import { errorLabel, isUniqueViolation } from '../../lib/errors';
 import {
@@ -529,6 +529,13 @@ eventsRouter.put('/:id', requireAuth, requireUuidParams('id'), validateBody(Upda
     }
 
     const eventData = updated.rows[0];
+    // N-159 — the album's deadline is counted from the wedding, and since it
+    // closes the album to new photos, a wedding moved later must move it too.
+    if ('eventDate' in updateRecord && eventData.host_user_id) {
+      await refreshExpiryDates(eventData.host_user_id);
+      const fresh = await pool.query('SELECT expires_at FROM events WHERE id = $1', [eventData.id]);
+      eventData.expires_at = fresh.rows[0]?.expires_at ?? eventData.expires_at;
+    }
     eventData.planTier = await getEffectiveTierForEvent(eventData.id);
     // Guests share this room, so the broadcast carries the public projection only.
     wsManager.broadcastToEvent(id, 'EVENT_UPDATED', toPublicEvent(eventData));

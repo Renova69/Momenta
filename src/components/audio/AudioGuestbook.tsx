@@ -12,17 +12,21 @@ import {
   Volume2,
   Clock
 } from 'lucide-react';
+import { AlbumClosedNotice } from '../common/AlbumClosedNotice';
 import { guestAvatarUrl } from '../../utils/avatar';
 import { mediaErrorKey } from '../../utils/mediaErrors';
 
 interface AudioGuestbookProps {
   entries: AudioGuestbookEntry[];
   onAddAudioEntry: (audioBlob: Blob, durationSeconds: number, note?: string, mimeType?: string) => void;
+  /** When the album closed to new messages (N-159): the recorder gives way to a notice. */
+  closedAt?: string | null;
 }
 
 export const AudioGuestbook: React.FC<AudioGuestbookProps> = ({
   entries,
   onAddAudioEntry,
+  closedAt,
 }) => {
   const [isRecording, setIsRecording] = useState(false);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
@@ -219,125 +223,129 @@ export const AudioGuestbook: React.FC<AudioGuestbookProps> = ({
   return (
     <div className="space-y-8">
       
+      {closedAt && <AlbumClosedNotice closedAt={closedAt} />}
+
       {/* Vintage Phone Booth Recorder Hero */}
-      <div className="bg-linear-to-br from-noir-800 via-[#1c1813] to-noir-900 rounded-3xl p-6 sm:p-8 border border-gold-400/30 shadow-2xl relative overflow-hidden text-center">
-        
-        {/* Glow decoration */}
-        <div className="absolute left-1/2 -top-12 -translate-x-1/2 w-64 h-32 bg-gold-400/10 rounded-full blur-3xl pointer-events-none" />
+      {!closedAt && (
+        <div className="bg-linear-to-br from-noir-800 via-[#1c1813] to-noir-900 rounded-3xl p-6 sm:p-8 border border-gold-400/30 shadow-2xl relative overflow-hidden text-center">
+          
+          {/* Glow decoration */}
+          <div className="absolute left-1/2 -top-12 -translate-x-1/2 w-64 h-32 bg-gold-400/10 rounded-full blur-3xl pointer-events-none" />
 
-        <div className="max-w-md mx-auto space-y-3 mb-6">
-          <div className="w-14 h-14 rounded-full bg-gold-400/15 border border-gold-400/40 flex items-center justify-center mx-auto text-gold-400 shadow-glow">
-            <Mic className="w-7 h-7" />
-          </div>
-          <h3 className="font-serif text-2xl font-bold text-cream-100">
-            {i18n.t('audio.title')}
-          </h3>
-          <p className="text-xs sm:text-sm text-cream-300/80 leading-relaxed">
-            {i18n.t('audio.subtitle')}
-          </p>
-        </div>
-
-        {errorMsg && (
-          <div className="mb-4 p-3 rounded-xl bg-rosewood-900/60 border border-rosewood-400/40 text-rosewood-200 text-xs max-w-sm mx-auto">
-            {errorMsg}
-          </div>
-        )}
-
-        {/* Dynamic Recorder State Machine */}
-        {!recordedBlobUrl ? (
-          <div className="space-y-4">
-            <div className="flex flex-col items-center justify-center gap-3">
-              {isRecording ? (
-                <button
-                  type="button"
-                  onClick={stopRecording}
-                  className="w-24 h-24 rounded-full bg-rosewood-600 hover:bg-rosewood-500 border-4 border-rosewood-400 shadow-glow flex flex-col items-center justify-center text-white active:scale-95 transition-all animate-pulse"
-                >
-                  <Square className="w-8 h-8 fill-current mb-1" />
-                  <span className="text-[10px] font-bold uppercase">{i18n.t('audio.stop_btn')}</span>
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={startRecording}
-                  className="w-24 h-24 rounded-full bg-linear-to-tr from-gold-500 to-gold-400 hover:brightness-110 border-4 border-gold-300/40 shadow-glow flex flex-col items-center justify-center text-noir-900 active:scale-95 transition-all"
-                >
-                  <Mic className="w-8 h-8 mb-1" />
-                  <span className="text-[10px] font-bold uppercase tracking-wider">{i18n.t('audio.record_btn')}</span>
-                </button>
-              )}
-
-              {/* Timer status */}
-              <div className="font-mono text-base font-bold text-gold-300">
-                {isRecording ? (
-                  <span className="flex items-center gap-1.5 text-rosewood-400">
-                    <span className="w-2.5 h-2.5 rounded-full bg-rosewood-500 animate-ping" />
-                    <span>{formatSeconds(recordingSeconds)} / 1:00</span>
-                  </span>
-                ) : (
-                  <span className="text-cream-400/60">0:00 / 1:00</span>
-                )}
-              </div>
+          <div className="max-w-md mx-auto space-y-3 mb-6">
+            <div className="w-14 h-14 rounded-full bg-gold-400/15 border border-gold-400/40 flex items-center justify-center mx-auto text-gold-400 shadow-glow">
+              <Mic className="w-7 h-7" />
             </div>
-            <p className="text-[11px] text-cream-400/60">
-              {isRecording ? i18n.t('audio.recording') : i18n.t('audio.record_btn')}
+            <h3 className="font-serif text-2xl font-bold text-cream-100">
+              {i18n.t('audio.title')}
+            </h3>
+            <p className="text-xs sm:text-sm text-cream-300/80 leading-relaxed">
+              {i18n.t('audio.subtitle')}
             </p>
           </div>
-        ) : (
-          /* Preview & Save Form */
-          <div className="max-w-md mx-auto space-y-4 bg-noir-900/80 p-5 rounded-2xl border border-gold-400/20">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-gold-400 flex items-center gap-1.5">
-                <Volume2 className="w-4 h-4" />
-                <span>{i18n.t('audio.play_preview')} ({formatSeconds(recordingSeconds)})</span>
-              </span>
 
-              <button
-                type="button"
-                onClick={() => togglePlayback('preview', recordedBlobUrl)}
-                className="px-3 py-1.5 rounded-full bg-gold-400 text-noir-900 font-bold text-xs flex items-center gap-1 hover:brightness-110"
-              >
-                {playingId === 'preview' ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5 fill-current" />}
-                <span>{playingId === 'preview' ? i18n.t('audio.pause') : i18n.t('audio.listen')}</span>
-              </button>
+          {errorMsg && (
+            <div className="mb-4 p-3 rounded-xl bg-rosewood-900/60 border border-rosewood-400/40 text-rosewood-200 text-xs max-w-sm mx-auto">
+              {errorMsg}
             </div>
+          )}
 
-            <textarea
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
-              aria-label={i18n.t('audio.note_placeholder')}
-              placeholder={i18n.t('audio.note_placeholder')}
-              rows={2}
-              maxLength={150}
-              className="w-full px-3 py-2 rounded-xl bg-noir-800 border border-cream-400/20 text-cream-100 text-xs placeholder:text-cream-400/40 focus:outline-hidden focus:border-gold-400 resize-none"
-            />
+          {/* Dynamic Recorder State Machine */}
+          {!recordedBlobUrl ? (
+            <div className="space-y-4">
+              <div className="flex flex-col items-center justify-center gap-3">
+                {isRecording ? (
+                  <button
+                    type="button"
+                    onClick={stopRecording}
+                    className="w-24 h-24 rounded-full bg-rosewood-600 hover:bg-rosewood-500 border-4 border-rosewood-400 shadow-glow flex flex-col items-center justify-center text-white active:scale-95 transition-all animate-pulse"
+                  >
+                    <Square className="w-8 h-8 fill-current mb-1" />
+                    <span className="text-[10px] font-bold uppercase">{i18n.t('audio.stop_btn')}</span>
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={startRecording}
+                    className="w-24 h-24 rounded-full bg-linear-to-tr from-gold-500 to-gold-400 hover:brightness-110 border-4 border-gold-300/40 shadow-glow flex flex-col items-center justify-center text-noir-900 active:scale-95 transition-all"
+                  >
+                    <Mic className="w-8 h-8 mb-1" />
+                    <span className="text-[10px] font-bold uppercase tracking-wider">{i18n.t('audio.record_btn')}</span>
+                  </button>
+                )}
 
-            <div className="flex items-center gap-2 pt-1">
-              <button
-                type="button"
-                onClick={() => {
-                  setRecordedBlobUrl(null);
-                  setRecordingSeconds(0);
-                }}
-                className="flex-1 py-2.5 rounded-xl border border-cream-400/20 text-cream-200 text-xs font-medium hover:bg-noir-800"
-              >
-                {i18n.t('audio.rerecord')}
-              </button>
-
-              <button
-                type="button"
-                onClick={handleSaveRecording}
-                disabled={isSaving}
-                className="flex-2 py-2.5 rounded-xl bg-linear-to-r from-gold-400 to-gold-500 text-noir-900 font-bold text-xs shadow-glow hover:brightness-110 flex items-center justify-center gap-1.5 disabled:opacity-60 disabled:cursor-not-allowed"
-              >
-                <Upload className="w-4 h-4" />
-                <span>{isSaving ? i18n.t('audio.saving') : i18n.t('audio.save_btn')}</span>
-              </button>
+                {/* Timer status */}
+                <div className="font-mono text-base font-bold text-gold-300">
+                  {isRecording ? (
+                    <span className="flex items-center gap-1.5 text-rosewood-400">
+                      <span className="w-2.5 h-2.5 rounded-full bg-rosewood-500 animate-ping" />
+                      <span>{formatSeconds(recordingSeconds)} / 1:00</span>
+                    </span>
+                  ) : (
+                    <span className="text-cream-400/60">0:00 / 1:00</span>
+                  )}
+                </div>
+              </div>
+              <p className="text-[11px] text-cream-400/60">
+                {isRecording ? i18n.t('audio.recording') : i18n.t('audio.record_btn')}
+              </p>
             </div>
-          </div>
-        )}
+          ) : (
+            /* Preview & Save Form */
+            <div className="max-w-md mx-auto space-y-4 bg-noir-900/80 p-5 rounded-2xl border border-gold-400/20">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-gold-400 flex items-center gap-1.5">
+                  <Volume2 className="w-4 h-4" />
+                  <span>{i18n.t('audio.play_preview')} ({formatSeconds(recordingSeconds)})</span>
+                </span>
 
-      </div>
+                <button
+                  type="button"
+                  onClick={() => togglePlayback('preview', recordedBlobUrl)}
+                  className="px-3 py-1.5 rounded-full bg-gold-400 text-noir-900 font-bold text-xs flex items-center gap-1 hover:brightness-110"
+                >
+                  {playingId === 'preview' ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5 fill-current" />}
+                  <span>{playingId === 'preview' ? i18n.t('audio.pause') : i18n.t('audio.listen')}</span>
+                </button>
+              </div>
+
+              <textarea
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+                aria-label={i18n.t('audio.note_placeholder')}
+                placeholder={i18n.t('audio.note_placeholder')}
+                rows={2}
+                maxLength={150}
+                className="w-full px-3 py-2 rounded-xl bg-noir-800 border border-cream-400/20 text-cream-100 text-xs placeholder:text-cream-400/40 focus:outline-hidden focus:border-gold-400 resize-none"
+              />
+
+              <div className="flex items-center gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setRecordedBlobUrl(null);
+                    setRecordingSeconds(0);
+                  }}
+                  className="flex-1 py-2.5 rounded-xl border border-cream-400/20 text-cream-200 text-xs font-medium hover:bg-noir-800"
+                >
+                  {i18n.t('audio.rerecord')}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleSaveRecording}
+                  disabled={isSaving}
+                  className="flex-2 py-2.5 rounded-xl bg-linear-to-r from-gold-400 to-gold-500 text-noir-900 font-bold text-xs shadow-glow hover:brightness-110 flex items-center justify-center gap-1.5 disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  <Upload className="w-4 h-4" />
+                  <span>{isSaving ? i18n.t('audio.saving') : i18n.t('audio.save_btn')}</span>
+                </button>
+              </div>
+            </div>
+          )}
+
+        </div>
+      )}
 
       {/* Spoken Messages Feed */}
       <div className="space-y-4">

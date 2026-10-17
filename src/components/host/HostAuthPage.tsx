@@ -2,6 +2,7 @@ import React, { useId, useState } from 'react';
 import { HostUser, WeddingEvent } from '../../types';
 import { authService, DEMO_HOST_USERS } from '../../services/authService';
 import { i18n } from '../../i18n';
+import { LegalNotice } from '../legal/LegalLinks';
 import {
   Lock,
   Mail,
@@ -297,6 +298,7 @@ export const HostAuthPage: React.FC<HostAuthPageProps> = ({ onSuccess, initialTa
             >
               {isLoading ? i18n.t('auth.creating') : i18n.t('host.signup_btn')}
             </button>
+            <LegalNotice kind="signup" />
           </form>
         )}
 

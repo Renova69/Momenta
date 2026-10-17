@@ -165,6 +165,15 @@ describe('LiveFeed visibility rules', () => {
     expect(screen.queryByText(/46\s*\/\s*50/)).not.toBeInTheDocument();
   });
 
+  // N-159 — once the album has closed, the feed says so and stops offering
+  // the live reactions it would refuse.
+  it('tells a guest a closed album takes no more, and hides the live reactions', () => {
+    renderFeed([photo({ id: 'p1' })], ME, { eventPlanTier: 'free', closedAt: '2026-10-23T12:00:00.000Z' });
+
+    expect(screen.getByText(i18n.t('album.closed_guest', { date: '23.10.2026' }))).toBeInTheDocument();
+    expect(screen.queryByText(i18n.t('reaction.prompt'))).not.toBeInTheDocument();
+  });
+
   it('says nothing about limits on a paid plan', () => {
     const photos = Array.from({ length: 60 }, (_, i) => photo({ id: `p${i}` }));
 

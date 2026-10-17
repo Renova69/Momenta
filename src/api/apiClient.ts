@@ -60,6 +60,7 @@ export const ERROR_CODE_KEYS: Record<string, string> = {
   ALREADY_ENTITLED: 'error.already_entitled',
   GUEST_PHOTO_LIMIT_REACHED: 'error.guest_photo_limit_reached',
   INVALID_REDIRECT: 'error.invalid_redirect',
+  ALBUM_CLOSED: 'error.album_closed',
   BILLING_UNVERIFIABLE: 'error.billing_unverifiable',
   // Translating this does not disturb `isStripeNotConfigured`, which reads
   // `ApiError.code` and never the message: the pre-Stripe upgrade route still

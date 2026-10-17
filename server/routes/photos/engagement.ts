@@ -16,6 +16,7 @@ import { validateBody } from '../../middleware/validate';
 import { reactionLimiter, commentLimiter, commentIpLimiter } from '../../middleware/rateLimit';
 import { issueGuestToken, verifyGuestToken } from '../../lib/guestAuth';
 import { isValidUuid } from '../../lib/validation';
+import { isAlbumClosed, albumClosedRefusal } from '../../lib/albumClosed';
 import {
   LikePhotoSchema,
   ReactPhotoSchema,
@@ -41,12 +42,15 @@ photosRouter.post('/:id/like', requireUuidParams('id'), validateBody(LikePhotoSc
 
   try {
     const photoQuery = await pool.query(
-      `SELECT p.event_id AS event_id, p.status AS status, p.is_locked AS is_locked, e.reveal_at AS reveal_at
+      `SELECT p.event_id AS event_id, p.status AS status, p.is_locked AS is_locked, e.reveal_at AS reveal_at,
+                e.expires_at AS expires_at
          FROM photos p JOIN events e ON e.id = p.event_id WHERE p.id = $1`,
       [id]
     );
     if (photoQuery.rows.length === 0) return res.status(404).json({ error: 'Photo not found' });
     const photoRow = photoQuery.rows[0];
+    // N-159 — a closed album takes no new likes, reactions or comments.
+    if (isAlbumClosed(photoRow.expires_at)) return res.status(403).json(albumClosedRefusal(photoRow.expires_at));
     const eventId = photoRow.event_id;
 
     // A guest-facing action must not be possible on a photo a guest cannot
@@ -110,12 +114,15 @@ photosRouter.post(
 
     try {
       const photoQuery = await pool.query(
-        `SELECT p.event_id AS event_id, p.status AS status, p.is_locked AS is_locked, e.reveal_at AS reveal_at
+        `SELECT p.event_id AS event_id, p.status AS status, p.is_locked AS is_locked, e.reveal_at AS reveal_at,
+                e.expires_at AS expires_at
            FROM photos p JOIN events e ON e.id = p.event_id WHERE p.id = $1`,
         [id]
       );
       if (photoQuery.rows.length === 0) return res.status(404).json({ error: 'Photo not found' });
       const photoRow = photoQuery.rows[0];
+      // N-159 — a closed album takes no new likes, reactions or comments.
+      if (isAlbumClosed(photoRow.expires_at)) return res.status(403).json(albumClosedRefusal(photoRow.expires_at));
       const eventId = photoRow.event_id;
 
       // Same visibility gate as /like (SEC-W4): reacting must not be
@@ -175,12 +182,15 @@ photosRouter.post(
 
   try {
     const photoQuery = await pool.query(
-      `SELECT p.event_id AS event_id, p.status AS status, p.is_locked AS is_locked, e.reveal_at AS reveal_at
+      `SELECT p.event_id AS event_id, p.status AS status, p.is_locked AS is_locked, e.reveal_at AS reveal_at,
+                e.expires_at AS expires_at
          FROM photos p JOIN events e ON e.id = p.event_id WHERE p.id = $1`,
       [id]
     );
     if (photoQuery.rows.length === 0) return res.status(404).json({ error: 'Photo not found' });
     const photoRow = photoQuery.rows[0];
+    // N-159 — a closed album takes no new likes, reactions or comments.
+    if (isAlbumClosed(photoRow.expires_at)) return res.status(403).json(albumClosedRefusal(photoRow.expires_at));
     const eventId = photoRow.event_id;
 
     // Same visibility rule as the like endpoint — a photo a guest cannot see

@@ -45,6 +45,8 @@ export interface RemoteEventPayload {
 
   revealAt?: string | null;
   reveal_at?: string | null;
+  expiresAt?: string | null;
+  expires_at?: string | null;
   maxPhotosPerGuest?: number;
   max_photos_per_guest?: number;
   questPrize?: string | null;
@@ -119,6 +121,10 @@ export function normalizePartialEvent(remote: RemoteEventPayload | Partial<Remot
   if ('revealAt' in source || 'reveal_at' in source) {
     updates.revealAt = source.revealAt !== undefined ? source.revealAt : source.reveal_at;
   }
+  // N-159 — null is a real value here too: no deadline, never closes.
+  if ('expiresAt' in source || 'expires_at' in source) {
+    updates.expiresAt = source.expiresAt !== undefined ? source.expiresAt : source.expires_at;
+  }
   if (has('maxPhotosPerGuest', 'max_photos_per_guest')) {
     updates.maxPhotosPerGuest = source.maxPhotosPerGuest ?? source.max_photos_per_guest;
   }
@@ -159,6 +165,7 @@ export function normalizeEvent(remote: RemoteEventPayload): WeddingEvent {
     // Absent means not opted in — never assume consent from a missing field.
     isPublic: remote.isPublic ?? remote.is_public ?? false,
     revealAt: remote.revealAt || remote.reveal_at || null,
+    expiresAt: remote.expiresAt ?? remote.expires_at ?? null,
     maxPhotosPerGuest: remote.maxPhotosPerGuest || remote.max_photos_per_guest || 50,
     questPrize: remote.questPrize ?? remote.quest_prize ?? null,
     showTvLeaderboard: remote.showTvLeaderboard ?? remote.show_tv_leaderboard ?? false,

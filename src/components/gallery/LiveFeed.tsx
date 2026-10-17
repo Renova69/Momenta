@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Photo, Guest, PlanTier, PhotoReactionKind } from '../../types';
 import { PhotoCard } from './PhotoCard';
 import { ReactionBar } from './ReactionBar';
+import { AlbumClosedNotice } from '../common/AlbumClosedNotice';
 import { i18n } from '../../i18n';
 import { FREE_TIER_MAX_PHOTOS } from '../../config/tierGating';
 import { Sparkles, Trophy, User, Layers, Search, Camera, Crown, AlertCircle } from 'lucide-react';
@@ -21,6 +22,8 @@ interface LiveFeedProps {
    * feed then is not an album without photos.
    */
   isLoadingPhotos?: boolean;
+  /** When the album closed to new photos (N-159); absent while it is open. */
+  closedAt?: string | null;
 }
 
 /**
@@ -87,6 +90,7 @@ const LiveFeedComponent: React.FC<LiveFeedProps> = ({
   onOpenLightbox,
   onOpenCapture,
   isLoadingPhotos = false,
+  closedAt = null,
 }) => {
   const [activeFilter, setActiveFilter] = useState<FeedFilter>('all');
   const [searchQuery, setSearchQuery] = useState('');
@@ -133,8 +137,11 @@ const LiveFeedComponent: React.FC<LiveFeedProps> = ({
 
   return (
     <section className="space-y-6">
+      {/* N-159 — a closed album says so first; its photo limit is moot. */}
+      {closedAt && <AlbumClosedNotice closedAt={closedAt} onOpenPricing={onOpenPricing} />}
+
       {/* Free Tier Limit Notification Banner */}
-      {isApproachingLimit && (
+      {isApproachingLimit && !closedAt && (
         <div
           className={`p-4 rounded-2xl border flex flex-col sm:flex-row items-center justify-between gap-3 ${
             isAtLimit
@@ -258,10 +265,13 @@ const LiveFeedComponent: React.FC<LiveFeedProps> = ({
         </div>
       </div>
 
-      {/* Live reactions: a tap here animates on the venue projector wall */}
-      <div className="py-1">
-        <ReactionBar guestName={currentGuest?.name} />
-      </div>
+      {/* Live reactions: a tap here animates on the venue projector wall.
+          A closed album takes none (N-159). */}
+      {!closedAt && (
+        <div className="py-1">
+          <ReactionBar guestName={currentGuest?.name} />
+        </div>
+      )}
 
       {/* Photo Grid / Masonry Layout */}
       {filteredPhotos.length > 0 ? (

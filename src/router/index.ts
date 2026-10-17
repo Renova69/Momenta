@@ -66,6 +66,10 @@ export class AppRouter {
       return { view: 'host', slug: eventParam || undefined };
     }
 
+    // 5b. The legal pages (N-163)
+    if (pathname === '/privacy') return { view: 'privacy' };
+    if (pathname === '/terms') return { view: 'terms' };
+
     // 6. Path: /pricing
     if (pathname.startsWith('/pricing')) {
       return { view: 'pricing', slug: eventParam || undefined };
@@ -128,6 +132,8 @@ export class AppRouter {
       } else {
         if (view === 'host') targetPath = '/host';
         else if (view === 'pricing') targetPath = '/pricing';
+        else if (view === 'privacy') targetPath = '/privacy';
+        else if (view === 'terms') targetPath = '/terms';
       }
 
       // FE-07: a live preview (the slug field, say) that calls this on every

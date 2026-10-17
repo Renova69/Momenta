@@ -2,6 +2,7 @@ import React, { useEffect, useId, useRef, useState } from 'react';
 import { PlanTier } from '../../types';
 import { PLANS } from '../../config/plans';
 import { i18n } from '../../i18n';
+import { LegalNotice } from '../legal/LegalLinks';
 import { useDialog } from '../../hooks/useDialog';
 import {
   billingApi,
@@ -219,6 +220,10 @@ export const PricingPlansModal: React.FC<PricingPlansModalProps> = ({
           <p className="text-xs sm:text-sm text-cream-300/80 max-w-xl mx-auto">
             {i18n.t('pricing.subtitle')}
           </p>
+          {/* N-163 — the terms of sale are owed before payment. */}
+          <div className="mt-2">
+            <LegalNotice kind="pricing" />
+          </div>
           {upgradeError && (
             <p className="mt-3 text-xs font-semibold text-red-400" role="alert">
               {upgradeError}

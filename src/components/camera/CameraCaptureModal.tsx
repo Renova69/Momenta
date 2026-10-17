@@ -9,6 +9,7 @@ import { CaptureReview } from './CaptureReview';
 import confetti from 'canvas-confetti';
 import { Camera, UploadCloud, Image as ImageIcon, ShieldAlert } from 'lucide-react';
 import { mediaErrorKey } from '../../utils/mediaErrors';
+import { AlbumClosedNotice } from '../common/AlbumClosedNotice';
 
 interface CameraCaptureModalProps {
   isOpen: boolean;
@@ -29,6 +30,8 @@ interface CameraCaptureModalProps {
     questId?: string;
     questTitle?: string;
   }) => void;
+  /** When the album closed to new photos (N-159): the camera says so instead of opening. */
+  closedAt?: string | null;
 }
 
 // SEC-W3: cap on how many files a single bulk selection processes.
@@ -49,6 +52,7 @@ export const CameraCaptureModal: React.FC<CameraCaptureModalProps> = ({
   quests,
   selectedQuestId: initialQuestId,
   onPhotoUploaded,
+  closedAt,
 }) => {
   const [capturedRawUrl, setCapturedRawUrl] = useState<string | null>(null);
   const [processedUrl, setProcessedUrl] = useState<string | null>(null);
@@ -147,7 +151,7 @@ export const CameraCaptureModal: React.FC<CameraCaptureModalProps> = ({
   }, [useFrontCamera, stopCamera]);
 
   useEffect(() => {
-    if (isOpen && !capturedRawUrl) {
+    if (isOpen && !capturedRawUrl && !closedAt) {
       if (navigator.permissions && navigator.permissions.query) {
         navigator.permissions
           .query({ name: 'camera' as PermissionName })
@@ -176,7 +180,7 @@ export const CameraCaptureModal: React.FC<CameraCaptureModalProps> = ({
     return () => {
       stopCamera();
     };
-  }, [isOpen, capturedRawUrl, useFrontCamera, startCamera, stopCamera]);
+  }, [isOpen, capturedRawUrl, closedAt, useFrontCamera, startCamera, stopCamera]);
 
   useEffect(() => {
     if (initialQuestId) {
@@ -453,6 +457,32 @@ export const CameraCaptureModal: React.FC<CameraCaptureModalProps> = ({
   };
 
   if (!isOpen) return null;
+
+  // N-159 — every way into the camera (the album's button, a challenge, the
+  // bottom bar) lands here, so this one screen keeps a closed album closed.
+  if (closedAt) {
+    return (
+      <div
+        ref={dialogRef}
+        {...dialogProps}
+        className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/90 backdrop-blur-md animate-fade-in"
+      >
+        <div className="relative w-full max-w-sm bg-noir-900 rounded-3xl border border-gold-400/30 p-6 space-y-4 text-center">
+          <h2 id={titleId} className="font-serif text-lg font-bold text-cream-100">
+            {i18n.t('album.closed_camera_title')}
+          </h2>
+          <AlbumClosedNotice closedAt={closedAt} />
+          <button
+            type="button"
+            onClick={onClose}
+            className="w-full py-2.5 rounded-xl bg-noir-700 hover:bg-noir-600 text-cream-100 font-bold text-xs"
+          >
+            {i18n.t('common.close')}
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   if (isUploadingMultiple) {
     return (

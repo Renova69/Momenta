@@ -46,7 +46,8 @@ export function builtClient(distDir: string): Router {
 }
 
 /**
- * The pages meant to be found: the landing page and the pricing page.
+ * The pages meant to be found: the landing page, the pricing page and the
+ * legal pages (N-163).
  *
  * N-153 — every other address is an album, a studio or a screen of one, and
  * had nothing keeping it out of search results: a guest posting the album's
@@ -58,5 +59,12 @@ function isPublicPage(urlPath: string, originalUrl: string): boolean {
   // With a query it is a page of one album: the studio links to
   // /pricing?event=<slug>, which carries the album's address.
   if (originalUrl.includes('?')) return false;
-  return urlPath === '/' || urlPath === '/index.html' || urlPath === '/pricing' || urlPath.startsWith('/pricing/');
+  return (
+    urlPath === '/' ||
+    urlPath === '/index.html' ||
+    urlPath === '/pricing' ||
+    urlPath.startsWith('/pricing/') ||
+    urlPath === '/privacy' ||
+    urlPath === '/terms'
+  );
 }

@@ -2,6 +2,7 @@ import React, { useId, useState, useEffect, useRef } from 'react';
 import { Guest } from '../../types';
 import { compressAndFilterImage } from '../../services/compressionService';
 import { i18n } from '../../i18n';
+import { LegalNotice } from '../legal/LegalLinks';
 import { useDialog } from '../../hooks/useDialog';
 import {
   X,
@@ -214,6 +215,8 @@ export const GuestOnboardingModal: React.FC<GuestOnboardingModalProps> = ({
             {i18n.t('profile.save_btn')}
           </button>
 
+          {/* N-163 — the guest's name, table and selfie are collected here. */}
+          <LegalNotice kind="guest" />
         </form>
 
       </div>

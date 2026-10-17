@@ -3,6 +3,7 @@ import { render, cleanup, screen, fireEvent } from '@testing-library/react';
 import React from 'react';
 import { LightboxModal } from '../../src/components/gallery/LightboxModal';
 import { Photo, Guest } from '../../src/types';
+import { i18n } from '../../src/i18n';
 
 /**
  * The photo viewer's interactive parts.
@@ -192,5 +193,15 @@ describe('LightboxModal close', () => {
     fireEvent.click(closeButton);
 
     expect(props.onClose).toHaveBeenCalledTimes(1);
+  });
+});
+
+// N-159 — a closed album takes no new comments; the box gives way to a note.
+describe('LightboxModal on a closed album', () => {
+  it('offers no comment box, and says why', () => {
+    renderLightbox({ closedAt: '2026-10-23T12:00:00.000Z' });
+
+    expect(screen.queryByPlaceholderText(i18n.t('lightbox.write_placeholder'))).not.toBeInTheDocument();
+    expect(screen.getByText(i18n.t('error.album_closed'))).toBeInTheDocument();
   });
 });

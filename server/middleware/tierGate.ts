@@ -5,6 +5,7 @@ import { limitsFor, formatBytes } from '../lib/planLimits';
 import { isValidUuid } from '../lib/validation';
 /** Tier order lives in `shared/planCaps.ts` so client and server cannot disagree. */
 import { TIER_WEIGHTS } from '../../shared/planCaps';
+import { isAlbumClosed } from '../lib/albumClosed';
 
 export type BackendPlanTier = 'free' | 'celebration_pass' | 'deluxe_keepsake' | 'pro_planner';
 
@@ -134,6 +135,8 @@ export interface UploadContext {
   isDisposableMode: boolean;
   revealAt: Date | null;
   maxPhotosPerGuest: number | null;
+  /** When the album closes to new content (N-159); null for no deadline. */
+  expiresAt: Date | null;
 }
 
 /**
@@ -157,6 +160,7 @@ export async function getUploadContext(
             e.is_disposable_mode,
             e.reveal_at,
             e.max_photos_per_guest,
+            e.expires_at,
             COALESCE(s.tier, 'free') AS tier,
             -- A rejected photo is one the host refused. Counting it against
             -- the plan's allowance charges the couple for a picture nobody
@@ -208,6 +212,7 @@ export async function getUploadContext(
     isDisposableMode: !!row.is_disposable_mode,
     revealAt: row.reveal_at ? new Date(row.reveal_at) : null,
     maxPhotosPerGuest: row.max_photos_per_guest ?? null,
+    expiresAt: row.expires_at ? new Date(row.expires_at) : null,
   };
 }
 
@@ -216,6 +221,16 @@ export function checkUploadAllowance(
   context: UploadContext,
   incomingBytes = 0
 ): UploadAllowance {
+  // N-159 — first: a closed album takes nothing new, whatever room is left.
+  // Every upload path (photos, voice messages, the photographer) comes here.
+  if (isAlbumClosed(context.expiresAt)) {
+    return {
+      allowed: false,
+      code: 'ALBUM_CLOSED',
+      reason: 'Албумът е затворен и не приема нови снимки и гласови пожелания.',
+    };
+  }
+
   if (context.maxPhotos !== null && context.photoCount >= context.maxPhotos) {
     return {
       allowed: false,
@@ -358,7 +373,7 @@ export async function getStorageUsage(eventId: string): Promise<StorageUsage | n
 export interface UploadAllowance {
   allowed: boolean;
   reason?: string;
-  code?: 'TIER_LIMIT_REACHED' | 'STORAGE_LIMIT_REACHED';
+  code?: 'TIER_LIMIT_REACHED' | 'STORAGE_LIMIT_REACHED' | 'ALBUM_CLOSED';
 }
 
 /**

@@ -25,6 +25,8 @@ interface LightboxModalProps {
   onLike: (photoId: string) => void;
   onReact: (photoId: string, reaction: PhotoReactionKind) => void;
   onAddComment: (photoId: string, text: string) => void;
+  /** When the album closed to new comments (N-159); the box gives way to a note. */
+  closedAt?: string | null;
 }
 
 // Same glyphs/vocabulary as PhotoCard's reaction bar and the ambient
@@ -44,6 +46,7 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
   onLike,
   onReact,
   onAddComment,
+  closedAt,
 }) => {
   const [newComment, setNewComment] = useState('');
   const [isCopied, setIsCopied] = useState(false);
@@ -289,28 +292,32 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
               </div>
             </div>
 
-            {/* Comment Form */}
-            <form onSubmit={handleSubmitComment} className="flex gap-2">
-              <label htmlFor={commentFieldId} className="sr-only">
-                {i18n.t('lightbox.write_placeholder')}
-              </label>
-              <input
-                id={commentFieldId}
-                type="text"
-                value={newComment}
-                onChange={(e) => setNewComment(e.target.value)}
-                placeholder={i18n.t('lightbox.write_placeholder')}
-                className="flex-1 px-3 py-2 rounded-xl bg-noir-800 border border-cream-400/20 text-xs text-cream-100 placeholder:text-cream-400/40 focus:outline-hidden focus:border-gold-400"
-              />
-              <button
-                type="submit"
-                disabled={!newComment.trim()}
-                aria-label={i18n.t('lightbox.send_comment')}
-                className="p-2 rounded-xl bg-gold-400 text-noir-900 font-bold hover:brightness-110 disabled:opacity-40 transition-all"
-              >
-                <Send className="w-4 h-4" />
-              </button>
-            </form>
+            {/* Comment Form — none on a closed album (N-159) */}
+            {closedAt ? (
+              <p className="text-xs text-cream-300">{i18n.t('error.album_closed')}</p>
+            ) : (
+              <form onSubmit={handleSubmitComment} className="flex gap-2">
+                <label htmlFor={commentFieldId} className="sr-only">
+                  {i18n.t('lightbox.write_placeholder')}
+                </label>
+                <input
+                  id={commentFieldId}
+                  type="text"
+                  value={newComment}
+                  onChange={(e) => setNewComment(e.target.value)}
+                  placeholder={i18n.t('lightbox.write_placeholder')}
+                  className="flex-1 px-3 py-2 rounded-xl bg-noir-800 border border-cream-400/20 text-xs text-cream-100 placeholder:text-cream-400/40 focus:outline-hidden focus:border-gold-400"
+                />
+                <button
+                  type="submit"
+                  disabled={!newComment.trim()}
+                  aria-label={i18n.t('lightbox.send_comment')}
+                  className="p-2 rounded-xl bg-gold-400 text-noir-900 font-bold hover:brightness-110 disabled:opacity-40 transition-all"
+                >
+                  <Send className="w-4 h-4" />
+                </button>
+              </form>
+            )}
           </div>
         </div>
       </div>

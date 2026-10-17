@@ -118,6 +118,11 @@ describe('the built client (N-134)', () => {
     expect(pricing.headers['x-robots-tag']).toBeUndefined();
   });
 
+  it('leaves the legal pages indexable (N-163)', async () => {
+    expect((await get('/privacy')).headers['x-robots-tag']).toBeUndefined();
+    expect((await get('/terms')).headers['x-robots-tag']).toBeUndefined();
+  });
+
   it('leaves the API alone', async () => {
     const ping = await get('/api/ping');
     const missing = await get('/api/nothing-here', 'identity');

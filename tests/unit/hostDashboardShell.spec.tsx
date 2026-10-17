@@ -69,12 +69,13 @@ interface Overrides {
   onUpdateEvent?: () => void;
   onResetData?: () => void;
   quests?: ScavengerQuest[];
+  expiresAt?: string | null;
 }
 
 function renderDashboard(over: Overrides = {}) {
-  const { planTier, ...rest } = over;
+  const { planTier, expiresAt, ...rest } = over;
   const props = {
-    event: { ...baseEvent, planTier } as WeddingEvent,
+    event: { ...baseEvent, planTier, expiresAt } as WeddingEvent,
     guests: [],
     photos: [],
     quests: [],
@@ -575,5 +576,24 @@ describe('the TV-wall leaderboard switch', () => {
     fireEvent.click(switchButton());
 
     expect(onUpdateEvent).toHaveBeenCalledWith({ showTvLeaderboard: false });
+  });
+});
+
+// N-159 — guests can no longer add to a closed album; the host is told, with
+// the way to open it again.
+describe('a closed album, in the studio', () => {
+  it('says guests can only look and download, and offers to open it again', () => {
+    const onOpenPricing = vi.fn();
+    renderDashboard({ expiresAt: '2026-10-01T12:00:00.000Z', onOpenPricing });
+
+    expect(screen.getByText(i18n.t('album.closed_host', { date: '01.10.2026' }))).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: i18n.t('album.reopen') }));
+    expect(onOpenPricing).toHaveBeenCalled();
+  });
+
+  it('says nothing while the album is open', () => {
+    renderDashboard({ expiresAt: new Date(Date.now() + 86400_000).toISOString() });
+
+    expect(screen.queryByRole('button', { name: i18n.t('album.reopen') })).not.toBeInTheDocument();
   });
 });

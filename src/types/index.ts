@@ -59,6 +59,8 @@ export interface WeddingEvent {
   /** Host opt-in to the public showcase (H6). Defaults false; never set on their behalf. */
   isPublic: boolean;
   revealAt: string | null;
+  /** When the album closes to new photos (N-159); null or absent for no deadline. */
+  expiresAt?: string | null;
   maxPhotosPerGuest: number;
   questPrize?: string | null;
   /** Host choice: the quest leaderboard beside the photos on the TV wall. Off by default. */
@@ -170,5 +172,5 @@ export interface QRCanvasConfig {
   centerIcon: QRCenterIcon;
 }
 
-export type ActiveView = 'guest' | 'host' | 'projector' | 'pricing' | 'events_list' | 'ingest';
+export type ActiveView = 'guest' | 'host' | 'projector' | 'pricing' | 'events_list' | 'ingest' | 'privacy' | 'terms';
 export type GuestTab = 'feed' | 'quests' | 'audio';

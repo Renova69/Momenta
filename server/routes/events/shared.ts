@@ -93,7 +93,7 @@ export const HOST_EVENT_COLUMNS = `
   id, title, slug, host_name, host_email, host_user_id, event_date, venue_name,
   welcome_message, theme_palette, cover_image_url, is_moderation_enabled,
   is_disposable_mode, is_public, max_photos_per_guest, reveal_at, quest_prize, show_tv_leaderboard,
-  created_at, updated_at
+  expires_at, created_at, updated_at
 `;
 
 /**
@@ -119,6 +119,8 @@ export function toPublicEvent(event: Record<string, unknown>) {
     reveal_at: event.reveal_at,
     quest_prize: event.quest_prize,
     show_tv_leaderboard: event.show_tv_leaderboard,
+    // N-159 — guests are told when the album closed to new photos.
+    expires_at: event.expires_at,
     guest_count: event.guest_count,
     created_at: event.created_at,
     updated_at: event.updated_at,

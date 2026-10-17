@@ -13,6 +13,7 @@ import { requireUuidParams } from '../../middleware/uuid';
 import { reactionLimiter } from '../../middleware/rateLimit';
 import { wsManager } from '../../ws/wsServer';
 import { errorLabel } from '../../lib/errors';
+import { isAlbumClosed, albumClosedRefusal } from '../../lib/albumClosed';
 import {
   ReactionSchema,
 } from './shared';
@@ -36,10 +37,13 @@ eventsRouter.post(
     const { reaction, guestName } = req.body;
 
     try {
-      const exists = await pool.query('SELECT 1 FROM events WHERE id = $1', [id]);
+      const exists = await pool.query('SELECT expires_at FROM events WHERE id = $1', [id]);
       if (exists.rows.length === 0) {
         return res.status(404).json({ error: 'Event not found' });
       }
+      // N-159 — the screen of a closed album takes no new reactions either.
+      const { expires_at: expiresAt } = exists.rows[0];
+      if (isAlbumClosed(expiresAt)) return res.status(403).json(albumClosedRefusal(expiresAt));
 
       // Queued and flushed in a short batch rather than broadcast
       // immediately — a reaction flood turns into far fewer WebSocket

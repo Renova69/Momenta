@@ -23,6 +23,7 @@ import { CameraCaptureModal } from './components/camera/CameraCaptureModal';
 import { LightboxModal } from './components/gallery/LightboxModal';
 import { GuestOnboardingModal } from './components/guest/GuestOnboardingModal';
 import { HostDialogs, PricingPlansModal } from './components/host/HostDialogs';
+import { isAlbumClosed } from './utils/albumStatus';
 
 /**
  * Everything below is loaded when it is first needed, not before.
@@ -61,6 +62,9 @@ const LandingHomePage = lazy(() =>
 const PhotographerIngestPortal = lazy(() =>
   import('./components/ingest/PhotographerIngestPortal').then((m) => ({ default: m.PhotographerIngestPortal }))
 );
+// N-163 — its own chunk: no album page downloads the legal text.
+const LegalPage = lazy(() => import('./components/legal/LegalPage').then((m) => ({ default: m.LegalPage })));
+import { LegalFooterLinks } from './components/legal/LegalLinks';
 import { isFeatureUnlocked } from './config/tierGating';
 import { useQuestLeaderboard } from './hooks/useQuestLeaderboard';
 import { useCheckoutReturn } from './hooks/useCheckoutReturn';
@@ -152,6 +156,10 @@ function WeddingAppContent() {
       setIsGuestProfileOpen(true);
     }
   }, [currentGuest, activeView, isLoadingEvent]);
+  // N-159 — from its deadline an album takes nothing new. The server refuses
+  // on its own; this keeps the screens from offering what it would refuse.
+  const albumClosedAt = isAlbumClosed(event.expiresAt) ? (event.expiresAt ?? null) : null;
+
   // Handlers
   const handleOpenCaptureForQuest = (questId: string) => {
     setSelectedQuestForCapture(questId);
@@ -216,24 +224,26 @@ function WeddingAppContent() {
   // memo comparison entirely, which is the whole point of memoizing.
   const handleLikeWithPrompt = useCallback(
     (photoId: string) => {
+      if (albumClosedAt) return;
       if (!currentGuest || currentGuest.id === 'anonymous') {
         setIsGuestProfileOpen(true);
         return;
       }
       toggleLikePhoto(photoId);
     },
-    [currentGuest, toggleLikePhoto]
+    [albumClosedAt, currentGuest, toggleLikePhoto]
   );
 
   const handleReactWithPrompt = useCallback(
     (photoId: string, reaction: PhotoReactionKind) => {
+      if (albumClosedAt) return;
       if (!currentGuest || currentGuest.id === 'anonymous') {
         setIsGuestProfileOpen(true);
         return;
       }
       togglePhotoReaction(photoId, reaction);
     },
-    [currentGuest, togglePhotoReaction]
+    [albumClosedAt, currentGuest, togglePhotoReaction]
   );
 
   const handleOpenLightbox = lightbox.open;
@@ -460,6 +470,7 @@ function WeddingAppContent() {
                     onOpenLightbox={handleOpenLightbox}
                     onOpenCapture={handleOpenGeneralCapture}
                     isLoadingPhotos={isSyncingAlbum}
+                    closedAt={albumClosedAt}
                   />
                 )}
 
@@ -489,6 +500,7 @@ function WeddingAppContent() {
                     <AudioGuestbook
                       entries={audioEntries}
                       onAddAudioEntry={addAudioEntry}
+                      closedAt={albumClosedAt}
                     />
                   )
                 )}
@@ -560,6 +572,9 @@ function WeddingAppContent() {
           />
         )}
 
+        {/* The privacy policy and the terms (N-163) */}
+        {(activeView === 'privacy' || activeView === 'terms') && <LegalPage doc={activeView} />}
+
         {/* VIEW 4: PRICING PLANS */}
         {activeView === 'pricing' && (
           <div className="py-6 animate-fade-in">
@@ -601,6 +616,7 @@ function WeddingAppContent() {
         quests={quests}
         selectedQuestId={selectedQuestForCapture}
         onPhotoUploaded={addPhoto}
+        closedAt={albumClosedAt}
       />
 
       {/* 2. Fullscreen Lightbox & Comments Modal */}
@@ -611,6 +627,7 @@ function WeddingAppContent() {
         onLike={handleLikeWithPrompt}
         onReact={handleReactWithPrompt}
         onAddComment={handleAddComment}
+        closedAt={albumClosedAt}
       />
 
       {/* 3. Guest Profile / Onboarding Modal */}
@@ -670,6 +687,7 @@ function WeddingAppContent() {
           <span>{i18n.t('ui.app.1')}</span>
         </div>
         <p>{i18n.t('ui.app.2')}</p>
+        <LegalFooterLinks />
       </footer>
     </div>
   );
