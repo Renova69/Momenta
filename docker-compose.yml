@@ -182,6 +182,35 @@ services:
     networks:
       - wedmoments-network
 
+  # Daily database backup (docs/OPERATIONS.md, section 6). Nothing backed the
+  # database up, and it is the only record of whose album is whose and which
+  # file is which photo. Runs scripts/backup-loop.sh in the same postgres image
+  # as the database, so pg_dump always matches the server. Dumps land in
+  # BACKUP_DIR on the host (default ./backups), where they can be copied
+  # somewhere else: a backup on the same disk as the database protects against
+  # mistakes, not against losing the disk. The newest BACKUP_KEEP are kept.
+  # A backup by hand: docker compose run --rm -e BACKUP_ONCE=1 backup
+  backup:
+    image: postgres:16-alpine
+    container_name: wedmoments-backup
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "/opt/backup-loop.sh"]
+    environment:
+      PGHOST: db
+      PGUSER: ${POSTGRES_USER:-postgres}
+      PGPASSWORD: ${POSTGRES_PASSWORD:-postgrespassword}
+      PGDATABASE: ${POSTGRES_DB:-wedmoments_db}
+      BACKUP_KEEP: ${BACKUP_KEEP:-14}
+      BACKUP_INTERVAL_HOURS: ${BACKUP_INTERVAL_HOURS:-24}
+    volumes:
+      - ./scripts/backup-loop.sh:/opt/backup-loop.sh:ro
+      - ${BACKUP_DIR:-./backups}:/backups
+    networks:
+      - wedmoments-network
+
 # --------------------------------------------------------------------
 # Persistent Storage Volumes & Network
 # --------------------------------------------------------------------

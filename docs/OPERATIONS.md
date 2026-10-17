@@ -198,4 +198,102 @@ there before changing it.
 
 `docs/G2_CAPACITY_BENCHMARK_RUNBOOK.md` — how many concurrent guests one
 instance can accept uploads from before latency or failures cross the line.
-Requires real R2 and a load generator on a **separate host**; still open.
+Requires real R2 and a load generator on a **separate host**; still open. A run on one machine, recorded in MASTER_AUDIT §3k, found about 230 album opens a
+second and about 9.5 uploads a second into a single album there.
+
+---
+
+## 6. Backups and recovery
+
+Two things hold a wedding: the **database**, which is the only record of whose
+album is whose and which file is which photo, and the **files** themselves.
+Lose the database and the files are an unlabelled heap; lose the files and the
+database points at nothing. Back up both.
+
+### The database, every day
+
+The `backup` service in `docker-compose.yml` runs `scripts/backup-loop.sh`
+inside the same postgres image as the database (so `pg_dump` always matches
+the server). Every `BACKUP_INTERVAL_HOURS` (default 24) it writes
+`wedmoments-<UTC time>.dump` and a manifest beside it to `BACKUP_DIR` on the
+host (default `./backups`), refuses to keep a dump `pg_restore` cannot read,
+and keeps the newest `BACKUP_KEEP` (default 14).
+
+```bash
+docker compose run --rm -e BACKUP_ONCE=1 backup   # one backup now, by hand
+npm run db:backup                                 # the same, from a checkout
+```
+
+`npm run db:backup` uses the PostgreSQL client tools installed where it runs
+(a managed database such as Neon is reached this way: use its direct, not its
+pooled, connection string, or the counts and the dump cannot share one
+snapshot) or, failing that, those inside the `wedmoments-db` container. Its
+manifest's row counts come from the same snapshot as the dump. Settings:
+`BACKUP_DIR`, `BACKUP_KEEP`, `BACKUP_PG_TOOLS` (`auto` | `local` | `docker`),
+`BACKUP_PG_CONTAINER`. It exits non-zero on any failure, so it can be run from
+cron. A managed database's own point-in-time history is worth having as well,
+but it is kept by the same provider as the database itself.
+
+**A dump holds every guest's name, every host's email and every photo's
+location data.** `backups/` is in `.gitignore` and `.dockerignore`; keep it
+that way, and protect any copy as you would the database.
+
+### Prove a backup restores
+
+```bash
+npm run db:restore-check                    # the newest backup in BACKUP_DIR
+npm run db:restore-check -- <file.dump>     # a given one
+```
+
+Restores the dump into a new, throwaway database on the same server
+(`wedmoments_restore_check_*`, never the live one), checks the dump against its
+manifest's checksum, compares every table's row count, and drops the copy
+(`--keep` leaves it). A backup nobody has restored is a hope: run this after
+any change to the backup setup, and every week or so. First run, 2026-10-17:
+17 tables, 26,919 rows, every table matching, for both the service's dump and
+`npm run db:backup`'s.
+
+### Keep a copy somewhere else
+
+Dumps on the database's own disk protect against mistakes — a bad migration,
+a wrong delete — not against losing the disk or the server. Copy `BACKUP_DIR`
+to somewhere separate on a schedule: another machine, or a storage bucket that
+is not the one holding the photos. This is not set up yet; it needs that
+second place.
+
+### The files
+
+- **Local storage** (`STORAGE_PROVIDER=local`): the photos are in the named
+  volumes `wedmoments_uploads_data` and `wedmoments_quarantine_data`. Back
+  them up as an archive, for example:
+
+  ```bash
+  docker run --rm -v wedmoments_uploads_data:/data:ro -v "$PWD/backups:/out" alpine     tar czf /out/uploads-$(date -u +%Y-%m-%d).tar.gz -C /data .
+  ```
+
+- **Cloudflare R2**: copy the bucket to a second bucket or provider with any
+  S3-compatible sync tool (rclone, for one), on a schedule. Keep the copy's
+  credentials separate from the app's, so a leaked app key cannot delete both.
+
+Restored together from different moments, the two disagree at the edges:
+files newer than the database restore are photos nothing points at, which
+`npm run storage:orphan-report` lists and `storage:orphan-sweep` removes;
+a database newer than the files points at photos that are not there. Restore
+both from as close to the same moment as you can.
+
+### Restoring the live database
+
+Deliberate, and not automated. With the shipped compose, from a shell that
+can redirect a file into a command (bash, or cmd — not PowerShell):
+
+```bash
+docker compose stop app maintenance backup        # nothing writes meanwhile
+npm run db:backup                                 # keep what is there now, in whatever state
+docker exec wedmoments-db dropdb -U postgres --force wedmoments_db
+docker exec wedmoments-db createdb -U postgres wedmoments_db
+docker exec -i wedmoments-db pg_restore -U postgres -d wedmoments_db   --no-owner --no-privileges --exit-on-error < backups/wedmoments-<time>.dump
+docker compose start app maintenance backup       # pending migrations apply on start
+```
+
+Use your own `POSTGRES_USER` and `POSTGRES_DB` if they are not the defaults.
+Check a few albums in the browser before telling anyone it is back.

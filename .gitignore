@@ -46,3 +46,6 @@ tmp_test_*
 
 # Playwright MCP scratch output (page snapshots, console logs)
 .playwright-mcp/
+
+# Database backups (npm run db:backup) hold every guest's personal data. Never commit them.
+backups/
