@@ -11,6 +11,7 @@ import { pool } from '../../lib/db';
 import { requireUuidParams } from '../../middleware/uuid';
 import { wsManager } from '../../ws/wsServer';
 import { errorLabel } from '../../lib/errors';
+import { forGuests } from '../../lib/photoWrite';
 import { storageAdapter, toStoragePath, isQuarantined } from '../../lib/storage';
 import { requireAuth } from '../../middleware/auth';
 import { validateBody } from '../../middleware/validate';
@@ -36,12 +37,12 @@ async function announceToGuests(eventId: string, photoId: string): Promise<void>
   if (photo.isLocked) {
     // Before the reveal guests learn that a photo exists, not what it shows,
     // the same as a locked upload's broadcast.
-    wsManager.broadcastToEventGuests(eventId, 'PHOTO_ADDED', { ...photo, fullUrl: '', thumbnailUrl: '' });
+    wsManager.broadcastToEventGuests(eventId, 'PHOTO_ADDED', { ...forGuests(photo), fullUrl: '', thumbnailUrl: '' });
     return;
   }
   // Promotion failed and was logged: a guest cannot load these URLs.
   if (isQuarantined(String(photo.storagePath)) || isQuarantined(String(photo.thumbnailUrl))) return;
-  wsManager.broadcastToEventGuests(eventId, 'PHOTO_ADDED', photo);
+  wsManager.broadcastToEventGuests(eventId, 'PHOTO_ADDED', forGuests(photo));
 }
 
 /**

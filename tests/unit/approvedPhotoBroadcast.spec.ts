@@ -297,3 +297,40 @@ describe('a photo sent to a disposable album after its reveal (N-171)', () => {
     guest.close();
   });
 });
+
+// N-192 — a disposable album's locked photo was broadcast to guests with its
+// addresses blanked but `storagePath` left in. On R2 that is the full public
+// URL of the quarantined object, in a bucket that is public to read: anyone
+// watching the live connection could open the photo before the reveal.
+// Guests are sent no storage path at all, live or from the feed.
+describe('what guests are told about where a photo is stored (N-192)', () => {
+  it('sends no storage path for a photo locked until the reveal', async () => {
+    const host = await createHost({ moderated: false });
+    await query("UPDATE events SET is_disposable_mode = true, reveal_at = NOW() + INTERVAL '1 day' WHERE id = $1", [
+      host.eventId,
+    ]);
+    const guest = await RoomClient.join(host.eventId);
+
+    await uploadPhoto(host.eventId, 'before the reveal');
+
+    await arrives(() => expect(guest.of('PHOTO_ADDED').length).toBe(1));
+    const sent = guest.of('PHOTO_ADDED')[0].payload;
+    expect(sent.fullUrl).toBe('');
+    expect(sent).not.toHaveProperty('storagePath');
+    guest.close();
+  });
+
+  it('sends none for a visible photo either, live or from the feed', async () => {
+    const host = await createHost({ moderated: false });
+    const guest = await RoomClient.join(host.eventId);
+
+    await uploadPhoto(host.eventId, 'visible');
+
+    await arrives(() => expect(guest.of('PHOTO_ADDED').length).toBe(1));
+    expect(guest.of('PHOTO_ADDED')[0].payload).not.toHaveProperty('storagePath');
+    const feed = (await (await fetch(`${baseUrl}/api/photos?eventId=${host.eventId}`)).json()) as Record<string, unknown>[];
+    expect(feed.length).toBe(1);
+    expect(feed[0]).not.toHaveProperty('storagePath');
+    guest.close();
+  });
+});

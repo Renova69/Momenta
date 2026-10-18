@@ -11,6 +11,7 @@ import { pool } from '../../lib/db';
 import { requireUuidParams } from '../../middleware/uuid';
 import { verifyPreviewToken } from '../../lib/previewToken';
 import { errorLabel } from '../../lib/errors';
+import { forGuests } from '../../lib/photoWrite';
 import { storageAdapter, toStoragePath, isQuarantined } from '../../lib/storage';
 import { optionalAuth } from '../../middleware/auth';
 import { validateQuery } from '../../middleware/validate';
@@ -142,7 +143,7 @@ photosRouter.get('/', optionalAuth, validateQuery(ListPhotosQuerySchema), async 
             originalUrl: row.originalUrl ? buildPreviewUrl(row.id, req.user!.userId, 'original') : null,
           };
         })
-      : result.rows.map((row) => ({ ...row, originalUrl: null }));
+      : result.rows.map((row) => forGuests(row));
 
     res.json(rows);
   } catch (err) {

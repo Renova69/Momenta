@@ -281,7 +281,22 @@ export function broadcastPhotoAdded(args: {
   const broadcastPhoto =
     revealTime && revealTime > Date.now() ? { ...photo, fullUrl: '', thumbnailUrl: '' } : photo;
   wsManager.broadcastToEventHosts(eventId, 'PHOTO_ADDED', broadcastPhoto);
-  wsManager.broadcastToEventGuests(eventId, 'PHOTO_ADDED', { ...broadcastPhoto, originalUrl: null });
+  wsManager.broadcastToEventGuests(eventId, 'PHOTO_ADDED', forGuests(broadcastPhoto));
+}
+
+/**
+ * A photo as guests may see it: no original (MED-02, N-92: the camera file,
+ * EXIF and GPS included) and no storage path. N-192 — the path was left in
+ * when a locked photo's addresses were blanked, and on R2 it is the full
+ * public URL of the quarantined object, in a bucket anyone can read, so the
+ * live connection handed out a disposable album's photos before the reveal.
+ */
+export function forGuests<T extends object>(photo: T): Omit<T, 'storagePath' | 'originalUrl'> & { originalUrl: null } {
+  const { storagePath: _storagePath, originalUrl: _originalUrl, ...rest } = photo as T & {
+    storagePath?: unknown;
+    originalUrl?: unknown;
+  };
+  return { ...(rest as Omit<T, 'storagePath' | 'originalUrl'>), originalUrl: null };
 }
 
 /** Re-exported so callers do not need a second import for URL building. */
