@@ -149,7 +149,8 @@ describe('updateProfile', () => {
 
     const result = await authService.updateProfile('New Name');
 
-    expect(result).toEqual({ success: false, error: 'Not signed in' });
+    // N-182 — in the app's language, not English.
+    expect(result).toEqual({ success: false, error: i18n.t('error.unauthorized') });
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
@@ -172,13 +173,14 @@ describe('updateProfile', () => {
     expect(authService.getUser()?.fullName).toBe('Maria Ivanova');
   });
 
-  it("surfaces the server's own reason for a rejection", async () => {
+  // N-182 — the server's words are English; the host reads the app's own.
+  it("says a refused name in the app's language", async () => {
     const fetchSpy = await signIn();
 
     fetchSpy.mockResolvedValue(mockResponse({ error: 'Name too long' }, 400, false));
     const result = await authService.updateProfile('x'.repeat(500));
 
-    expect(result).toEqual({ success: false, error: 'Name too long' });
+    expect(result).toEqual({ success: false, error: i18n.t('auth.check_details') });
   });
 
   it('falls back to a generic message when the rejection carries no reason', async () => {
@@ -187,7 +189,7 @@ describe('updateProfile', () => {
     fetchSpy.mockResolvedValue(mockResponse({}, 500, false));
     const result = await authService.updateProfile('Name');
 
-    expect(result).toEqual({ success: false, error: 'Update failed' });
+    expect(result).toEqual({ success: false, error: i18n.t('host_profile.save_failed') });
   });
 
   it('reports a network failure', async () => {
@@ -196,7 +198,7 @@ describe('updateProfile', () => {
     fetchSpy.mockRejectedValue(new Error('offline'));
     const result = await authService.updateProfile('Name');
 
-    expect(result).toEqual({ success: false, error: 'offline' });
+    expect(result).toEqual({ success: false, error: i18n.t('auth.network_error') });
   });
 });
 
