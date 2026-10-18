@@ -8,6 +8,7 @@ import { errorLabel } from '../lib/errors';
 import { getStripeClient, subscriptionLivenessAtStripe } from '../lib/stripe';
 import { eraseAlbum, AlbumBeingDeletedError } from '../lib/albumErasure';
 import { wsManager } from '../ws/wsServer';
+import { acquireUserEventCreationLock } from '../middleware/tierGate';
 
 /**
  * A host's own account: change the password, delete the account (N-122).
@@ -145,6 +146,39 @@ async function expireOpenCheckouts(userId: string): Promise<void> {
   }
 }
 
+const DELETION_IN_PROGRESS = {
+  error: 'One of the albums is already being deleted. Try again in a few minutes.',
+  code: 'DELETION_IN_PROGRESS',
+};
+
+const MAX_ERASURE_ROUNDS = 3;
+
+/**
+ * Delete the user if they have no album left, holding the lock album creation
+ * takes so none can appear between the check and the delete. The cascade
+ * removes the subscription rows; the deletion records keep no owner.
+ */
+async function deleteUserIfNoAlbums(userId: string): Promise<boolean> {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await acquireUserEventCreationLock(client, userId);
+    const left = await client.query('SELECT 1 FROM events WHERE host_user_id = $1 LIMIT 1', [userId]);
+    if (left.rows.length > 0) {
+      await client.query('ROLLBACK');
+      return false;
+    }
+    await client.query('DELETE FROM users WHERE id = $1', [userId]);
+    await client.query('COMMIT');
+    return true;
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => undefined);
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
 /**
  * DELETE /api/auth/account — the host's right to erasure (GDPR Article 17).
  *
@@ -166,6 +200,15 @@ accountRouter.delete(
       const refused = await passwordRefusal(userId, password);
       if (refused) return res.status(refused.status).json(refused.body);
 
+      // N-179 — asked before the plan is cancelled. An album another deletion
+      // holds used to be found only after it, leaving the account with its
+      // plan cancelled and nothing else changed.
+      const held = await pool.query(
+        "SELECT 1 FROM events WHERE host_user_id = $1 AND deleting_at > NOW() - INTERVAL '1 hour' LIMIT 1",
+        [userId]
+      );
+      if (held.rows.length > 0) return res.status(409).json(DELETION_IN_PROGRESS);
+
       if (!(await cancelPlansAtStripe(userId))) {
         return res.status(503).json({
           error: 'The payment provider could not be reached to cancel the plan. Nothing was deleted; please try again.',
@@ -174,28 +217,30 @@ accountRouter.delete(
       }
       await expireOpenCheckouts(userId);
 
-      const albums = await pool.query<{ id: string }>('SELECT id FROM events WHERE host_user_id = $1', [userId]);
+      let albumsDeleted = 0;
       let photosDeleted = 0;
-      for (const { id } of albums.rows) {
-        try {
-          photosDeleted += (await eraseAlbum(id)).photosDeleted;
-        } catch (err) {
-          if (err instanceof AlbumBeingDeletedError) {
-            return res.status(409).json({
-              error: 'One of the albums is already being deleted. Try again in a few minutes.',
-              code: 'DELETION_IN_PROGRESS',
-            });
+      for (let round = 0; ; round++) {
+        const albums = await pool.query<{ id: string }>('SELECT id FROM events WHERE host_user_id = $1', [userId]);
+        for (const { id } of albums.rows) {
+          try {
+            photosDeleted += (await eraseAlbum(id)).photosDeleted;
+            albumsDeleted += 1;
+          } catch (err) {
+            if (err instanceof AlbumBeingDeletedError) return res.status(409).json(DELETION_IN_PROGRESS);
+            throw err;
           }
-          throw err;
         }
+        // N-179 — the user row goes only once no album is left, under the lock
+        // album creation takes. An album made in another tab meanwhile used to
+        // go with the cascade on events.host_user_id, without eraseAlbum, and
+        // left its files in storage; it is erased like the others.
+        if (await deleteUserIfNoAlbums(userId)) break;
+        if (round >= MAX_ERASURE_ROUNDS) throw new Error('albums kept appearing while the account was being deleted');
       }
-
-      // Cascades the subscription rows; the deletion records keep no owner.
-      await pool.query('DELETE FROM users WHERE id = $1', [userId]);
       wsManager.closeUserSessions(userId);
-      console.warn(`[Auth] account ${userId} deleted with ${albums.rows.length} album(s), ${photosDeleted} photo(s)`);
+      console.warn(`[Auth] account ${userId} deleted with ${albumsDeleted} album(s), ${photosDeleted} photo(s)`);
 
-      res.json({ deleted: true, albumsDeleted: albums.rows.length, photosDeleted });
+      res.json({ deleted: true, albumsDeleted, photosDeleted });
     } catch (err) {
       console.error('[Auth] DELETE /account error:', errorLabel(err));
       res.status(500).json({ error: 'Internal server error' });

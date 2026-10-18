@@ -188,6 +188,23 @@ describe('deleting the account (N-122)', () => {
     expect((await login(host.email, PASSWORD)).status).toBe(401);
   });
 
+  // N-179 — the plan was cancelled at Stripe before the albums were looked
+  // at, so an album already being deleted (409) left the account with its
+  // plan cancelled and nothing else changed.
+  it('refuses before cancelling the plan when an album is already being deleted', async () => {
+    const host = await registerHost();
+    await givePlan(host.userId, 'sub_account_in_progress');
+    await query('UPDATE events SET deleting_at = NOW() WHERE id = $1', [host.eventId]);
+
+    const res = await send('DELETE', '/api/auth/account', host.token, { password: PASSWORD });
+
+    expect(res.status).toBe(409);
+    expect((await res.json()).code).toBe('DELETION_IN_PROGRESS');
+    expect(stripe.cancel).not.toHaveBeenCalled();
+    expect((await query('SELECT 1 FROM users WHERE id = $1', [host.userId])).rows).toHaveLength(1);
+    await query('UPDATE events SET deleting_at = NULL WHERE id = $1', [host.eventId]);
+  });
+
   // N-173 — a checkout still open could be paid after the account was gone.
   it('closes a checkout still open for the account, so it cannot be paid afterwards', async () => {
     const host = await registerHost();
