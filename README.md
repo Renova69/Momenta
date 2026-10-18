@@ -59,12 +59,15 @@
 
 ### Стартиране чрез Docker Compose (Production-ready)
 
+Първо копирайте `.env.example` в `.env` и задайте `POSTGRES_PASSWORD` и
+`JWT_SECRET` — без тях compose отказва да стартира.
+
 ```bash
 docker compose up --build -d
 ```
 
 - **Приложение (Уеб & API & WebSockets)**: [http://localhost:6501](http://localhost:6501)
-- **PostgreSQL 16 база данни**: `localhost:6532` (`wedmoments_db`)
+- **PostgreSQL 16 база данни**: `127.0.0.1:6532` (`wedmoments_db`), само от тази машина
 
 ### Стартиране в режим за разработка (Development Mode)
 

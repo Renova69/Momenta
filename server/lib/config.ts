@@ -35,6 +35,35 @@ if (process.env.NODE_ENV === 'production' && PUBLICLY_KNOWN_JWT_SECRETS.has(JWT_
   );
 }
 
+// N-167 — the database credential, by the same rule. docker-compose.yml once
+// fell back to a password committed to this repository, as does the
+// development default below, and the database port was published on every
+// interface. In production, refuse a missing URL or a published password
+// rather than run on a credential anyone who has read the repository knows.
+const PUBLISHED_DATABASE_PASSWORDS = new Set(['postgrespassword', 'REPLACE_WITH_POSTGRES_PASSWORD']);
+
+function databasePassword(url: string): string {
+  try {
+    return decodeURIComponent(new URL(url).password);
+  } catch {
+    return ''; // Not a URL; pg reports that itself on first connect.
+  }
+}
+
+if (process.env.NODE_ENV === 'production') {
+  const databaseUrl = process.env.DATABASE_URL;
+  if (!databaseUrl) {
+    throw new Error('[CONFIG] DATABASE_URL must be set in production. Refusing to start.');
+  }
+  if (PUBLISHED_DATABASE_PASSWORDS.has(databasePassword(databaseUrl))) {
+    throw new Error(
+      '[CONFIG] DATABASE_URL uses a database password published in this repository, which anyone ' +
+      'who has read it knows. Set a real POSTGRES_PASSWORD (and ALTER USER on an existing database). ' +
+      'Refusing to start.'
+    );
+  }
+}
+
 // [FIX C-9] CORS_ORIGIN must be explicitly configured — wildcard '*' is not safe with credentials
 const CORS_ORIGIN = process.env.CORS_ORIGIN;
 if (!CORS_ORIGIN) {

@@ -6,13 +6,16 @@ This guide details how to run the WedMoments environment locally via Docker on p
 
 ## 1. Start Fullstack Production Environment (Unified Docker Compose)
 
+Copy `.env.example` to `.env` first and set `POSTGRES_PASSWORD` and
+`JWT_SECRET`; compose refuses to start without either.
+
 ```bash
 docker compose up --build -d
 ```
 
 This starts:
 - **WedMoments Unified Fullstack App**: `http://localhost:6501`
-- **PostgreSQL 16 Database**: `localhost:6532` (`wedmoments_db`)
+- **PostgreSQL 16 Database**: `127.0.0.1:6532` (`wedmoments_db`), reachable from this machine only
 
 ---
 

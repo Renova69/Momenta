@@ -88,7 +88,7 @@ Your completed `.env` file should look like this:
 
 ```ini
 PORT=6501
-DATABASE_URL=postgresql://postgres:postgrespassword@127.0.0.1:6532/wedmoments_db
+DATABASE_URL=postgresql://postgres:REPLACE_WITH_POSTGRES_PASSWORD@127.0.0.1:6532/wedmoments_db
 JWT_SECRET=wedmoments_jwt_super_secret_key_2026_change_in_prod
 JWT_EXPIRES_IN=7d
 

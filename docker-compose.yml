@@ -14,9 +14,15 @@ services:
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-wedmoments_db}
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgrespassword}
+      # N-167 — no fallback, as for JWT_SECRET below: the old default was
+      # committed to this repository. Postgres applies it only when the volume
+      # is first created; to change it later, ALTER USER as well.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env - letters and digits, see .env.example}
+    # Loopback only. A bare "6532:5432" listens on every interface, and Docker's
+    # published ports go around a Linux host's firewall (ufw). The host-side
+    # scripts (npm run migrate, db:backup) still reach it on 127.0.0.1.
     ports:
-      - "${DB_PORT:-6532}:5432"
+      - "127.0.0.1:${DB_PORT:-6532}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./database/migrations:/docker-entrypoint-initdb.d:ro
@@ -47,7 +53,7 @@ services:
       # Image processing runs on libuv's threadpool (default 4). Match it to the
       # cores you give this container, or uploads queue behind four threads.
       UV_THREADPOOL_SIZE: ${UV_THREADPOOL_SIZE:-16}
-      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgrespassword}@db:5432/${POSTGRES_DB:-wedmoments_db}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env - letters and digits, see .env.example}@db:5432/${POSTGRES_DB:-wedmoments_db}
       # No fallback on purpose. This compose file sets NODE_ENV=production, and
       # the previous default was a secret committed to this repository — public
       # knowledge, and enough to forge a session token for any account. Compose
@@ -124,7 +130,7 @@ services:
     command: ["node_modules/.bin/tsx", "scripts/maintenance-scheduler.ts"]
     environment:
       NODE_ENV: production
-      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgrespassword}@db:5432/${POSTGRES_DB:-wedmoments_db}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env - letters and digits, see .env.example}@db:5432/${POSTGRES_DB:-wedmoments_db}
       JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env - it must not be the example value from this repo}
       # Config is validated on import here too, so the same explicit answer is
       # required as for the app itself. Nothing proxies to this container.
@@ -201,7 +207,7 @@ services:
     environment:
       PGHOST: db
       PGUSER: ${POSTGRES_USER:-postgres}
-      PGPASSWORD: ${POSTGRES_PASSWORD:-postgrespassword}
+      PGPASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env - letters and digits, see .env.example}
       PGDATABASE: ${POSTGRES_DB:-wedmoments_db}
       BACKUP_KEEP: ${BACKUP_KEEP:-14}
       BACKUP_INTERVAL_HOURS: ${BACKUP_INTERVAL_HOURS:-24}
