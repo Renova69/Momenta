@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, screen, fireEvent, cleanup } from '@testing-library/react';
+import { render, screen, fireEvent, cleanup, act } from '@testing-library/react';
 import React from 'react';
 import { PhotoCard } from '../../src/components/gallery/PhotoCard';
 import { Guest, Photo } from '../../src/types';
@@ -208,5 +208,27 @@ describe('liking', () => {
     renderCard({ likesCount: 12 });
 
     expect(screen.getByText('12')).toBeInTheDocument();
+  });
+});
+
+// N-184 — the filter names were translated once, when the module loaded, and
+// the card is memoized, so after a switch to English nothing in it changed:
+// the filter badge, the reaction names and the rest stayed Bulgarian until the
+// photo itself changed.
+describe('switching the language', () => {
+  afterEach(() => {
+    act(() => i18n.setLanguage('bg'));
+  });
+
+  it('re-renders the card in the new language, filter name included', () => {
+    act(() => i18n.setLanguage('bg'));
+    renderCard({ filterApplied: 'vintage_warmth' });
+    const bg = i18n.t('filter.vintage_warmth');
+    expect(screen.getByText(bg)).toBeTruthy();
+
+    act(() => i18n.setLanguage('en'));
+
+    expect(screen.queryByText(bg)).toBeNull();
+    expect(screen.getByText(i18n.t('filter.vintage_warmth'))).toBeTruthy();
   });
 });

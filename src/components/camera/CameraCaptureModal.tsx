@@ -37,13 +37,16 @@ interface CameraCaptureModalProps {
 // SEC-W3: cap on how many files a single bulk selection processes.
 const MAX_BULK_UPLOAD_FILES = 10;
 
-const FILTERS: { id: PhotoFilter; label: string; previewColor: string }[] = [
-  { id: 'original', label: i18n.t('filter.original'), previewColor: 'from-neutral-700 to-neutral-900' },
-  { id: 'golden_glow', label: i18n.t('filter.golden_glow'), previewColor: 'from-amber-600 to-yellow-800' },
-  { id: 'vintage_warmth', label: i18n.t('filter.vintage_warmth'), previewColor: 'from-orange-700 to-amber-900' },
-  { id: 'black_white', label: i18n.t('filter.black_white'), previewColor: 'from-neutral-400 to-neutral-800' },
-  { id: 'film_grain', label: i18n.t('filter.film_grain'), previewColor: 'from-stone-600 to-stone-900' },
+// Each label is looked up when drawn, not when this module loads (N-184).
+const FILTER_STYLES: { id: PhotoFilter; previewColor: string }[] = [
+  { id: 'original', previewColor: 'from-neutral-700 to-neutral-900' },
+  { id: 'golden_glow', previewColor: 'from-amber-600 to-yellow-800' },
+  { id: 'vintage_warmth', previewColor: 'from-orange-700 to-amber-900' },
+  { id: 'black_white', previewColor: 'from-neutral-400 to-neutral-800' },
+  { id: 'film_grain', previewColor: 'from-stone-600 to-stone-900' },
 ];
+
+const filtersInLanguage = () => FILTER_STYLES.map((f) => ({ ...f, label: i18n.t(`filter.${f.id}`) }));
 
 export const CameraCaptureModal: React.FC<CameraCaptureModalProps> = ({
   isOpen,
@@ -642,7 +645,7 @@ export const CameraCaptureModal: React.FC<CameraCaptureModalProps> = ({
       {isCaptured || capturedRawUrl ? (
         <CaptureReview
           filter={selectedFilter}
-          filters={FILTERS}
+          filters={filtersInLanguage()}
           onSelectFilter={chooseFilter}
           quests={quests}
           selectedQuestId={selectedQuestId}
@@ -658,7 +661,7 @@ export const CameraCaptureModal: React.FC<CameraCaptureModalProps> = ({
       ) : (
         <CameraViewfinder
           filter={selectedFilter}
-          filters={FILTERS}
+          filters={filtersInLanguage()}
           onSelectFilter={chooseFilter}
           onShutter={() => {
             if (streamRef.current && videoRef.current && liveCameraAvailable) {

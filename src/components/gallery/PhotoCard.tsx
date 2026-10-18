@@ -13,6 +13,7 @@ import {
   Maximize2
 } from 'lucide-react';
 import { photoAlt } from '../../utils/photoAlt';
+import { useLanguage } from '../../hooks/useLanguage';
 
 interface PhotoCardProps {
   photo: Photo;
@@ -33,12 +34,13 @@ const PHOTO_REACTIONS: { kind: PhotoReactionKind; glyph: string; labelKey: strin
   { kind: 'party', glyph: String.fromCodePoint(0x1f389), labelKey: 'reaction.party' },
 ];
 
-const FILTER_LABELS: Record<string, string> = {
-  original: i18n.t('filter.original'),
-  golden_glow: i18n.t('filter.golden_glow'),
-  vintage_warmth: i18n.t('filter.vintage_warmth'),
-  black_white: i18n.t('filter.black_white'),
-  film_grain: i18n.t('filter.film_grain'),
+// Translated when drawn, not when the module loads (N-184).
+const FILTER_LABEL_KEYS: Record<string, string> = {
+  original: 'filter.original',
+  golden_glow: 'filter.golden_glow',
+  vintage_warmth: 'filter.vintage_warmth',
+  black_white: 'filter.black_white',
+  film_grain: 'filter.film_grain',
 };
 
 /**
@@ -63,6 +65,8 @@ const PhotoCardComponent: React.FC<PhotoCardProps> = ({
   onOpenComments,
   onOpenLightbox,
 }) => {
+  // Memoized below: a language switch changes no prop, so subscribe to it (N-184).
+  useLanguage();
   const isLiked = photo.likedByGuestIds?.includes(currentGuest.id);
   const [isLikeAnimating, setIsLikeAnimating] = useState(false);
 
@@ -180,7 +184,7 @@ const PhotoCardComponent: React.FC<PhotoCardProps> = ({
         {/* Filter Watermark */}
         {photo.filterApplied && photo.filterApplied !== 'original' && (
           <div className="absolute bottom-2 right-2 px-2 py-0.5 rounded-md bg-black/60 backdrop-blur-xs text-[9px] text-cream-200 font-medium">
-            {FILTER_LABELS[photo.filterApplied] || photo.filterApplied}
+            {FILTER_LABEL_KEYS[photo.filterApplied] ? i18n.t(FILTER_LABEL_KEYS[photo.filterApplied]) : photo.filterApplied}
           </div>
         )}
       </div>

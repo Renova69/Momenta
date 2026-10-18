@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Photo, Guest, PlanTier, PhotoReactionKind } from '../../types';
 import { PhotoCard } from './PhotoCard';
+import { useLanguage } from '../../hooks/useLanguage';
 import { ReactionBar } from './ReactionBar';
 import { AlbumClosedNotice } from '../common/AlbumClosedNotice';
 import { i18n } from '../../i18n';
@@ -92,6 +93,8 @@ const LiveFeedComponent: React.FC<LiveFeedProps> = ({
   isLoadingPhotos = false,
   closedAt = null,
 }) => {
+  // Memoized below: a language switch changes no prop, so subscribe to it (N-184).
+  useLanguage();
   const [activeFilter, setActiveFilter] = useState<FeedFilter>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [renderedLimit, setRenderedLimit] = useState(20);
