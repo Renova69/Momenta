@@ -578,7 +578,11 @@ photosRouter.post(
       }
 
       const initialStatus = context.isModerationEnabled ? 'pending' : 'approved';
-      const isLocked = context.isDisposableMode;
+      // N-171 — locked only while the reveal is still ahead, by the feed's own
+      // rule. Taken from the mode alone, every photo sent after the reveal was
+      // quarantined and broadcast as locked, with addresses that load nothing.
+      const isLocked =
+        context.isDisposableMode && context.revealAt !== null && context.revealAt.getTime() > Date.now();
       // MED-03/SEC-M5 — a photo that isn't immediately public yet (awaiting
       // moderation, or disposable-locked before its reveal) must not be saved
       // to a publicly-reachable path at all. API-level filtering already hides

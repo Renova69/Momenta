@@ -267,3 +267,33 @@ describe('the camera original in a live broadcast (N-92)', () => {
     hostClient.close();
   });
 });
+
+// N-171 — an upload counted as disposable-locked whenever the album was in
+// disposable mode, even after its reveal. It was saved to quarantine and
+// broadcast with `isLocked: true` and relative /quarantine/ addresses, which
+// answer with the app's own page: phones, the TV wall and the uploader saw a
+// padlock or a broken image until they reloaded, while the REST feed said the
+// same photo was unlocked.
+describe('a photo sent to a disposable album after its reveal (N-171)', () => {
+  it('is stored and broadcast as an ordinary, visible photo', async () => {
+    const host = await createHost({ moderated: false });
+    await query("UPDATE events SET is_disposable_mode = true, reveal_at = NOW() - INTERVAL '1 hour' WHERE id = $1", [
+      host.eventId,
+    ]);
+    const guest = await RoomClient.join(host.eventId);
+
+    const photo = await uploadPhoto(host.eventId, 'after the reveal');
+
+    await arrives(() => expect(guest.of('PHOTO_ADDED').length).toBe(1));
+    const sent = guest.of('PHOTO_ADDED')[0].payload;
+    expect(sent.isLocked).toBe(false);
+    expect(String(sent.fullUrl)).not.toContain('/quarantine/');
+    expect(String(sent.fullUrl)).toContain('/uploads/');
+    const row = await query<{ is_locked: boolean; is_quarantined: boolean }>(
+      'SELECT is_locked, is_quarantined FROM photos WHERE id = $1',
+      [photo.id]
+    );
+    expect(row.rows[0]).toEqual({ is_locked: false, is_quarantined: false });
+    guest.close();
+  });
+});
