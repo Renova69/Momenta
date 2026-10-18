@@ -299,13 +299,7 @@ export class R2StorageAdapter implements StorageAdapter {
 
   /** Recover the raw R2 object key from either a public URL or the private endpoint URL. */
   private extractKey(storagePath: string): string {
-    if (this.publicBaseUrl && storagePath.startsWith(this.publicBaseUrl)) {
-      return storagePath.replace(`${this.publicBaseUrl}/`, '');
-    }
-    if (storagePath.includes('.r2.cloudflarestorage.com/')) {
-      return storagePath.split('.r2.cloudflarestorage.com/')[1];
-    }
-    return storagePath;
+    return r2KeyFromUrl(storagePath, this.publicBaseUrl);
   }
 
   public async delete(storagePath: string): Promise<void> {
@@ -545,10 +539,52 @@ const COVER_FILENAME = /^cover-\d+-[a-z0-9]+\.jpg$/;
 function isStoredAlbumFile(url: unknown, eventId: string, filename: RegExp): url is string {
   if (typeof url !== 'string' || url.length > 512) return false;
   const id = eventId.toLowerCase();
-  const prefixes = [`${CONFIG.PUBLIC_BASE_URL}/uploads/events/${id}/`, `/uploads/events/${id}/`];
-  if (CONFIG.R2_PUBLIC_URL) prefixes.push(`${CONFIG.R2_PUBLIC_URL}/events/${id}/`);
-  const prefix = prefixes.find((candidate) => url.startsWith(candidate));
-  return !!prefix && filename.test(url.slice(prefix.length));
+  // N-188 — by its path in this album's folder, under any host. Matched on
+  // the host as well, a cover or selfie stored before PUBLIC_BASE_URL or
+  // R2_PUBLIC_URL changed was never deleted when replaced, removed or purged.
+  // The URL parser resolves any `..`, so the folder cannot be stepped out of.
+  let pathname: string;
+  try {
+    pathname = new URL(url, 'http://stored.invalid').pathname;
+  } catch {
+    return false;
+  }
+  const folders = [`/uploads/events/${id}/`, `/events/${id}/`];
+  for (const base of [CONFIG.PUBLIC_BASE_URL, CONFIG.R2_PUBLIC_URL]) {
+    const basePath = base ? safePathname(base).replace(/\/+$/, '') : '';
+    if (basePath) folders.push(`${basePath}/uploads/events/${id}/`, `${basePath}/events/${id}/`);
+  }
+  const folder = folders.find((candidate) => pathname.startsWith(candidate));
+  return !!folder && filename.test(pathname.slice(folder.length));
+}
+
+function safePathname(url: string): string {
+  try {
+    return new URL(url).pathname;
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * The R2 object key a stored address names. An address under the current
+ * public URL, or the private S3 endpoint, maps as it always has; N-188 — one
+ * under an earlier public URL maps by its path, when that is in the
+ * `events/` or `quarantine/` prefixes the app writes to. Anything else is
+ * taken as a key already.
+ */
+export function r2KeyFromUrl(storagePath: string, publicBaseUrl: string): string {
+  if (publicBaseUrl && storagePath.startsWith(publicBaseUrl)) {
+    return storagePath.replace(`${publicBaseUrl}/`, '');
+  }
+  if (storagePath.includes('.r2.cloudflarestorage.com/')) {
+    return storagePath.split('.r2.cloudflarestorage.com/')[1];
+  }
+  if (/^https?:\/\//i.test(storagePath)) {
+    const pathname = safePathname(storagePath);
+    if (/^\/(events|quarantine)\//.test(pathname)) return pathname.slice(1);
+  }
+  return storagePath;
 }
 
 /**
