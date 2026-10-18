@@ -217,7 +217,14 @@ inside the same postgres image as the database (so `pg_dump` always matches
 the server). Every `BACKUP_INTERVAL_HOURS` (default 24) it writes
 `wedmoments-<UTC time>.dump` and a manifest beside it to `BACKUP_DIR` on the
 host (default `./backups`), refuses to keep a dump `pg_restore` cannot read,
-and keeps the newest `BACKUP_KEEP` (default 14).
+and keeps the newest `BACKUP_KEEP` (default 14; anything that is not a whole
+number of at least 1, `0` included, counts as 14, so it can never delete them
+all). A failed backup is tried again every `BACKUP_RETRY_MINUTES` (default
+15), up to `BACKUP_ATTEMPTS` times (default 4), and logged as `FAILED`; on a
+restart the loop waits until the newest dump is one interval old instead of
+adding another. The service runs as root and the files are readable by their
+owner only; set `BACKUP_UID` (and `BACKUP_GID`) to the host user who copies
+them elsewhere, and they are handed to that user.
 
 ```bash
 docker compose run --rm -e BACKUP_ONCE=1 backup   # one backup now, by hand

@@ -219,6 +219,10 @@ services:
       PGDATABASE: ${POSTGRES_DB:-wedmoments_db}
       BACKUP_KEEP: ${BACKUP_KEEP:-14}
       BACKUP_INTERVAL_HOURS: ${BACKUP_INTERVAL_HOURS:-24}
+      # The host user who copies the dumps elsewhere (`id -u`); without it
+      # they are root's alone (N-187). See docs/OPERATIONS.md, section 6.
+      BACKUP_UID: ${BACKUP_UID:-}
+      BACKUP_GID: ${BACKUP_GID:-}
     volumes:
       - ./scripts/backup-loop.sh:/opt/backup-loop.sh:ro
       - ${BACKUP_DIR:-./backups}:/backups

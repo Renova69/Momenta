@@ -165,7 +165,9 @@ export async function runBackup(options: {
 async function main(): Promise<void> {
   const { CONFIG } = await import('../server/lib/config');
   const dir = path.resolve(process.env.BACKUP_DIR || 'backups');
-  const keep = Number.parseInt(process.env.BACKUP_KEEP || '14', 10) || 14;
+  // The rule the compose loop follows (N-177): a whole number of at least 1, else 14.
+  const parsedKeep = Number.parseInt(process.env.BACKUP_KEEP || '14', 10);
+  const keep = parsedKeep >= 1 ? parsedKeep : 14;
   const result = await runBackup({ databaseUrl: String(CONFIG.DATABASE_URL), dir, keep });
   const { manifest } = result;
   const rows = Object.values(manifest.tables).reduce((a, b) => a + b, 0);
