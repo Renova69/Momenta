@@ -22,6 +22,7 @@ import { PhotographerIngestPanel } from './PhotographerIngestPanel';
 import { eventsApi } from '../../api/eventsApi';
 import { storageService } from '../../services/storageService';
 import { i18n } from '../../i18n';
+import { isAcceptableWeddingDate } from '../../../shared/eventLimits';
 import { isFeatureUnlocked } from '../../config/tierGating';
 import { LockedFeatureCard } from '../common/LockedFeatureBadge';
 import { ENV } from '../../config/env';
@@ -176,14 +177,21 @@ export const HostDashboard: React.FC<HostDashboardProps> = ({
     setEventTimeText(formatTime24h(event.eventDate));
   }, [event.eventDate]);
 
+  // N-168 — the server refuses a wedding more than two years ahead; say so
+  // here rather than send a date that can only be refused.
+  const [eventDateError, setEventDateError] = useState<string | null>(null);
   const commitEventDateTime = (nextDateText: string, nextTimeText: string) => {
     const parsed = parseDateAndTime(nextDateText, nextTimeText);
     // FE-05: the slug is the public URL — already shared, printed on QR
     // codes, texted to guests. Changing the ceremony time must never
     // silently change it too.
-    if (parsed) {
-      onUpdateEvent({ eventDate: parsed.toISOString() });
+    if (!parsed) return;
+    if (!isAcceptableWeddingDate(parsed.toISOString())) {
+      setEventDateError(i18n.t('host.event_date_too_far'));
+      return;
     }
+    setEventDateError(null);
+    onUpdateEvent({ eventDate: parsed.toISOString() });
   };
 
   const pendingPhotos = photos.filter((p) => p.status === 'pending');
@@ -262,7 +270,7 @@ export const HostDashboard: React.FC<HostDashboardProps> = ({
     welcomeMessageDraft, setWelcomeMessageDraft,
     eventDateText, setEventDateText,
     eventTimeText, setEventTimeText,
-    commitEventDateTime,
+    commitEventDateTime, eventDateError,
     isResettingGuests, handleResetGuestSessions,
     deleteConfirmText, setDeleteConfirmText,
     isDeletingEvent, handleDeleteEvent,

@@ -518,6 +518,7 @@ export const en: Record<string, string> = {
   'billing.portal_failed': 'The billing page could not be opened. Please try again shortly.',
   'error.album_closed': 'This album has closed and takes no new photos, voice messages, comments or reactions.',
   'error.demo_read_only': 'The demo account is view-only: changes are not saved.',
+  'host.event_date_too_far': 'The wedding date can be at most two years ahead.',
   'demo.view_only_title': 'Demo mode: look around freely, changes are not saved.',
   'demo.view_only_body': 'This is the demo account, shared by every visitor, so its password, name and deletion cannot be changed. Create your own free account to try everything.',
   'album.closed_guest': 'This album closed to new photos on {{date}}. You can still look at and download the photos.',

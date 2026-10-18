@@ -8,7 +8,7 @@
 
 import { z } from 'zod';
 import { BackendPlanTier } from '../../middleware/tierGate';
-import { QUEST_PRIZE_MAX_LENGTH } from '../../../shared/eventLimits';
+import { QUEST_PRIZE_MAX_LENGTH, isAcceptableWeddingDate } from '../../../shared/eventLimits';
 import { SLUG_MAX_LENGTH, SLUG_MIN_LENGTH } from '../../../shared/transliterate';
 import { RESERVED_DEVICE_FINGERPRINTS } from '../../lib/guestAuth';
 
@@ -30,12 +30,22 @@ export const SlugSchema = z
     'Slug may contain only lowercase letters, numbers and single hyphens between them.'
   );
 
+/**
+ * N-168 — a real date, at most two years ahead. Any string used to reach SQL as
+ * `::timestamptz` (a 500 for one that was not a date), and any year moved the
+ * album's deadline with it.
+ */
+const WeddingDateSchema = z
+  .string()
+  .max(40)
+  .refine((value) => isAcceptableWeddingDate(value), 'eventDate must be a date at most two years ahead');
+
 export const UpdateEventSchema = z.object({
   slug: SlugSchema.optional(),
   title: z.string().max(200).optional(),
   hostName: z.string().max(100).optional(),
   hostEmail: z.string().email().max(254).optional(),
-  eventDate: z.string().optional(),
+  eventDate: WeddingDateSchema.optional(),
   venueName: z.string().max(200).optional(),
   // No coverImageUrl (N-139): the cover is set only by POST /:id/cover, which
   // stores its own copy. A URL sent here is dropped with the other unknown
@@ -167,7 +177,7 @@ export const CreateEventSchema = z.object({
   title: z.string().max(200).optional(),
   hostName: z.string().min(2, 'hostName is required').max(100),
   slug: SlugSchema.optional(),
-  eventDate: z.string().optional(),
+  eventDate: WeddingDateSchema.optional(),
   venueName: z.string().max(200).optional(),
   themePalette: z.string().max(50).optional(),
   welcomeMessage: z.string().max(1000).optional(),

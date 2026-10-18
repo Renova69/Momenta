@@ -68,6 +68,7 @@ import { handleStripeWebhook, eventCustomerId } from '../../server/routes/billin
 import { applyTierUpgrade, suspendTierForNonPayment } from '../../server/lib/subscriptionUpgrade';
 import { CONFIG } from '../../server/lib/config';
 import { query } from '../../server/lib/db';
+import { deleteEventFixtures } from '../helpers/cleanup';
 
 const TEST_PORT = 6626;
 const BASE_URL = `http://localhost:${TEST_PORT}`;
@@ -147,6 +148,39 @@ beforeAll(async () => {
 
 afterAll(async () => {
   if (server) server.close();
+});
+
+describe('a one-time pass belongs to an album (N-169)', () => {
+  it('is recorded on the album checkout was opened for, not just the newest', async () => {
+    const userId = await registerHost();
+    const albums = await query<{ id: string }>(
+      `INSERT INTO events (title, slug, host_name, host_email, event_date, host_user_id, created_at)
+       VALUES ('Older', $2, 'Host', 'host@test.com', NOW(), $1, NOW() - INTERVAL '1 day'),
+              ('Newer', $3, 'Host', 'host@test.com', NOW(), $1, NOW())
+       RETURNING id`,
+      [userId, uniqueId('older').toLowerCase(), uniqueId('newer').toLowerCase()]
+    );
+    const [older, newer] = albums.rows.map((r) => r.id);
+
+    const res = await postEvent(
+      checkoutSessionEvent('checkout.session.completed', {
+        mode: 'payment',
+        payment_status: 'paid',
+        amount_total: 4900,
+        metadata: { userId, tier: 'celebration_pass', eventId: older },
+      })
+    );
+
+    expect(res.status).toBe(200);
+    const passes = await query<{ id: string; pass_tier: string | null }>(
+      'SELECT id, pass_tier FROM events WHERE id = ANY($1)',
+      [[older, newer]]
+    );
+    const byId = Object.fromEntries(passes.rows.map((r) => [r.id, r.pass_tier]));
+    expect(byId[older]).toBe('celebration_pass');
+    expect(byId[newer]).toBeNull();
+    await deleteEventFixtures([older, newer]);
+  });
 });
 
 describe('checkout.session.completed — payment settlement', () => {

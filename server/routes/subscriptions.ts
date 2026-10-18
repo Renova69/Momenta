@@ -13,6 +13,8 @@ export const subscriptionsRouter = Router();
 
 const UpgradeSchema = z.object({
   tier: z.enum(['free', 'celebration_pass', 'deluxe_keepsake', 'pro_planner']),
+  /** N-169 — the album a one-time pass is for; the host's own only. */
+  eventSlug: z.string().max(160).optional(),
 });
 
 // POST /api/subscriptions/upgrade — set the caller's plan tier directly,
@@ -31,7 +33,7 @@ const UpgradeSchema = z.object({
 // request the server silently ignored, then reverting on next load. See
 // OPEN_ITEMS.md for that history.
 subscriptionsRouter.post('/upgrade', requireAuth, validateBody(UpgradeSchema), async (req, res) => {
-  const { tier } = req.body as { tier: BackendPlanTier };
+  const { tier, eventSlug } = req.body as { tier: BackendPlanTier; eventSlug?: string };
   const userId = req.user!.userId;
 
   // SECURITY — this route grants a tier with no payment behind it, which is
@@ -112,7 +114,15 @@ subscriptionsRouter.post('/upgrade', requireAuth, validateBody(UpgradeSchema), a
     // The only caller allowed to lower a tier: this is the host choosing a
     // downgrade themselves, with no payment behind it. Purchases must never
     // lower one, so they leave this off.
-    const result = await applyTierUpgrade(userId, tier, { allowLowerTier: true });
+    // A paid tier here stands in for a purchase (no Stripe yet), so it reopens
+    // and binds as one would (N-168, N-169).
+    const album = eventSlug
+      ? await pool.query<{ id: string }>('SELECT id FROM events WHERE slug = $1 AND host_user_id = $2', [eventSlug, userId])
+      : null;
+    const result = await applyTierUpgrade(userId, tier, {
+      allowLowerTier: true,
+      purchase: tier === 'free' ? undefined : { eventId: album?.rows[0]?.id ?? null },
+    });
     // Choosing Free gives up a one-time pass for good, as the confirmation the
     // host clicked says. Left remembered, it would come back the next time a
     // subscription ended (one_time_tier, N-45).

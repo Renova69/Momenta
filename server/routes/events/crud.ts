@@ -14,7 +14,13 @@ import { wsManager } from '../../ws/wsServer';
 import { cleanSlug } from '../../lib/storage';
 import { SLUG_MAX_LENGTH } from '../../../shared/transliterate';
 import { requireAuth, optionalAuth } from '../../middleware/auth';
-import { getEffectiveTierForEvent, getEffectiveTierForUser, meetsTier, acquireUserEventCreationLock } from '../../middleware/tierGate';
+import {
+  getEffectiveTierForEvent,
+  getEffectiveTierForUser,
+  higherTier,
+  meetsTier,
+  acquireUserEventCreationLock,
+} from '../../middleware/tierGate';
 import { computeExpiry, refreshExpiryDates } from '../../lib/retention';
 import { eraseAlbum, AlbumBeingDeletedError, type AlbumErasure } from '../../lib/albumErasure';
 import { errorLabel, isUniqueViolation } from '../../lib/errors';
@@ -340,14 +346,16 @@ eventsRouter.post('/', requireAuth, validateBody(CreateEventSchema), async (req,
 eventsRouter.get('/', requireAuth, async (req, res) => {
   try {
     const { rows } = await pool.query(
-      `SELECT ${HOST_EVENT_COLUMNS} FROM events WHERE host_user_id = $1 ORDER BY created_at DESC`,
+      `SELECT ${HOST_EVENT_COLUMNS}, pass_tier FROM events WHERE host_user_id = $1 ORDER BY created_at DESC`,
       [req.user!.userId]
     );
     // M5 — one lookup, not one per row. The tier belongs to the host, and every
-    // row here is this host's by definition of the WHERE clause above.
+    // row here is this host's by definition of the WHERE clause above; an
+    // album's own pass is on its row (N-168).
     const tier = await getEffectiveTierForUser(req.user!.userId);
     for (const ev of rows) {
-      ev.planTier = tier;
+      ev.planTier = higherTier(tier, ev.pass_tier);
+      delete ev.pass_tier;
     }
     res.json(rows);
   } catch (err) {

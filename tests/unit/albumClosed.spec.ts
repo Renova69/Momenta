@@ -149,8 +149,8 @@ describe('an album past its expires_at (N-159)', () => {
   // The deadline is counted from the wedding. Moving the wedding later used
   // to leave it where it was, which once it closes the album would shut it
   // before the new date.
-  it('moves the deadline with the wedding date', async () => {
-    await setExpiry('past');
+  it('moves the deadline of an open album with the wedding date', async () => {
+    await setExpiry('future');
     const newDate = new Date(Date.now() + 60 * 86400_000).toISOString();
 
     const res = await fetch(`${BASE_URL}/api/events/${eventId}`, {
@@ -163,6 +163,24 @@ describe('an album past its expires_at (N-159)', () => {
     expect(res.status).toBe(200);
     expect(new Date(saved.expires_at).getTime()).toBeGreaterThan(new Date(newDate).getTime());
     expect((await uploadPhoto()).status).toBe(201);
+  });
+
+  // N-168 — this used to reopen the album: the owner's rule (2026-10-18) is
+  // that only a purchase may. See albumDeadlineRules.spec.ts.
+  it('does not reopen a closed album when the wedding date moves', async () => {
+    await setExpiry('past');
+    const newDate = new Date(Date.now() + 60 * 86400_000).toISOString();
+
+    const res = await fetch(`${BASE_URL}/api/events/${eventId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${hostToken}` },
+      body: JSON.stringify({ eventDate: newDate }),
+    });
+    const saved = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(new Date(saved.expires_at).getTime()).toBeLessThan(Date.now());
+    expect((await uploadPhoto()).status).toBe(403);
   });
 
   it('never closes an album with no deadline, such as a Pro Planner one', async () => {

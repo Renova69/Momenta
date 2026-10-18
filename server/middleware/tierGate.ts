@@ -22,6 +22,22 @@ export function meetsTier(current: BackendPlanTier, required: BackendPlanTier): 
   return (TIER_WEIGHTS[current] ?? 0) >= (TIER_WEIGHTS[required] ?? 0);
 }
 
+/** A stored tier name, or free when it is missing or not one this app knows. */
+function knownTier(tier: string | null | undefined): BackendPlanTier {
+  return tier && TIER_WEIGHTS[tier as BackendPlanTier] !== undefined ? (tier as BackendPlanTier) : 'free';
+}
+
+/**
+ * The higher of an account's plan and the pass bought for one album (N-168).
+ * A one-time pass belongs to its album: the album keeps it after the
+ * account's pass is used up, so a closed album can still be downloaded.
+ */
+export function higherTier(accountTier: string | null | undefined, albumPass: string | null | undefined): BackendPlanTier {
+  const account = knownTier(accountTier);
+  const pass = knownTier(albumPass);
+  return (TIER_WEIGHTS[pass] ?? 0) > (TIER_WEIGHTS[account] ?? 0) ? pass : account;
+}
+
 /**
  * Resolves the effective plan tier for an event from its host's ACTIVE subscription.
  *
@@ -31,17 +47,17 @@ export function meetsTier(current: BackendPlanTier, required: BackendPlanTier): 
  */
 export async function getEffectiveTierForEvent(eventId: string): Promise<BackendPlanTier> {
   const result = await pool.query(
-    `SELECT s.tier AS tier
+    `SELECT s.tier AS tier, e.pass_tier
      FROM events e
-     JOIN subscriptions s ON s.user_id = e.host_user_id
-     WHERE e.id = $1 AND s.status = 'active'
-     ORDER BY s.created_at DESC
+     LEFT JOIN subscriptions s ON s.user_id = e.host_user_id AND s.status = 'active'
+     WHERE e.id = $1
+     ORDER BY s.created_at DESC NULLS LAST
      LIMIT 1`,
     [eventId]
   );
 
-  const tier = result.rows[0]?.tier as BackendPlanTier | undefined;
-  return tier && TIER_WEIGHTS[tier] !== undefined ? tier : 'free';
+  const row = result.rows[0];
+  return higherTier(row?.tier, row?.pass_tier);
 }
 
 /**
@@ -161,6 +177,7 @@ export async function getUploadContext(
             e.reveal_at,
             e.max_photos_per_guest,
             e.expires_at,
+            e.pass_tier,
             COALESCE(s.tier, 'free') AS tier,
             -- A rejected photo is one the host refused. Counting it against
             -- the plan's allowance charges the couple for a picture nobody
@@ -193,9 +210,8 @@ export async function getUploadContext(
   if (rows.length === 0) return null;
   const row = rows[0];
 
-  const tier = (TIER_WEIGHTS[row.tier as BackendPlanTier] !== undefined
-    ? row.tier
-    : 'free') as BackendPlanTier;
+  // N-168 — the album's own pass counts as well as the account's plan.
+  const tier = higherTier(row.tier, row.pass_tier);
   const limits = limitsFor(tier);
 
   return {

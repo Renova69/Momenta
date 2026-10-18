@@ -12,10 +12,10 @@ export const subscriptionsApi = {
   // Sets the caller's plan tier for real. See server/routes/subscriptions.ts
   // for why this writes the subscriptions row directly rather than going
   // through a payment gateway.
-  upgrade: async (tier: PlanTier): Promise<SubscriptionSummary> => {
+  upgrade: async (tier: PlanTier, eventSlug?: string): Promise<SubscriptionSummary> => {
     return apiFetch<SubscriptionSummary>('/api/subscriptions/upgrade', {
       method: 'POST',
-      body: JSON.stringify({ tier }),
+      body: JSON.stringify({ tier, eventSlug }),
     });
   },
 };

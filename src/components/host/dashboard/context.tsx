@@ -84,6 +84,8 @@ export interface HostDashboardValue {
   eventTimeText: string;
   setEventTimeText: (value: string) => void;
   commitEventDateTime: (nextDateText: string, nextTimeText: string) => void;
+  /** N-168 — why the last date typed was not saved, or null. */
+  eventDateError: string | null;
 
   // ——— Destructive actions, each with its own in-flight flag ———
   isResettingGuests: boolean;

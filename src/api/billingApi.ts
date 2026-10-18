@@ -27,11 +27,13 @@ export const billingApi = {
   createCheckoutSession: async (
     tier: Exclude<PlanTier, 'free'>,
     successUrl: string,
-    cancelUrl: string
+    cancelUrl: string,
+    /** N-169 — the album a one-time pass is bought for. */
+    eventSlug?: string
   ): Promise<CheckoutSessionResult> => {
     return apiFetch<CheckoutSessionResult>('/api/billing/checkout-session', {
       method: 'POST',
-      body: JSON.stringify({ tier, successUrl, cancelUrl }),
+      body: JSON.stringify({ tier, successUrl, cancelUrl, eventSlug }),
     });
   },
 

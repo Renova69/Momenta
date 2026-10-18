@@ -17,6 +17,8 @@ const CheckoutSessionSchema = z.object({
   tier: z.enum(['celebration_pass', 'deluxe_keepsake', 'pro_planner']),
   successUrl: z.string().url(),
   cancelUrl: z.string().url(),
+  /** N-169 — the album a one-time pass is bought for; the host's own only. */
+  eventSlug: z.string().max(160).optional(),
 });
 
 /**
@@ -97,10 +99,11 @@ billingRouter.post(
   requireAuth,
   validateBody(CheckoutSessionSchema),
   async (req, res) => {
-    const { tier, successUrl, cancelUrl } = req.body as {
+    const { tier, successUrl, cancelUrl, eventSlug } = req.body as {
       tier: PaidPlanTier;
       successUrl: string;
       cancelUrl: string;
+      eventSlug?: string;
     };
 
     // Validate the request's own shape before checking whether the feature
@@ -187,6 +190,13 @@ billingRouter.post(
         });
       }
 
+      // A one-time pass is for one album (N-169): the one the studio has open,
+      // if it is this host's. The webhook records the pass there.
+      const album = eventSlug
+        ? await pool.query<{ id: string }>('SELECT id FROM events WHERE slug = $1 AND host_user_id = $2', [eventSlug, userId])
+        : null;
+      const eventId = album?.rows[0]?.id;
+
       const session = await getStripeClient().checkout.sessions.create({
         mode: pricing.mode,
         customer: stripeCustomerId,
@@ -195,7 +205,7 @@ billingRouter.post(
         success_url: successUrl,
         cancel_url: cancelUrl,
         client_reference_id: userId,
-        metadata: { userId, tier },
+        metadata: { userId, tier, ...(eventId ? { eventId } : {}) },
         // Copied onto the subscription itself so a later cancellation event
         // — which carries the subscription, never the session — can still be
         // traced back to this account. billingWebhook.ts falls back to the

@@ -25,7 +25,7 @@ export const OverviewTab: React.FC = () => {
   // One id per field, so each visible label points at the control it names.
   const fieldIds = useId();
   const {
-    commitEventDateTime, deleteConfirmText, event, eventDateText, eventTimeText,
+    commitEventDateTime, deleteConfirmText, event, eventDateError, eventDateText, eventTimeText,
     guests, handleDeleteEvent, handleResetGuestSessions, hostNameDraft,
     isDeletingEvent, isResettingGuests, onOpenPricing, onUpdateEvent, onSetCover, onRemoveCover,
     pendingPhotos, photos, quests, setDeleteConfirmText, setEventDateText,
@@ -425,6 +425,11 @@ export const OverviewTab: React.FC = () => {
                   className="w-24 px-3 py-2 rounded-xl bg-noir-900 border border-cream-400/20 text-xs text-cream-100 focus:outline-hidden focus:border-gold-400 font-mono"
                 />
               </div>
+              {eventDateError && (
+                <p role="alert" className="text-[11px] text-rosewood-400 mt-1">
+                  {eventDateError}
+                </p>
+              )}
             </div>
 
             <div>

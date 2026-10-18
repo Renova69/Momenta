@@ -13,6 +13,7 @@ import {
 } from '../lib/subscriptionUpgrade';
 import { PAID_TIER_PRICING, PaidPlanTier, isPaidTier, isPriceMapConfigured, tierForPriceId } from '../lib/stripePlans';
 import { BackendPlanTier } from '../middleware/tierGate';
+import { isValidUuid } from '../lib/validation';
 
 /**
  * POST /api/billing/webhook — the only place a paid tier is ever actually
@@ -261,6 +262,8 @@ async function grantTierFromSession(
     stripeSubscriptionId: sessionSubscriptionId(session),
     // A completed purchase settles any dunning window that was open.
     pastDueGraceExpiry: null,
+    // N-169 — a pass belongs to the album checkout was opened for.
+    purchase: { eventId: isValidUuid(session.metadata?.eventId) ? session.metadata!.eventId : null },
     db,
   });
 }
@@ -332,6 +335,7 @@ async function handleInvoicePaid(db: PoolClient, invoice: Stripe.Invoice): Promi
     stripeSubscriptionId: subscriptionId,
     // Payment recovered — close any grace window the failed charge opened.
     pastDueGraceExpiry: null,
+    purchase: {},
     db,
   });
 }

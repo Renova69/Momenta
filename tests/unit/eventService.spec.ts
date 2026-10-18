@@ -276,7 +276,8 @@ describe('upgradePlanTier', () => {
 
     await upgradePlanTier(ctx, 'pro_planner');
 
-    expect(upgrade).toHaveBeenCalledWith('pro_planner');
+    // With the open album, which a one-time pass is bought for (N-169).
+    expect(upgrade).toHaveBeenCalledWith('pro_planner', 'ivan-and-maria');
     // The server's copy is the only thing tier gating trusts.
     expect(getBySlug).toHaveBeenCalled();
   });

@@ -139,6 +139,15 @@ Stores wedding/event settings and feature toggles.
   creation from the plan's window (migration 008). `npm run retention:report`
   reads this; `npm run retention:sweep` (opt-in via `RETENTION_ENFORCED=true`)
   deletes past it plus a 30-day grace period — see OPEN_ITEMS.md D1.
+  The album also closes to new content here (N-159). A recompute keeps a
+  deadline that has passed unless a payment caused it, so editing the wedding
+  date never reopens a closed album (N-168).
+- `pass_tier` (VARCHAR(50), Nullable — migration 037): the one-time pass
+  bought for this album. The album's tier is the higher of this and the
+  host's plan, so a closed album keeps what was paid for (N-168).
+- `pass_started_at` (TIMESTAMPTZ, Nullable — migration 037): when that pass
+  was bought. Its days count from the wedding or from this, whichever is
+  later (N-169); NULL keeps the wedding as the start.
 - `created_at`, `updated_at` (TIMESTAMPTZ).
 - `is_public` (BOOLEAN, NOT NULL, default `false`): Whether the album appears
   on the public showcase feed. A privacy control, deliberately **not** tier-gated —

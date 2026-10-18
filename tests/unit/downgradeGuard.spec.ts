@@ -392,7 +392,8 @@ describe('downgrade guard (H7)', () => {
         host.userId,
       ]);
 
-      await refreshExpiryDates(host.userId);
+      // A purchase, the one recompute that may reopen a closed album (N-168).
+      await refreshExpiryDates(host.userId, undefined, { allowReopen: true });
 
       const row = await query<{ retention_notified_at: string | null }>(
         'SELECT retention_notified_at FROM events WHERE id = $1',

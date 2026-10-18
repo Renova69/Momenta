@@ -166,7 +166,8 @@ export const PricingPlansModal: React.FC<PricingPlansModalProps> = ({
         // The plan bought rides on the return URL, so the page that receives
         // the host knows what to wait for (N-54).
         hostReturnUrl(eventSlug, { checkout: 'success', tier }),
-        hostReturnUrl(eventSlug, { checkout: 'cancelled' })
+        hostReturnUrl(eventSlug, { checkout: 'cancelled' }),
+        eventSlug
       );
       // Full-page redirect to Stripe's own hosted checkout — the tier is
       // only ever written once Stripe's webhook confirms the payment, not

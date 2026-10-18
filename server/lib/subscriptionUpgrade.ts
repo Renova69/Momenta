@@ -86,6 +86,15 @@ export interface TierUpgradeOptions {
    */
   allowLowerTier?: boolean;
   /**
+   * Set when this write is a payment: a checkout that completed, a renewal, a
+   * recovered subscription. Only a payment may reopen a closed album (N-168).
+   * A one-time pass is bought for one album, `eventId`, or the host's newest
+   * album when none is named; that album records the pass and when it was
+   * bought, and its days count from the wedding or the purchase, whichever is
+   * later (N-169).
+   */
+  purchase?: { eventId?: string | null };
+  /**
    * Run against an open transaction instead of the pool. The Stripe webhook
    * passes its transaction client so the tier write, the expiry recompute and
    * the event-idempotency claim all commit or roll back as one unit.
@@ -218,9 +227,37 @@ export async function applyTierUpgrade(
   // uses; scoped to this user so a burst of concurrent upgrades never
   // means a burst of full-table recomputes.
   //
-  await refreshExpiriesAfterTierChange(userId, db, options.db !== undefined);
+  if (options.purchase && billingType === 'one_time' && ONE_TIME_TIERS.includes(tier)) {
+    await bindPassToAlbum(userId, tier, options.purchase.eventId ?? null, db);
+  }
+
+  await refreshExpiriesAfterTierChange(userId, db, options.db !== undefined, options.purchase !== undefined);
 
   return result.rows[0];
+}
+
+/**
+ * Record a one-time pass on the album it was bought for (N-168, N-169): the
+ * higher of the pass it already had and this one, bought now. An album named
+ * that is not this host's gets nothing; with none named, the newest album.
+ */
+async function bindPassToAlbum(
+  userId: string,
+  tier: BackendPlanTier,
+  eventId: string | null,
+  db: Pool | PoolClient
+): Promise<void> {
+  await db.query(
+    `UPDATE events
+        SET pass_tier = CASE WHEN pass_tier IS NULL OR (${tierRankSql('$2::text')}) >= (${tierRankSql('pass_tier')})
+                             THEN $2 ELSE pass_tier END,
+            pass_started_at = NOW()
+      WHERE host_user_id = $1
+        AND id = COALESCE($3::uuid, (SELECT id FROM events newest
+                                       WHERE newest.host_user_id = $1
+                                       ORDER BY newest.created_at DESC LIMIT 1))`,
+    [userId, tier, eventId]
+  );
 }
 
 /**
@@ -234,10 +271,11 @@ export async function applyTierUpgrade(
 async function refreshExpiriesAfterTierChange(
   userId: string,
   db: Pool | PoolClient,
-  inCallerTransaction: boolean
+  inCallerTransaction: boolean,
+  allowReopen = false
 ): Promise<void> {
   try {
-    await refreshExpiryDates(userId, db);
+    await refreshExpiryDates(userId, db, { allowReopen });
   } catch (err) {
     if (inCallerTransaction) throw err;
     console.error('[Subscriptions] expires_at refresh after tier change failed:', errorLabel(err));
@@ -355,6 +393,8 @@ export async function restoreLapsedTier(
     billingType: 'monthly',
     amountPaidCents: options.amountPaidCents,
     pastDueGraceExpiry: null,
+    // Paid again: the plan comes back, and with it any album it had kept open.
+    purchase: {},
     db: options.db,
   });
   await options.db.query("UPDATE subscriptions SET lapsed_tier = NULL WHERE user_id = $1 AND status = 'active'", [

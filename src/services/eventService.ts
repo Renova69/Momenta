@@ -105,7 +105,7 @@ export async function removeCover(ctx: ServiceContext): Promise<void> {
  * (client claims an upgrade the server doesn't have).
  */
 export async function upgradePlanTier(ctx: ServiceContext, tier: PlanTier): Promise<void> {
-  await subscriptionsApi.upgrade(tier);
+  await subscriptionsApi.upgrade(tier, getEvent()?.slug);
   await refreshEventFromBackend(ctx);
 }
 

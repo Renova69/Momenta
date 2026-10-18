@@ -3,7 +3,7 @@ import { pool } from './db';
 import { isStoredAvatarUrl, isStoredCoverUrl, storageAdapter, toStoragePath } from './storage';
 import { limitsFor } from './planLimits';
 import { errorLabel } from './errors';
-import { BackendPlanTier, acquireEventUploadLock } from '../middleware/tierGate';
+import { BackendPlanTier, acquireEventUploadLock, higherTier } from '../middleware/tierGate';
 
 /**
  * Album retention.
@@ -106,20 +106,37 @@ export interface PurgeResult {
  * The window opens when the celebration is over, not when the album was
  * created, so a couple who set things up months in advance does not lose part
  * of what they paid for.
+ *
+ * N-169 — and not before the plan was bought: `boughtAt`, when given, is the
+ * purchase of the pass that sets this window, and a plan gives its days from
+ * the wedding or from the purchase, whichever is later. Counted from the
+ * wedding alone, a pass bought for a wedding months gone was already over.
  */
 export function computeExpiry(
   tier: BackendPlanTier,
   eventDate: Date | string | null,
-  createdAt: Date | string
+  createdAt: Date | string,
+  boughtAt?: Date | string | null
 ): Date | null {
   const { retentionDays } = limitsFor(tier);
   if (retentionDays === null) return null;
 
   const created = new Date(createdAt);
   const celebration = eventDate ? new Date(eventDate) : created;
-  const start = celebration.getTime() > created.getTime() ? celebration : created;
+  const bought = boughtAt ? new Date(boughtAt).getTime() : 0;
+  const start = Math.max(celebration.getTime(), created.getTime(), bought);
 
-  return new Date(start.getTime() + retentionDays * 24 * 60 * 60 * 1000);
+  return new Date(start + retentionDays * 24 * 60 * 60 * 1000);
+}
+
+export interface ExpiryRefreshOptions {
+  /**
+   * N-168 — only a payment may reopen a closed album. Left off, a recompute
+   * keeps every deadline that has already passed: the wedding date can be
+   * edited at will, so a recompute from it must not move a closed album's
+   * deadline into the future.
+   */
+  allowReopen?: boolean;
 }
 
 /**
@@ -140,10 +157,11 @@ export function computeExpiry(
  */
 export async function refreshExpiryDates(
   hostUserId?: string,
-  db: Pool | PoolClient = pool
+  db: Pool | PoolClient = pool,
+  options: ExpiryRefreshOptions = {}
 ): Promise<number> {
   const { rows } = await db.query(
-    `SELECT e.id, e.event_date, e.created_at, e.expires_at,
+    `SELECT e.id, e.event_date, e.created_at, e.expires_at, e.pass_tier, e.pass_started_at,
            COALESCE(s.tier, 'free') AS tier
       FROM events e
       LEFT JOIN subscriptions s
@@ -175,13 +193,24 @@ export async function refreshExpiryDates(
   // was moved back to 30 days out every night — no notice ever fell due and
   // nothing ever reached grace. Capped, an album floored once stays put, and
   // one that expired on its own plan stays expired.
-  const floor = Date.now() + GRACE_PERIOD_DAYS * 24 * 60 * 60 * 1000;
+  const now = Date.now();
+  const floor = now + GRACE_PERIOD_DAYS * 24 * 60 * 60 * 1000;
 
   const ids: string[] = [];
   const expiries: (string | null)[] = [];
   for (const row of rows) {
-    const expiry = computeExpiry(row.tier as BackendPlanTier, row.event_date, row.created_at);
     ids.push(row.id);
+    // N-168 — a closed album stays closed unless a payment caused this.
+    if (!options.allowReopen && row.expires_at && new Date(row.expires_at).getTime() <= now) {
+      expiries.push(new Date(row.expires_at).toISOString());
+      continue;
+    }
+    // The album's own pass (N-168) counts as well as the account's plan, and
+    // when it is what sets the window, its days start no earlier than its
+    // purchase (N-169).
+    const tier = higherTier(row.tier, row.pass_tier);
+    const boughtAt = row.pass_tier && tier === row.pass_tier ? row.pass_started_at : null;
+    const expiry = computeExpiry(tier, row.event_date, row.created_at, boughtAt);
     if (!expiry) {
       // null means indefinite retention (Pro Planner); nothing to floor.
       expiries.push(null);
@@ -305,7 +334,7 @@ async function loadCandidates(
   const { rows } = await pool.query(
     `SELECT e.id, e.slug, e.title, e.host_email, e.expires_at, e.storage_bytes,
             e.retention_notified_at,
-            COALESCE(s.tier, 'free') AS tier,
+            COALESCE(s.tier, 'free') AS tier, e.pass_tier,
             (SELECT COUNT(*)::int FROM photos p WHERE p.event_id = e.id) AS photo_count,
             b.bounced_at
        FROM events e
@@ -323,7 +352,7 @@ async function loadCandidates(
     slug: r.slug,
     title: r.title,
     hostEmail: r.host_email,
-    tier: r.tier,
+    tier: higherTier(r.tier, r.pass_tier),
     expiresAt: new Date(r.expires_at).toISOString(),
     storageBytes: Number(r.storage_bytes) || 0,
     photoCount: r.photo_count,
