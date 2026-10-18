@@ -99,8 +99,11 @@ services:
       STRIPE_PRICE_DELUXE_KEEPSAKE: ${STRIPE_PRICE_DELUXE_KEEPSAKE:-}
       STRIPE_PRICE_PRO_PLANNER: ${STRIPE_PRICE_PRO_PLANNER:-}
       SUBSCRIPTION_GRACE_DAYS: ${SUBSCRIPTION_GRACE_DAYS:-7}
+    # APP_BIND=127.0.0.1 behind a reverse proxy (docs/DEPLOYMENT.md): with
+    # TRUST_PROXY set and the port open to everyone, a client could send its
+    # own X-Forwarded-For past the proxy and around the rate limits.
     ports:
-      - "${APP_PORT:-6501}:6501"
+      - "${APP_BIND:-0.0.0.0}:${APP_PORT:-6501}:6501"
     volumes:
       - uploads_data:/app/uploads
       - quarantine_data:/app/uploads-quarantine

@@ -1,108 +1,148 @@
-# 🚀 WedMoments — Free-Tier Production Deployment Guide
+# Deployment
 
-This guide outlines how to deploy WedMoments 100% on free cloud tiers (Neon / Supabase, Google Cloud Run, Vercel, and Cloudflare R2).
+**Supported today: one server running `docker-compose.yml`, behind a reverse
+proxy that terminates TLS.** That is the shape the code is built for. The app
+is one Node process holding the live connection's rooms, the rate limits and
+the optional FTP server in its own memory, and the maintenance scheduler and
+the daily backup run beside it as their own containers.
 
----
-
-## 1. Database Deployment (Neon / Supabase)
-
-### Option A: Neon Serverless PostgreSQL (Recommended)
-1. Sign up at [neon.tech](https://neon.tech) (Free tier includes 0.5 GB storage, serverless connection pooling).
-2. Create a project named `wedmoments-prod`.
-3. Copy your Pooled Connection String:
-   `postgresql://username:password@ep-cool-pooler.us-east-2.aws.neon.tech/wedmoments_db?sslmode=require`
-4. Apply the schema. The app ships a forward-only migration runner that records
-   what it has applied in a `schema_migrations` table:
-
-   ```bash
-   DATABASE_URL="postgresql://..." npm run migrate
-   ```
-
-   The server also runs pending migrations on boot unless `AUTO_MIGRATE=false`,
-   so a container that starts against an older database repairs itself instead
-   of serving 500s. Migrations are idempotent, so an existing database created
-   before the runner existed can be brought under it safely.
-
-   Do not paste the SQL files into a console by hand — nothing records that they
-   ran, which is exactly how a database ends up several migrations behind.
+Where production will run has **not been decided by the owner** (2026-10-18).
+Until it is, other hosting is unsupported — see "Not supported" at the end
+before choosing one.
 
 ---
 
-## 2. Backend Deployment (Google Cloud Run)
+## 1. What you need
 
-Google Cloud Run provides 2 Million free container requests per month, auto-scaling to zero when idle.
+- A Linux server with Docker Engine and the Compose plugin. 2 vCPU and 4 GB
+  of memory carry a large wedding comfortably (MASTER_AUDIT §3k measured about
+  230 album opens and 9 uploads a second into one album on a desktop machine).
+- A domain name pointed at the server, for example `album.example.com`.
+- A Cloudflare R2 bucket for the photos (recommended), or disk on the server.
+- Stripe keys, when payments are to be taken.
 
-### Step 1: Build & Deploy Container
-Using Google Cloud CLI (`gcloud`):
+## 2. Configure `.env`
+
 ```bash
-# 1. Authenticate with Google Cloud
-gcloud auth login
-gcloud config set project your-gcp-project-id
-
-# 2. Build and deploy container directly from source
-gcloud run deploy wedmoments-api \
-  --source . \
-  --platform managed \
-  --region us-central1 \
-  --allow-unauthenticated \
-  --port 8080 \
-  --set-env-vars DATABASE_URL="postgresql://user:pass@ep-pooler.neon.tech/wedmoments_db?sslmode=require" \
-  --set-env-vars JWT_SECRET="your-production-high-entropy-secret-key-32-chars" \
-  --set-env-vars NODE_ENV="production"
+cp .env.example .env
 ```
 
-Cloud Run will output your live HTTPS backend URL (e.g. `https://wedmoments-api-xyz-uc.a.run.app`).
+Set at least these. Compose refuses to start without the first three, and in
+production the server refuses an example or missing value for each.
 
----
+| Variable | Value |
+|---|---|
+| `POSTGRES_PASSWORD` | Random, letters and digits: `node -e "console.log(require('crypto').randomBytes(24).toString('hex'))"`. Postgres takes it only when its volume is first created. |
+| `JWT_SECRET` | Random, 48 bytes: `node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"` |
+| `PUBLIC_BASE_URL` | The address guests open: `https://album.example.com`. It is written into stored photo addresses, so set it before the first upload. |
+| `TRUST_PROXY` | `1` behind one reverse proxy (as below). |
+| `APP_BIND` | `127.0.0.1`, so the app is reached only through the proxy. With `TRUST_PROXY=1` and the port open to the world, a client could set its own `X-Forwarded-For` and walk around the rate limits. |
+| `CORS_ORIGIN` | `https://album.example.com` |
+| `STORAGE_PROVIDER` | `r2`, with `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET_NAME`, `R2_PUBLIC_URL` (docs/CLOUDFLARE_R2_SETUP_GUIDE.md). `local` keeps photos in Docker volumes on this server. |
+| `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` | From the Stripe dashboard. **Without a secret key the unpaid self-serve plan switch stays open**, so set it before real hosts sign up. |
+| `BACKUP_UID`, `BACKUP_GID` | The host user (`id -u`, `id -g`) who copies the backups elsewhere. |
 
-## 3. Frontend Deployment (Vercel)
+Mail (`SMTP_*`) is not set up yet; the app runs without it, and retention
+deletion stays off until it is (docs/OPERATIONS.md, section 1).
 
-1. Push this repository to GitHub / GitLab.
-2. Sign in to [vercel.com](https://vercel.com) and click **"Add New Project"**.
-3. Import the `Wedding_album` repository.
-4. Set Environment Variables:
-   - `VITE_API_URL`: `https://wedmoments-api-xyz-uc.a.run.app`
-   - `VITE_WS_URL`: `wss://wedmoments-api-xyz-uc.a.run.app`
-5. Click **"Deploy"**.
+## 3. Start it
 
-Vercel automatically detects Vite and deploys your SPA to a global Edge Network with instant SSL.
+```bash
+docker compose up -d --build
+docker compose ps
+```
 
-> **What `vercel.json` in the repository root is for.** One rewrite, sending
-> every path to `/index.html` so client-side routes survive a page refresh —
-> nothing else. It configures the SPA preview only. The API is **not** deployed
-> through it: the server runs as the Docker image built from the `Dockerfile`
-> (section 2 above), and Vercel never serves an `/api` route. If you deploy the
-> backend somewhere other than Cloud Run, that file does not change (L-1).
+Four services start: `db` (Postgres 16, reachable from this server only, on
+`127.0.0.1:6532`), `app` (the site, the API and the live connection, on
+`APP_BIND:6501`), `maintenance` (the scheduled sweeps, report-only by
+default) and `backup` (a database dump every day into `./backups`). The app
+applies pending migrations as it starts. `GET /api/health` answers 200 once
+the app can reach the database.
 
-> **Hobby plan is non-commercial only.** Vercel's Hobby tier terms restrict
-> it to personal, non-commercial projects — it also caps at 1M function
-> invocations and 100 GB data transfer per month, not "unlimited." This app
-> charges guests real money (see `STORAGE_AND_FINANCIAL_PLAN.md`'s 49 €/89 €
-> plans), so once you take a paying customer, host the frontend on a Pro
-> seat ($20/mo) instead. Hobby is fine only for development or a private
-> demo you never charge for.
+## 4. Put TLS in front
 
----
+Any reverse proxy works if it passes WebSockets through. With Caddy, which
+fetches and renews the certificate itself:
 
-## 4. Image Storage (Cloudflare R2)
+```
+album.example.com {
+    reverse_proxy 127.0.0.1:6501
+}
+```
 
-To move image storage from local disk to Cloudflare R2 (10 GB free storage, **0 egress fees**):
-1. Create a Bucket in Cloudflare R2 named `wedmoments-photos`.
-2. Generate an R2 S3 API Token (Access Key ID & Secret Access Key).
-3. Add Cloudflare credentials to your Cloud Run environment variables:
-   - `STORAGE_PROVIDER=r2`
-   - `R2_ACCESS_KEY_ID=...`
-   - `R2_SECRET_ACCESS_KEY=...`
-   - `R2_BUCKET_NAME=wedmoments-photos`
-   - `R2_PUBLIC_URL=https://photos.wedmoments.app`
+With nginx, the upgrade headers have to be passed on:
 
----
+```nginx
+location / {
+    proxy_pass http://127.0.0.1:6501;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    client_max_body_size 30m;
+}
+```
 
-## 5. Summary of Free-Tier Limits & Capacities
+Open only 80 and 443 in the firewall. Docker's published ports go around a
+Linux firewall such as ufw, which is why the database and (with `APP_BIND`)
+the app listen on `127.0.0.1` only.
 
-| Component | Provider | Free Monthly Allocation | Estimated Capacity |
-| :--- | :--- | :--- | :--- |
-| **Frontend** | Vercel (Hobby) | 1M function invocations + 100 GB data transfer / month | ~100,000 guest visits |
-| **Backend** | Google Cloud Run | 2,000,000 container requests | ~15 large weddings |
-| **Database** | Neon Serverless | 0.5 GB storage + autoscaling compute | ~20,000 photo records |
-| **Image Storage** | Cloudflare R2 | 10 GB storage, 0 egress fees | ~3,500 high-res photos |
+## 5. Stripe
+
+In the Stripe dashboard, add a webhook endpoint
+`https://album.example.com/api/billing/webhook` for these events, and put its
+signing secret in `STRIPE_WEBHOOK_SECRET`:
+
+`checkout.session.completed`, `checkout.session.async_payment_succeeded`,
+`checkout.session.async_payment_failed`, `invoice.paid`,
+`customer.subscription.updated`, `customer.subscription.deleted`.
+
+Price IDs are optional (`STRIPE_PRICE_*`); without them checkout prices from
+`server/lib/stripePlans.ts`. The sandbox walk-through in MASTER_AUDIT §3k is
+the test to repeat with live keys.
+
+## 6. Photographers' FTP (optional)
+
+The in-process FTP server is off, and `docker-compose.yml` neither passes the
+`FTP_*` settings to the app nor publishes its ports. To use it, add those
+variables (see `.env.example`) and the control and passive ports to the `app`
+service, and give it a TLS certificate: in production it refuses plain FTP
+unless `FTP_ALLOW_PLAINTEXT=true`.
+
+## 7. Updates
+
+```bash
+docker compose run --rm -e BACKUP_ONCE=1 backup   # a fresh dump first
+git pull
+docker compose up -d --build                      # migrations apply on start
+```
+
+## 8. Before real guests or payments
+
+These are outside the code and recorded in MASTER_AUDIT §9:
+
+- Replace the R2 keys that were exposed during development.
+- Fill in the operator's details (`src/config/operator.ts`) and have the
+  privacy policy and terms read by a lawyer.
+- Copy `./backups` somewhere other than this server, on a schedule
+  (docs/OPERATIONS.md, section 6).
+- Choose a mail provider, then follow docs/OPERATIONS.md, section 1, before
+  retention deletion is ever switched on.
+
+## Not supported
+
+**Serverless or autoscaling hosting (Google Cloud Run, AWS Lambda, Vercel
+functions) and a frontend split from the backend.** The rooms of the live
+connection and the rate limits live in one process's memory: with two
+instances, a guest connected to one does not see photos sent through the
+other, and with scale-to-zero the connections and the in-process FTP server
+die between visits. The maintenance and backup services have no equivalent
+there either. This guide used to describe Cloud Run; following it, the server
+refused to start (no `TRUST_PROXY`) and nothing ran the grace sweep. Running
+on such a platform would need one fixed instance, the sweeps as scheduled
+jobs, and no FTP — decide that with the owner first.
+
+`vercel.json` (one SPA rewrite) belongs to that split deployment and is not
+used by the one above.
