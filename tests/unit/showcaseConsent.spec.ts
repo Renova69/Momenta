@@ -159,7 +159,9 @@ describe('showcase requires opt-in (H6)', () => {
 
   it('never shows an album a demo account owns, even after it opts in', async () => {
     // Unpublishing the seed is not enough on its own: anyone signed in with
-    // the public demo login can switch the album back on.
+    // the public demo login could switch the album back on. Since N-166 the
+    // demo account is view-only and cannot; an album flagged public some
+    // other way stays off the showcase all the same.
     const host = await registerHost();
     await query('UPDATE users SET is_demo = true WHERE id = $1', [host.userId]);
 
@@ -168,8 +170,9 @@ describe('showcase requires opt-in (H6)', () => {
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${host.token}` },
       body: JSON.stringify({ isPublic: true }),
     });
-    expect(optIn.status).toBe(200);
+    expect(optIn.status).toBe(403);
 
+    await query('UPDATE events SET is_public = true WHERE id = $1', [host.eventId]);
     expect((await showcase()).map((e) => e.id)).not.toContain(host.eventId);
   });
 
