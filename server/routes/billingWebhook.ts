@@ -9,8 +9,11 @@ import {
   applyTierUpgrade,
   applyTierDowngradeToFree,
   restoreLapsedTier,
+  retireSpentPass,
   suspendTierForNonPayment,
 } from '../lib/subscriptionUpgrade';
+import { cancelReplacedSubscription, refundCheckoutSession, storedSubscriptionStatus } from '../lib/stripeRefunds';
+import { TIER_WEIGHTS } from '../../shared/planCaps';
 import { PAID_TIER_PRICING, PaidPlanTier, isPaidTier, isPriceMapConfigured, tierForPriceId } from '../lib/stripePlans';
 import { BackendPlanTier } from '../middleware/tierGate';
 import { isValidUuid } from '../lib/validation';
@@ -255,6 +258,26 @@ async function grantTierFromSession(
     return;
   }
 
+  // N-173 — the account was deleted while this checkout was open, or while
+  // its payment settled. Nothing can be granted to it, and the insert below
+  // used to fail the webhook on every retry for three days. The money goes
+  // back (the owner's rule, 2026-10-18).
+  const account = isValidUuid(userId) ? await db.query('SELECT 1 FROM users WHERE id = $1', [userId]) : null;
+  if (!account || account.rows.length === 0) {
+    await refundCheckoutSession(session, 'the account was deleted before the payment completed');
+    return;
+  }
+
+  // N-172 — a plan the account already holds: a second checkout opened before
+  // the first was paid. It used to be absorbed without a trace, or for a
+  // subscription to replace the one on file, which went on billing unseen.
+  // These Stripe calls run inside the transaction on purpose: a failure rolls
+  // the event back for Stripe to retry, and the refund is idempotent.
+  if (await isDuplicatePurchase(db, userId, tier, session)) {
+    await refundCheckoutSession(session, `the account already holds ${tier}`);
+    return;
+  }
+
   await applyTierUpgrade(userId, tier, {
     billingType: session.mode === 'subscription' ? 'monthly' : 'one_time',
     amountPaidCents: session.amount_total ?? PAID_TIER_PRICING[tier].amountCents,
@@ -266,6 +289,42 @@ async function grantTierFromSession(
     purchase: { eventId: isValidUuid(session.metadata?.eventId) ? session.metadata!.eventId : null },
     db,
   });
+}
+
+/**
+ * Whether this checkout bought what the account already has (N-172). A
+ * subscription is a duplicate when a different one on file is still paid up
+ * at Stripe. One on file that is failing (past due, or suspended here) is
+ * replaced instead, and cancelled so it stops retrying the old card. A
+ * one-time pass is a duplicate when the account's plan is already at its rank
+ * or above, once a pass whose album has closed is used up (buying a pass
+ * again is how a closed album reopens).
+ */
+async function isDuplicatePurchase(
+  db: PoolClient,
+  userId: string,
+  tier: PaidPlanTier,
+  session: Stripe.Checkout.Session
+): Promise<boolean> {
+  const newSubscription = sessionSubscriptionId(session);
+  if (newSubscription) {
+    const stored = await db.query<{ stripe_subscription_id: string | null }>(
+      "SELECT stripe_subscription_id FROM subscriptions WHERE user_id = $1 AND status = 'active' LIMIT 1",
+      [userId]
+    );
+    const onFile = stored.rows[0]?.stripe_subscription_id;
+    if (!onFile || onFile === newSubscription) return false;
+    const status = await storedSubscriptionStatus(onFile);
+    if (!status || !isLiveSubscriptionStatus(status)) return false;
+    const suspended = !!(await activeSubscriptionRow(db, userId))?.lapsed_tier;
+    if (HEALTHY_SUBSCRIPTION_STATUSES.has(status) && !suspended) return true;
+    await cancelReplacedSubscription(onFile);
+    return false;
+  }
+
+  await retireSpentPass(userId, db);
+  const current = await activeSubscriptionRow(db, userId);
+  return (TIER_WEIGHTS[current?.tier ?? 'free'] ?? 0) >= (TIER_WEIGHTS[tier] ?? 0);
 }
 
 /**

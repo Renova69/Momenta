@@ -126,6 +126,26 @@ async function cancelPlansAtStripe(userId: string): Promise<boolean> {
 }
 
 /**
+ * N-173 — close any checkout still open for this account, so it cannot be
+ * paid once the account is gone. Best effort: one paid anyway is refunded by
+ * the webhook, which finds no account to give it to.
+ */
+async function expireOpenCheckouts(userId: string): Promise<void> {
+  const { rows } = await pool.query<{ stripe_customer_id: string }>(
+    'SELECT DISTINCT stripe_customer_id FROM subscriptions WHERE user_id = $1 AND stripe_customer_id IS NOT NULL',
+    [userId]
+  );
+  for (const { stripe_customer_id: customer } of rows) {
+    try {
+      const open = await getStripeClient().checkout.sessions.list({ customer, status: 'open', limit: 20 });
+      for (const session of open.data) await getStripeClient().checkout.sessions.expire(session.id);
+    } catch (err) {
+      console.warn(`[Auth] could not close open checkouts of customer ${customer}:`, errorLabel(err));
+    }
+  }
+}
+
+/**
  * DELETE /api/auth/account — the host's right to erasure (GDPR Article 17).
  *
  * Immediate and complete once the password is confirmed: a live plan is
@@ -152,6 +172,7 @@ accountRouter.delete(
           code: 'BILLING_UNVERIFIABLE',
         });
       }
+      await expireOpenCheckouts(userId);
 
       const albums = await pool.query<{ id: string }>('SELECT id FROM events WHERE host_user_id = $1', [userId]);
       let photosDeleted = 0;

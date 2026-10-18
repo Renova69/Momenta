@@ -21,11 +21,17 @@ import path from 'path';
 // The Stripe SDK itself is faked, and a key pinned, so every real code path
 // runs and nothing can reach Stripe whatever .env holds (as in
 // stripeLivenessFailure.spec.ts).
-const stripe = vi.hoisted(() => ({ retrieve: vi.fn(), cancel: vi.fn() }));
+const stripe = vi.hoisted(() => ({
+  retrieve: vi.fn(),
+  cancel: vi.fn(),
+  listSessions: vi.fn(async () => ({ data: [] as { id: string }[] })),
+  expireSession: vi.fn(async (id: string) => ({ id, status: 'expired' })),
+}));
 
 vi.mock('stripe', () => ({
   default: class {
     subscriptions = { retrieve: stripe.retrieve, cancel: stripe.cancel };
+    checkout = { sessions: { list: stripe.listSessions, expire: stripe.expireSession } };
   },
 }));
 
@@ -180,6 +186,19 @@ describe('deleting the account (N-122)', () => {
     expect((await query('SELECT 1 FROM events WHERE id = $1', [host.eventId])).rows).toHaveLength(0);
     expect(fs.existsSync(file)).toBe(false);
     expect((await login(host.email, PASSWORD)).status).toBe(401);
+  });
+
+  // N-173 — a checkout still open could be paid after the account was gone.
+  it('closes a checkout still open for the account, so it cannot be paid afterwards', async () => {
+    const host = await registerHost();
+    await query("UPDATE subscriptions SET stripe_customer_id = 'cus_account_spec' WHERE user_id = $1", [host.userId]);
+    stripe.listSessions.mockResolvedValueOnce({ data: [{ id: 'cs_open_one' }] });
+
+    const res = await send('DELETE', '/api/auth/account', host.token, { password: PASSWORD });
+
+    expect(res.status).toBe(200);
+    expect(stripe.listSessions).toHaveBeenCalledWith(expect.objectContaining({ customer: 'cus_account_spec', status: 'open' }));
+    expect(stripe.expireSession).toHaveBeenCalledWith('cs_open_one');
   });
 
   it('keeps a record that an album was deleted, naming nobody', async () => {

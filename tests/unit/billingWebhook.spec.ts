@@ -38,6 +38,12 @@ const stripeNow = vi.hoisted(() => new Map<string, string>());
 const pinnedByTest = vi.hoisted(() => new Set<string>());
 const UNREACHABLE = '__unreachable__';
 const MISSING = '__missing__';
+// N-172/N-173 — what the webhook asks Stripe to give back.
+const refundCalls = vi.hoisted(() => ({
+  refund: vi.fn(async () => ({ id: 're_spec' })),
+  cancel: vi.fn(async (id: string) => ({ id, status: 'canceled' })),
+  invoicePayments: vi.fn(async () => ({ data: [{ payment: { type: 'payment_intent', payment_intent: 'pi_from_invoice' } }] })),
+}));
 
 vi.mock('../../server/lib/stripe', async () => {
   // The real status rule, not a restated copy that could drift from it.
@@ -49,6 +55,9 @@ vi.mock('../../server/lib/stripe', async () => {
       webhooks: {
         constructEvent: (body: Buffer) => JSON.parse(body.toString()),
       },
+      refunds: { create: refundCalls.refund },
+      subscriptions: { cancel: refundCalls.cancel },
+      invoicePayments: { list: refundCalls.invoicePayments },
     }),
     retrieveSubscriptionOrNull: async (id: string) => {
       const status = stripeNow.get(id) ?? 'active';
@@ -788,6 +797,31 @@ describe('suspension edge cases', () => {
     expect(row.stripe_subscription_id).toBe(fresh);
     expect(row.past_due_grace_expiry).not.toBeNull();
   });
+
+  // N-172 — left live, the failing subscription goes on retrying the old card.
+  it('cancels the failing subscription the new one replaced', async () => {
+    const userId = await registerHost();
+    const old = uniqueId('sub_old_failing');
+    await seedExpiredGrace(userId, old, 1);
+    await suspendTierForNonPayment(userId);
+    stripeSays(old, 'past_due');
+    refundCalls.cancel.mockClear();
+
+    const fresh = uniqueId('sub_fresh');
+    stripeSays(fresh, 'active');
+    await postEvent(
+      checkoutSessionEvent('checkout.session.completed', {
+        mode: 'subscription',
+        payment_status: 'paid',
+        amount_total: 4900,
+        subscription: fresh,
+        metadata: { userId, tier: 'pro_planner' },
+      })
+    );
+
+    expect(refundCalls.cancel).toHaveBeenCalledWith(old);
+    expect((await subscriptionRow(userId)).stripe_subscription_id).toBe(fresh);
+  });
 });
 
 describe('a one-time pass held under a subscription (N-45)', () => {
@@ -1179,5 +1213,102 @@ describe('the customer an event is about', () => {
     for (const shape of ['cus_x', { id: 'cus_y' }]) {
       expect(eventCustomerId(asEvent(shape))).not.toBeUndefined();
     }
+  });
+});
+
+// N-172, N-173 — a payment the app cannot use was taken and never noticed:
+// a second checkout opened before the first was paid (two tabs), or one that
+// completed after the account was deleted, which failed the webhook for days.
+// The owner's rule (2026-10-18): refund it automatically.
+describe('a payment the app cannot use is refunded (N-172, N-173)', () => {
+  const paidPass = (userId: string, extra: Record<string, unknown> = {}) =>
+    checkoutSessionEvent('checkout.session.completed', {
+      mode: 'payment',
+      payment_status: 'paid',
+      amount_total: 4900,
+      payment_intent: `pi_${uniqueId('pass')}`,
+      metadata: { userId, tier: 'celebration_pass' },
+      ...extra,
+    });
+
+  it('refunds a payment for an account that no longer exists, and answers 200', async () => {
+    refundCalls.refund.mockClear();
+    const goneUserId = '00000000-0000-4000-8000-0000000000aa';
+    const event = paidPass(goneUserId);
+    const session = (event.data as { object: { id: string; payment_intent: string } }).object;
+
+    const res = await postEvent(event);
+
+    expect(res.status).toBe(200);
+    expect(refundCalls.refund).toHaveBeenCalledWith(
+      expect.objectContaining({ payment_intent: session.payment_intent }),
+      expect.objectContaining({ idempotencyKey: `refund-${session.id}` })
+    );
+  });
+
+  it('refunds a second pass the account already holds, and changes nothing', async () => {
+    const userId = await registerHost();
+    await postEvent(paidPass(userId));
+    expect((await subscriptionRow(userId)).tier).toBe('celebration_pass');
+    refundCalls.refund.mockClear();
+
+    const res = await postEvent(paidPass(userId));
+
+    expect(res.status).toBe(200);
+    expect(refundCalls.refund).toHaveBeenCalledTimes(1);
+    expect((await subscriptionRow(userId)).tier).toBe('celebration_pass');
+  });
+
+  it('cancels and refunds a second subscription instead of losing track of the first', async () => {
+    const userId = await registerHost();
+    const first = uniqueId('sub');
+    const second = uniqueId('sub');
+    await applyTierUpgrade(userId, 'pro_planner', { billingType: 'monthly', stripeSubscriptionId: first });
+    stripeSays(first, 'active');
+    stripeSays(second, 'active');
+    refundCalls.refund.mockClear();
+    refundCalls.cancel.mockClear();
+
+    const res = await postEvent(
+      checkoutSessionEvent('checkout.session.completed', {
+        mode: 'subscription',
+        payment_status: 'paid',
+        amount_total: 4900,
+        subscription: second,
+        invoice: `in_${uniqueId('inv')}`,
+        metadata: { userId, tier: 'pro_planner' },
+      })
+    );
+
+    expect(res.status).toBe(200);
+    expect(refundCalls.cancel).toHaveBeenCalledWith(second);
+    expect(refundCalls.refund).toHaveBeenCalledWith(
+      expect.objectContaining({ payment_intent: 'pi_from_invoice' }),
+      expect.anything()
+    );
+    expect((await subscriptionRow(userId)).stripe_subscription_id).toBe(first);
+  });
+
+  it('does not refund a new subscription when the one on file has ended', async () => {
+    const userId = await registerHost();
+    const old = uniqueId('sub');
+    const fresh = uniqueId('sub');
+    await applyTierUpgrade(userId, 'pro_planner', { billingType: 'monthly', stripeSubscriptionId: old });
+    stripeSays(old, 'canceled');
+    stripeSays(fresh, 'active');
+    refundCalls.refund.mockClear();
+
+    await postEvent(
+      checkoutSessionEvent('checkout.session.completed', {
+        mode: 'subscription',
+        payment_status: 'paid',
+        amount_total: 4900,
+        subscription: fresh,
+        metadata: { userId, tier: 'pro_planner' },
+      })
+    );
+
+    expect(refundCalls.refund).not.toHaveBeenCalled();
+    expect((await subscriptionRow(userId)).stripe_subscription_id).toBe(fresh);
   });
 });
