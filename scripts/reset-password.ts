@@ -23,7 +23,13 @@ async function main(): Promise<number> {
     return 1;
   }
   console.log(`Temporary password for ${email}: ${temporary}`);
-  console.log('Every session of this account has ended. Ask the host to change it after signing in.');
+  // N-180 — this runs in its own process: signed-in pages stop at their next
+  // request, and the server closes open live connections at its next session
+  // check, within five minutes.
+  console.log(
+    'Every session of this account has ended (open live connections close within five minutes). ' +
+      'Ask the host to change it after signing in.'
+  );
   return 0;
 }
 

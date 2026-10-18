@@ -14,8 +14,19 @@ export interface ClientMeta {
   isHost?: boolean;
   guestId?: string;
   userId?: string;
+  /** The users.token_version the socket's AUTH proved, for the re-check (N-180). */
+  tokenVersion?: number;
   isAlive?: boolean;
 }
+
+/**
+ * N-180 — every this many heartbeats (30 s each, so five minutes), the
+ * sessions of authenticated sockets are asked again. A logout or password
+ * change in this process closes them at once (N-38); one made elsewhere, such
+ * as `npm run admin:reset-password`, which runs in its own process, was never
+ * seen by a socket that did not re-join a room.
+ */
+const SESSION_RECHECK_EVERY_BEATS = 10;
 
 // --------------------------------------------------------------------
 // SEC-D6 — a client sending JOIN_EVENT_ROOM frames in a tight loop turned
@@ -56,6 +67,7 @@ export class WsEventManager {
   private clientMeta = new Map<WebSocket, ClientMeta>();
   private eventRooms = new Map<string, Set<WebSocket>>();
   private heartbeatInterval: NodeJS.Timeout | null = null;
+  private heartbeatCount = 0;
   private messageRates = new Map<WebSocket, RateWindow>();
   private hostCheckCache = new Map<string, HostCheckEntry>();
   private reactionQueues = new Map<string, BroadcastPayload[]>();
@@ -236,7 +248,12 @@ export class WsEventManager {
               }
               verifiedUser = decoded;
               const meta = this.clientMeta.get(ws);
-              this.clientMeta.set(ws, { ...meta, isAlive: true, userId: verifiedUser.userId });
+              this.clientMeta.set(ws, {
+                ...meta,
+                isAlive: true,
+                userId: verifiedUser.userId,
+                tokenVersion: verifiedUser.tokenVersion ?? 0,
+              });
             } catch {
               // Invalid or expired token — the connection stays a guest connection.
               verifiedUser = null;
@@ -270,6 +287,7 @@ export class WsEventManager {
               eventId,
               isHost,
               userId: verifiedUser?.userId,
+              tokenVersion: verifiedUser ? verifiedUser.tokenVersion ?? 0 : undefined,
               guestId: typeof msg.guestId === 'string' ? msg.guestId : undefined,
               isAlive: true,
             });
@@ -360,6 +378,43 @@ export class WsEventManager {
 
     // DB-07: piggy-backing on the existing heartbeat avoids a second timer.
     this.sweepHostCheckCache();
+
+    this.heartbeatCount += 1;
+    if (this.heartbeatCount % SESSION_RECHECK_EVERY_BEATS === 0) void this.recheckSessions();
+  }
+
+  /**
+   * Close every socket whose session is no longer current: its user is gone,
+   * or its token_version has moved on (N-180). One query for all of them.
+   * A failed query closes nothing — the AUTH that let each socket in already
+   * failed closed, and a database blip must not drop every host at once.
+   * Returns how many sockets were closed.
+   */
+  public async recheckSessions(): Promise<number> {
+    const sockets = [...this.clientMeta].filter(([, meta]) => !!meta.userId);
+    if (sockets.length === 0) return 0;
+
+    let current: Map<string, number>;
+    try {
+      const ids = [...new Set(sockets.map(([, meta]) => meta.userId as string))];
+      const { rows } = await pool.query<{ id: string; token_version: number | null }>(
+        'SELECT id, token_version FROM users WHERE id = ANY($1::uuid[])',
+        [ids]
+      );
+      current = new Map(rows.map((row) => [row.id, Number(row.token_version ?? 0)]));
+    } catch (err) {
+      console.warn('[WS] session re-check failed; trying again at the next one:', err instanceof Error ? err.message : err);
+      return 0;
+    }
+
+    let closed = 0;
+    for (const [ws, meta] of sockets) {
+      if (current.get(meta.userId as string) === (meta.tokenVersion ?? 0)) continue;
+      this.removeClient(ws);
+      ws.close(4001, 'Session revoked');
+      closed += 1;
+    }
+    return closed;
   }
 
   public broadcastToEvent(eventId: string, type: string, payload: BroadcastPayload) {

@@ -212,5 +212,31 @@ describe('WebSocket honours session revocation (H9)', () => {
 
       expect((await joinAndAwait(ws, host.eventId)).isHost).toBe(false);
     });
+
+    // N-180 — `npm run admin:reset-password` runs in its own process, so it
+    // cannot close this one's sockets, and a socket that never re-joins kept
+    // receiving host broadcasts until it dropped. The periodic re-check finds
+    // it.
+    it('closes a host socket whose session was revoked by another process', async () => {
+      const host = await freshHost();
+      const ws = await open();
+      expect((await joinAndAwait(ws, host.eventId, host.token)).isHost).toBe(true);
+      const closed = new Promise<number>((resolve) => ws.once('close', (code) => resolve(code)));
+
+      await query('UPDATE users SET token_version = token_version + 1 WHERE id = $1', [host.userId]);
+      expect(await wsManager.recheckSessions()).toBe(1);
+
+      expect(await closed).toBe(4001);
+    });
+
+    it('leaves a socket whose session is still current alone', async () => {
+      const host = await freshHost();
+      const ws = await open();
+      expect((await joinAndAwait(ws, host.eventId, host.token)).isHost).toBe(true);
+
+      expect(await wsManager.recheckSessions()).toBe(0);
+      expect(ws.readyState).toBe(WebSocket.OPEN);
+      ws.close();
+    });
   });
 });
