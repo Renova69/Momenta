@@ -190,6 +190,10 @@ export const OverviewTab: React.FC = () => {
               <span className="text-[11px] text-cream-400/70 block mt-0.5">
                 {i18n.t('host.delete_event_hint')}
               </span>
+              {/* One wedding per pass: deleting this album uses its pass up. */}
+              {(event.planTier === 'celebration_pass' || event.planTier === 'deluxe_keepsake') && (
+                <span className="text-[11px] text-gold-300/90 block mt-1">{i18n.t('host.delete_event_pass_note')}</span>
+              )}
             </div>
             <label htmlFor={`${fieldIds}-1`} className="block text-[11px] text-cream-300/80">
               {i18n.t('host.delete_event_confirm', { slug: event.slug })}

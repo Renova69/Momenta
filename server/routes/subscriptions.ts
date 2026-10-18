@@ -4,7 +4,7 @@ import { requireAuth } from '../middleware/auth';
 import { validateBody } from '../middleware/validate';
 import { errorLabel } from '../lib/errors';
 import { BackendPlanTier } from '../middleware/tierGate';
-import { applyTierUpgrade, applyTierDowngradeToFree } from '../lib/subscriptionUpgrade';
+import { applyTierUpgrade, applyTierDowngradeToFree, retireSpentPass } from '../lib/subscriptionUpgrade';
 import { isPaidTier } from '../lib/stripePlans';
 import { isStripeConfigured, subscriptionLivenessAtStripe } from '../lib/stripe';
 import { pool } from '../lib/db';
@@ -51,6 +51,10 @@ subscriptionsRouter.post('/upgrade', requireAuth, validateBody(UpgradeSchema), a
   }
 
   try {
+    // One wedding per pass: a pass whose album has closed is not a plan this
+    // account still has, so it neither blocks buying it again nor is kept.
+    await retireSpentPass(userId);
+
     // H7 — downgrading to free needs no payment step, which is why this route
     // stayed open for it. What it never did was tell Stripe. The stored
     // subscription id was cleared locally while the subscription itself stayed

@@ -585,6 +585,7 @@ function WeddingAppContent() {
               currentPlanTier={event.planTier || 'free'}
               onUpgradePlan={handleUpgradePlan}
               eventSlug={event.slug}
+              albumClosed={albumClosedAt !== null}
               onSignInRequired={sendVisitorToSignIn}
             />
           </div>

@@ -1,5 +1,6 @@
 import { pool } from './db';
 import { purgeEventMedia, markEventDeleting, clearDeletionMark } from './retention';
+import { retireSpentPass } from './subscriptionUpgrade';
 import { errorLabel } from './errors';
 import { wsManager } from '../ws/wsServer';
 
@@ -32,12 +33,12 @@ export interface AlbumErasure {
  * leaves the album taking uploads again if the purge or the row delete fails.
  */
 export async function eraseAlbum(eventId: string): Promise<AlbumErasure> {
-  const { rows } = await pool.query<{ host_user_id: string | null; slug: string }>(
-    'SELECT host_user_id, slug FROM events WHERE id = $1',
+  const { rows } = await pool.query<{ host_user_id: string | null; slug: string; pass_tier: string | null }>(
+    'SELECT host_user_id, slug, pass_tier FROM events WHERE id = $1',
     [eventId]
   );
   if (rows.length === 0) return { photosDeleted: 0, bytesFreed: 0 };
-  const { host_user_id: hostUserId, slug } = rows[0];
+  const { host_user_id: hostUserId, slug, pass_tier: passTier } = rows[0];
 
   const photoCountRes = await pool.query<{ n: number }>('SELECT COUNT(*)::int AS n FROM photos WHERE event_id = $1', [
     eventId,
@@ -82,6 +83,15 @@ export async function eraseAlbum(eventId: string): Promise<AlbumErasure> {
   } catch (err) {
     await unmark();
     throw err;
+  }
+
+  // One wedding per pass: deleting the album a pass was bought for uses the
+  // pass up, so the next album is not a fresh window on the same purchase.
+  // The deletion has happened either way; a failure here is logged.
+  if (hostUserId && passTier) {
+    await retireSpentPass(hostUserId, undefined, { deletedAlbumHeldPass: true }).catch((err) =>
+      console.error(`[Events] could not use up the pass of deleted album ${eventId}:`, errorLabel(err))
+    );
   }
 
   // 3. A record that this happened, holding none of what was deleted.

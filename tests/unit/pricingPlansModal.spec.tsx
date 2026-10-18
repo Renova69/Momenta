@@ -383,3 +383,27 @@ describe('PricingPlansModal', () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 });
+
+// One wedding per pass (2026-10-18): once the album a pass was bought for has
+// closed, the pass is spent, and buying one again is what reopens the album.
+// The dialog used to call that pass "current" and refuse it.
+describe('a closed album', () => {
+  it('offers its pass again, since buying one is what reopens it', () => {
+    render(
+      <PricingPlansModal isOpen onClose={vi.fn()} currentPlanTier="celebration_pass" albumClosed onUpgradePlan={vi.fn()} />
+    );
+
+    for (const tier of ['celebration_pass', 'deluxe_keepsake'] as PlanTier[]) {
+      const button = choosePlanButton(tier);
+      expect(button).not.toBeDisabled();
+      expect(button).toHaveTextContent(i18n.t('pricing.choose_plan'));
+    }
+  });
+
+  it('still calls a subscription current: a Pro Planner album never closes', () => {
+    render(
+      <PricingPlansModal isOpen onClose={vi.fn()} currentPlanTier="pro_planner" albumClosed onUpgradePlan={vi.fn()} />
+    );
+    expect(choosePlanButton('pro_planner')).toHaveTextContent(i18n.t('pricing.current_plan'));
+  });
+});

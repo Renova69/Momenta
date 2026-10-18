@@ -21,6 +21,8 @@ import {
 
 /** The one plan billed monthly (server/lib/stripePlans.ts). */
 const SUBSCRIPTION_TIER: PlanTier = 'pro_planner';
+/** The plans sold as one-time passes, one wedding each. */
+const ONE_TIME_PASSES: PlanTier[] = ['celebration_pass', 'deluxe_keepsake'];
 
 interface PricingPlansModalProps {
   isOpen: boolean;
@@ -29,6 +31,11 @@ interface PricingPlansModalProps {
   onUpgradePlan: (newTier: PlanTier) => Promise<void>;
   /** Event to return to after checkout. Omitted, the host lands on /host. */
   eventSlug?: string;
+  /**
+   * The album has closed. One wedding per pass: its pass is then spent, and
+   * buying a pass again is what reopens the album, so passes are for sale.
+   */
+  albumClosed?: boolean;
   /**
    * Set when nobody is signed in: choosing a plan calls this instead of
    * starting a checkout that has no account to charge (N-151).
@@ -42,6 +49,7 @@ export const PricingPlansModal: React.FC<PricingPlansModalProps> = ({
   currentPlanTier,
   onUpgradePlan,
   eventSlug,
+  albumClosed = false,
   onSignInRequired,
 }) => {
   const [, setSelectedTier] = useState<PlanTier>(currentPlanTier || 'celebration_pass');
@@ -91,6 +99,9 @@ export const PricingPlansModal: React.FC<PricingPlansModalProps> = ({
   }, [confirmingFree, currentPlanTier]);
 
   if (!isOpen) return null;
+
+  // A spent pass is not a plan held: what the cards compare against.
+  const heldTier: PlanTier = albumClosed && ONE_TIME_PASSES.includes(currentPlanTier) ? 'free' : currentPlanTier;
 
   const runSelfServeUpgrade = async (tier: PlanTier) => {
     await onUpgradePlan(tier);
@@ -277,14 +288,14 @@ export const PricingPlansModal: React.FC<PricingPlansModalProps> = ({
             {(Object.keys(PLANS) as PlanTier[]).map((tierKey) => {
               const plan = PLANS[tierKey];
               // A visitor has no plan: the one passed in is the album's.
-              const isCurrent = !onSignInRequired && currentPlanTier === tierKey;
+              const isCurrent = !onSignInRequired && heldTier === tierKey;
               // N-155 — a paid plan the current one already includes is not
               // for sale; the server refuses it as ALREADY_ENTITLED.
               const isIncluded =
                 !onSignInRequired &&
                 !isCurrent &&
                 tierKey !== 'free' &&
-                (TIER_WEIGHTS[tierKey] ?? 0) < (TIER_WEIGHTS[currentPlanTier] ?? 0);
+                (TIER_WEIGHTS[tierKey] ?? 0) < (TIER_WEIGHTS[heldTier] ?? 0);
               const isHighlighted = plan.highlighted;
 
               const priceDisplay = plan.price;

@@ -1,5 +1,6 @@
 import React, { Suspense, lazy } from 'react';
 import type { PlanTier, WeddingEvent } from '../../types';
+import { isAlbumClosed } from '../../utils/albumStatus';
 
 /**
  * The pricing table and the "My events" switcher: host dialogs that a guest
@@ -54,6 +55,7 @@ export const HostDialogs: React.FC<HostDialogsProps> = ({
         currentPlanTier={event.planTier || 'free'}
         onUpgradePlan={onUpgradePlan}
         eventSlug={event.slug}
+        albumClosed={isAlbumClosed(event.expiresAt)}
         onSignInRequired={onSignInRequired}
       />
     )}

@@ -22,6 +22,7 @@ import {
   acquireUserEventCreationLock,
 } from '../../middleware/tierGate';
 import { computeExpiry, refreshExpiryDates } from '../../lib/retention';
+import { bindUnheldPass, retireSpentPass } from '../../lib/subscriptionUpgrade';
 import { eraseAlbum, AlbumBeingDeletedError, type AlbumErasure } from '../../lib/albumErasure';
 import { errorLabel, isUniqueViolation } from '../../lib/errors';
 import {
@@ -204,6 +205,10 @@ eventsRouter.post('/', requireAuth, validateBody(CreateEventSchema), async (req,
     }
     const host = userRes.rows[0];
 
+    // One wedding per pass: a pass whose album has closed or gone does not
+    // carry over to a new album.
+    await retireSpentPass(userId);
+
     // A paid palette is paid here as well. PUT has refused one below
     // celebration_pass for a long time; creation never did, so a free host
     // could simply start their album on a paid theme and keep it, and the
@@ -323,6 +328,8 @@ eventsRouter.post('/', requireAuth, validateBody(CreateEventSchema), async (req,
         return res.status(409).json({ error: 'Could not allocate a unique event URL. Please try again.' });
       }
 
+      // A pass no album holds yet is this album's (one wedding per pass).
+      await bindUnheldPass(userId, event.id, lockClient);
       await lockClient.query('COMMIT');
     } catch (err) {
       await lockClient.query('ROLLBACK').catch(() => undefined);

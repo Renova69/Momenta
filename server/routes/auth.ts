@@ -10,7 +10,8 @@ import {
   allowDemoAccount,
   DUMMY_PASSWORD_HASH,
 } from '../middleware/auth';
-import { getEffectiveTierForEvent, acquireUserEventCreationLock } from '../middleware/tierGate';
+import { getEffectiveTierForEvent, getEffectiveTierForUser, acquireUserEventCreationLock } from '../middleware/tierGate';
+import { bindUnheldPass, retireSpentPass } from '../lib/subscriptionUpgrade';
 import { validateBody } from '../middleware/validate';
 import { computeExpiry } from '../lib/retention';
 import { authLimiter } from '../middleware/rateLimit';
@@ -257,6 +258,11 @@ authRouter.post('/login', authLimiter, validateBody(LoginSchema), async (req, re
       // collision — an unhandled 500 instead of a working login). Mirrors
       // the register handler's pattern: one transaction, retry on 23505.
       const defaultDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+      // N-185 — the new album takes the host's plan, as POST /api/events gives
+      // it, not the free plan's deadline; a spent pass is no plan (one wedding
+      // per pass).
+      await retireSpentPass(user.id);
+      const hostTier = await getEffectiveTierForUser(user.id);
       const MAX_SLUG_ATTEMPTS = 5;
       for (let attempt = 0; attempt < MAX_SLUG_ATTEMPTS && !event; attempt++) {
         const newSlug =
@@ -287,8 +293,9 @@ authRouter.post('/login', authLimiter, validateBody(LoginSchema), async (req, re
           );
           const newEvent = createdEvent.rows[0];
 
-          const expiry = computeExpiry('free', newEvent.event_date, newEvent.created_at);
+          const expiry = computeExpiry(hostTier, newEvent.event_date, newEvent.created_at);
           await client.query('UPDATE events SET expires_at = $1 WHERE id = $2', [expiry, newEvent.id]);
+          await bindUnheldPass(user.id, newEvent.id, client);
           newEvent.expires_at = expiry;
 
           await client.query('COMMIT');

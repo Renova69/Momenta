@@ -9,6 +9,7 @@ import { errorLabel } from '../lib/errors';
 import { getStripeClient, isStripeConfigured, subscriptionLivenessAtStripe } from '../lib/stripe';
 import { PAID_TIER_PRICING, PaidPlanTier, isPriceMapConfigured, priceIdForTier } from '../lib/stripePlans';
 import { getEffectiveTierForUser } from '../middleware/tierGate';
+import { retireSpentPass } from '../lib/subscriptionUpgrade';
 import { TIER_WEIGHTS } from '../../shared/planCaps';
 
 export const billingRouter = Router();
@@ -180,6 +181,9 @@ billingRouter.post(
       // entitlement, it is a row that outlived it (a missed cancellation
       // webhook). Blocking on that would lock a returning customer out of ever
       // paying again, which is the same trap the guard above steps around.
+      // One wedding per pass: a pass whose album has closed is spent, and
+      // buying it again is how that album reopens.
+      await retireSpentPass(userId);
       const currentTier = await getEffectiveTierForUser(userId);
       const entitlementIsStale = !!storedSubscriptionId && !subscriptionLive;
       if (!entitlementIsStale && (TIER_WEIGHTS[currentTier] ?? 0) >= (TIER_WEIGHTS[tier] ?? 0)) {
@@ -233,6 +237,8 @@ billingRouter.post(
  */
 billingRouter.get('/status', requireAuth, async (req, res) => {
   try {
+    // A pass whose album has closed is not one the account keeps.
+    await retireSpentPass(req.user!.userId);
     const { rows } = await pool.query(
       `SELECT tier, past_due_grace_expiry, one_time_tier, lapsed_tier, stripe_subscription_id FROM subscriptions
         WHERE user_id = $1 AND status = 'active' ORDER BY updated_at DESC LIMIT 1`,

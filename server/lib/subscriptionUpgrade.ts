@@ -283,6 +283,71 @@ async function refreshExpiriesAfterTierChange(
 }
 
 /**
+ * One wedding per pass (the owner's rule, 2026-10-18). The account's one-time
+ * pass is used up once the album it was bought for has closed or is gone, and
+ * no open album holds it. A new wedding then needs a new pass, and buying one
+ * again is what reopens a closed album. The album keeps the pass on its own
+ * row (events.pass_tier) for looking and downloading.
+ *
+ * A pass no album holds yet (bought while the account had none) is not spent:
+ * the next album takes it (bindUnheldPass).
+ *
+ * Before this a pass never lapsed and the one-album limit only counted albums
+ * that existed: delete the album after the wedding, make a new one, and the
+ * same €49 bought another 90 days. Returns true when a pass was used up.
+ *
+ * Called wherever the account's pass is about to matter: before checkout and
+ * the self-serve upgrade weigh what the account already has, before a new
+ * album takes the account's plan, when an album is deleted, and before a
+ * subscription that ends falls back to the pass.
+ */
+export async function retireSpentPass(
+  userId: string,
+  db: Pool | PoolClient = pool,
+  options: {
+    /** The album being deleted held the pass; its row may already be gone. */
+    deletedAlbumHeldPass?: boolean;
+  } = {}
+): Promise<boolean> {
+  const result = await db.query(
+    `UPDATE subscriptions
+        SET tier = CASE WHEN tier = one_time_tier THEN 'free' ELSE tier END,
+            event_limit = CASE WHEN tier = one_time_tier THEN ${EVENT_LIMIT_FOR_TIER.free} ELSE event_limit END,
+            one_time_tier = NULL,
+            updated_at = NOW()
+      WHERE user_id = $1 AND status = 'active' AND one_time_tier IS NOT NULL
+        AND NOT EXISTS (
+          SELECT 1 FROM events e
+           WHERE e.host_user_id = $1 AND e.pass_tier IS NOT NULL
+             AND (e.expires_at IS NULL OR e.expires_at > NOW())
+             AND (e.deleting_at IS NULL OR e.deleting_at < NOW() - INTERVAL '1 hour'))
+        AND ($2::boolean OR EXISTS (
+          SELECT 1 FROM events e
+           WHERE e.host_user_id = $1 AND e.pass_tier IS NOT NULL AND e.expires_at <= NOW()))`,
+    [userId, options.deletedAlbumHeldPass === true]
+  );
+  if ((result.rowCount ?? 0) === 0) return false;
+  await refreshExpiriesAfterTierChange(userId, db, db !== pool);
+  return true;
+}
+
+/**
+ * Give a new album the account's pass when no album holds it yet, so the
+ * pass is spent with that album like any other (one wedding per pass). Its
+ * start stays NULL: the days count from the wedding.
+ */
+export async function bindUnheldPass(userId: string, eventId: string, db: Pool | PoolClient = pool): Promise<void> {
+  await db.query(
+    `UPDATE events SET pass_tier = s.one_time_tier
+       FROM subscriptions s
+      WHERE events.id = $2 AND events.host_user_id = $1 AND events.pass_tier IS NULL
+        AND s.user_id = $1 AND s.status = 'active' AND s.one_time_tier IS NOT NULL
+        AND NOT EXISTS (SELECT 1 FROM events held WHERE held.host_user_id = $1 AND held.pass_tier IS NOT NULL)`,
+    [userId, eventId]
+  );
+}
+
+/**
  * Downgrades a user back to the free tier — used when a Stripe subscription
  * is cancelled or a payment fails terminally. The subscription id is cleared
  * explicitly: that Stripe subscription is genuinely gone, and leaving a stale
@@ -299,6 +364,8 @@ export async function applyTierDowngradeToFree(
   userId: string,
   db?: Pool | PoolClient
 ): Promise<void> {
+  // A pass whose album has closed is spent, and is no plan to fall back to.
+  await retireSpentPass(userId, db ?? pool);
   const { rows } = await (db ?? pool).query(
     "SELECT one_time_tier FROM subscriptions WHERE user_id = $1 AND status = 'active' LIMIT 1",
     [userId]
@@ -349,6 +416,7 @@ export async function suspendTierForNonPayment(
   } = {}
 ): Promise<boolean> {
   const client = db ?? pool;
+  await retireSpentPass(userId, client);
   const result = await client.query(
     // Down to the one-time pass the account holds, if any, not to free (N-45).
     `UPDATE subscriptions
