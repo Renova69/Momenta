@@ -62,6 +62,23 @@ describe('purgeEventMedia trigger-disable is safe (DB-01)', () => {
     vi.restoreAllMocks();
   });
 
+  // N-181 — the purge deleted the cover and the selfies but left the rows
+  // naming them, so an album purged but kept showed a broken cover and broken
+  // guest pictures.
+  it('clears the cover and selfie addresses whose files it deleted', async () => {
+    const cover = `/uploads/events/${eventId}/cover-1700000000000-abc123.jpg`;
+    const avatar = `/uploads/events/${eventId}/avatar-1700000000000-def456.jpg`;
+    await query('UPDATE events SET cover_image_url = $2 WHERE id = $1', [eventId, cover]);
+    await query(`INSERT INTO guests (event_id, name, avatar_url) VALUES ($1, 'Selfie Guest', $2)`, [eventId, avatar]);
+
+    await purgeEventMedia(eventId);
+
+    const album = await query<{ cover_image_url: string | null }>('SELECT cover_image_url FROM events WHERE id = $1', [eventId]);
+    expect(album.rows[0].cover_image_url).toBeNull();
+    const guests = await query<{ avatar_url: string | null }>("SELECT avatar_url FROM guests WHERE event_id = $1 AND name = 'Selfie Guest'", [eventId]);
+    expect(guests.rows[0].avatar_url).toBeNull();
+  });
+
   it('removes the now-empty event directory after purging (G4)', async () => {
     const removeSpy = vi.spyOn(storageAdapter, 'removeEventDirectory');
 

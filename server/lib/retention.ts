@@ -517,6 +517,18 @@ export async function purgeEventMedia(
     await client.query('DELETE FROM photos WHERE event_id = $1', [eventId]);
     await client.query('DELETE FROM audio_guestbook WHERE event_id = $1', [eventId]);
     await client.query('UPDATE events SET storage_bytes = 0 WHERE id = $1', [eventId]);
+    // N-181 — the stored cover and selfie files went above; an album that is
+    // purged but kept must not go on naming them. Only addresses in this
+    // album's own folder, as the deletes above.
+    const inFolder = (file: string) => `%/events/${eventId}/${file}-%`;
+    await client.query('UPDATE events SET cover_image_url = NULL WHERE id = $1 AND cover_image_url LIKE $2', [
+      eventId,
+      inFolder('cover'),
+    ]);
+    await client.query('UPDATE guests SET avatar_url = NULL WHERE event_id = $1 AND avatar_url LIKE $2', [
+      eventId,
+      inFolder('avatar'),
+    ]);
     await client.query('COMMIT');
   } catch (err) {
     await client.query('ROLLBACK').catch(() => undefined);
