@@ -85,8 +85,15 @@ export const CameraCaptureModal: React.FC<CameraCaptureModalProps> = ({
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const nativeCameraInputRef = useRef<HTMLInputElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  // N-170 — which start of the camera is still wanted. A stop, or a newer
+  // start, moves it on; a getUserMedia that answers for an older one has its
+  // stream stopped instead of kept. Before this a stream that arrived after
+  // the camera closed, or after a second start replaced it ("Снимай отново"
+  // started the camera twice), stayed live with nothing left to stop it.
+  const cameraStartRef = useRef(0);
 
   const stopCamera = useCallback(() => {
+    cameraStartRef.current += 1;
     if (streamRef.current) {
       streamRef.current.getTracks().forEach((track) => track.stop());
       streamRef.current = null;
@@ -112,6 +119,7 @@ export const CameraCaptureModal: React.FC<CameraCaptureModalProps> = ({
 
     try {
       stopCamera();
+      const start = (cameraStartRef.current += 1);
 
       const constraints: MediaStreamConstraints = {
         video: {
@@ -125,6 +133,10 @@ export const CameraCaptureModal: React.FC<CameraCaptureModalProps> = ({
       };
 
       const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      if (start !== cameraStartRef.current) {
+        stream.getTracks().forEach((track) => track.stop());
+        return;
+      }
       streamRef.current = stream;
       setPermissionState('granted');
 
@@ -358,7 +370,9 @@ export const CameraCaptureModal: React.FC<CameraCaptureModalProps> = ({
     setBulkTruncatedFrom(null);
     setCaption('');
     setCameraError(null);
-    startCamera();
+    // Clearing a captured frame re-runs the effect that starts the camera;
+    // starting it here as well opened it twice (N-170).
+    if (!capturedRawUrl) startCamera();
   };
 
   const handleConfirmUpload = async () => {

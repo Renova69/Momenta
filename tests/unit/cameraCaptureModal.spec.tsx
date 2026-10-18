@@ -618,3 +618,58 @@ describe('the camera warning and the viewfinder controls (N-133)', () => {
     expect(zOf(warning)).toBeLessThan(zOf(closeBar));
   });
 });
+
+// N-170 — the camera stayed on after the guest closed it. A start resolved
+// after cleanup had run, or after a newer start replaced it, and its stream
+// was kept with nothing left to stop it: "Снимай отново" started the camera
+// twice, and after closing, both streams were still live.
+describe('the camera stream', () => {
+  function deferredCamera() {
+    const pending: Array<(stream: MediaStream) => void> = [];
+    const tracks: Array<{ stop: ReturnType<typeof vi.fn> }> = [];
+    Object.defineProperty(navigator, 'mediaDevices', {
+      configurable: true,
+      value: {
+        getUserMedia: vi.fn(
+          () =>
+            new Promise<MediaStream>((resolve) => {
+              pending.push(resolve);
+            })
+        ),
+      },
+    });
+    const arrive = (index: number) => {
+      const track = { stop: vi.fn() };
+      tracks.push(track);
+      pending[index]({ getTracks: () => [track] } as unknown as MediaStream);
+      return track;
+    };
+    return { pending, arrive };
+  }
+
+  it('is stopped when it arrives after the camera was closed', async () => {
+    const camera = deferredCamera();
+    const { rerender } = renderModal();
+    await waitFor(() => expect(camera.pending.length).toBe(1));
+
+    rerender(
+      <CameraCaptureModal
+        {...({ isOpen: false, onClose: vi.fn(), currentGuest: guest, quests, onPhotoUploaded: vi.fn() } as unknown as React.ComponentProps<typeof CameraCaptureModal>)}
+      />
+    );
+    const late = camera.arrive(0);
+
+    await waitFor(() => expect(late.stop).toHaveBeenCalled());
+  });
+
+  it('keeps the stream of the start still wanted', async () => {
+    const camera = deferredCamera();
+    renderModal();
+    await waitFor(() => expect(camera.pending.length).toBe(1));
+
+    const current = camera.arrive(0);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(current.stop).not.toHaveBeenCalled();
+  });
+});
