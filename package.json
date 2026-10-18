@@ -44,7 +44,7 @@
     "test:unit:serial": "cross-env STORAGE_PROVIDER=local vitest run --no-file-parallelism",
     "test:storage:r2": "vitest run --config vitest.r2.config.ts",
     "test:coverage": "cross-env STORAGE_PROVIDER=local vitest run --coverage",
-    "test:e2e": "tsx tests/e2e.test.ts",
+    "test:e2e": "cross-env STORAGE_PROVIDER=local tsx tests/e2e.test.ts",
     "test:browser": "vite build && playwright test",
     "ingest:watch": "tsx scripts/ingest-watcher.ts",
     "tunnel": "node start-tunnel.cjs",

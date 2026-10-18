@@ -10,6 +10,11 @@ import { defineConfig, devices } from '@playwright/test';
  */
 const PORT = 6685;
 
+// N-189 — the workers too, not only the server below: their cleanup
+// (tests/browser/support.ts) deletes what the server wrote, and with .env's
+// STORAGE_PROVIDER=r2 it asked R2 to delete files that were on local disk.
+process.env.STORAGE_PROVIDER = 'local';
+
 export default defineConfig({
   testDir: 'tests/browser',
   testMatch: '**/*.pw.ts',
