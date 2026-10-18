@@ -597,3 +597,15 @@ describe('a closed album, in the studio', () => {
     expect(screen.queryByRole('button', { name: i18n.t('album.reopen') })).not.toBeInTheDocument();
   });
 });
+
+// N-191 — a shortcut with the photographer tab's own name stood beside it,
+// with no selected state.
+describe('the studio sections bar', () => {
+  it('has one photographer control, not two of the same name', () => {
+    const { container } = renderDashboard({ planTier: 'free' });
+    const named = Array.from(container.querySelectorAll('button')).filter((b) =>
+      b.textContent?.includes(i18n.t('host.tab_photographer'))
+    );
+    expect(named).toHaveLength(1);
+  });
+});

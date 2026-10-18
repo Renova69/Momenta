@@ -36,6 +36,13 @@ export function builtClient(distDir: string): Router {
   router.use(express.static(distDir, { setHeaders: setCacheHeaders }));
   router.use((req, res, next) => {
     if (req.method === 'GET' && !req.path.startsWith('/api') && !req.path.startsWith('/uploads')) {
+      // N-191 — a file that is not there is a 404, not the page: no address
+      // the client routes has a dot in its last segment, and a broken photo
+      // address used to load the app's HTML with a 200.
+      if (path.posix.basename(req.path).includes('.')) {
+        res.setHeader('X-Robots-Tag', NOINDEX);
+        return res.status(404).type('text/plain').send('Not found');
+      }
       res.setHeader('Cache-Control', ALWAYS_CHECK);
       if (!isPublicPage(req.path, req.originalUrl)) res.setHeader('X-Robots-Tag', NOINDEX);
       return res.sendFile(page);

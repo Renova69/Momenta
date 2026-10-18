@@ -122,16 +122,10 @@ export const TabNav: React.FC = () => {
           </button>
         </div>
 
-        {/* Live Guest Preview + Photographer Ingest Quick Links */}
+        {/* Live guest preview. N-191 — a second "Фотограф" button stood here,
+            beside the tab of the same name, with no selected state: two
+            controls with one name for a screen reader to tell apart. */}
         <div className="flex items-center gap-2">
-          <button
-            onClick={() => setActiveTab('ingest')}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gold-400/10 border border-gold-400/40 text-gold-300 text-xs font-semibold hover:bg-gold-400/20 transition-colors"
-          >
-            <KeyRound className="w-3.5 h-3.5" />
-            <span>{i18n.t('host.tab_photographer')}</span>
-          </button>
-
           <a
             href={`/e/${event.slug}`}
             target="_blank"

@@ -132,3 +132,21 @@ describe('the built client (N-134)', () => {
     expect(missing.body).not.toContain('<div></div>');
   });
 });
+
+// N-191 — a file that does not exist answered 200 with the app's page, so a
+// broken photo address (a stale /quarantine/ one, say) loaded HTML into an
+// <img> and looked like a working response to anything checking it. No page
+// the client routes has a dot in its last segment.
+describe('a file that is not there (N-191)', () => {
+  it('answers 404, not the page', async () => {
+    for (const missing of ['/quarantine/events/abc/wedding-photo-1.jpg', '/assets/gone-123.js', '/favicon.png']) {
+      const res = await get(missing, 'identity');
+      expect(res.status, missing).toBe(404);
+      expect(res.body).not.toContain('<div></div>');
+    }
+  });
+
+  it('still answers an album address with the page', async () => {
+    expect((await get('/e/ivan-and-maria-2026', 'identity')).status).toBe(200);
+  });
+});
