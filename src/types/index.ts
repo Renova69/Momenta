@@ -25,6 +25,8 @@ export interface HostUser {
   companyName?: string;
   avatarUrl?: string;
   createdAt: string;
+  /** N-166 — the shared demo login; the server refuses every change it asks for. */
+  isDemo?: boolean;
 }
 
 export interface Subscription {

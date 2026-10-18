@@ -39,6 +39,7 @@ import { HostDashboardProvider, HostTab, HostDashboardValue } from './dashboard/
 import { formatDateDDMMYYYY, formatTime24h, parseDateAndTime } from './dashboard/dateFields';
 import { TabNav } from './dashboard/TabNav';
 import { BillingNotice } from './BillingNotice';
+import { DemoNotice } from './DemoNotice';
 import { AlbumClosedNotice } from '../common/AlbumClosedNotice';
 import { isAlbumClosed } from '../../utils/albumStatus';
 import type { CoverSource } from '../../api/eventsApi';
@@ -64,6 +65,8 @@ interface HostDashboardProps {
   /** Set or remove the album's cover (N-139). */
   onSetCover?: (source: CoverSource) => Promise<void>;
   onRemoveCover?: () => Promise<void>;
+  /** N-166 — the shared demo login: say up front that nothing is saved. */
+  isDemoAccount?: boolean;
 }
 
 const NO_COVER_ACTION = async () => undefined;
@@ -85,6 +88,7 @@ export const HostDashboard: React.FC<HostDashboardProps> = ({
   onOpenPricing,
   onSetCover = NO_COVER_ACTION,
   onRemoveCover = NO_COVER_ACTION,
+  isDemoAccount = false,
 }) => {
   // M10 — revoking guest sessions is destructive to guest *identities* (their
   // photos stay, their link to them does not), so it asks first and reports
@@ -277,6 +281,7 @@ export const HostDashboard: React.FC<HostDashboardProps> = ({
             thing on screen. A page with no h1 gives a screen reader nothing to
             land on and no way to tell one album's dashboard from another's. */}
         <h1 className="sr-only">{i18n.t('host.studio_heading', { title: event.title })}</h1>
+        {isDemoAccount && <DemoNotice />}
         <BillingNotice eventSlug={event.slug} />
         {/* N-159 — guests can no longer add to it; a longer plan reopens it. */}
         {isAlbumClosed(event.expiresAt) && event.expiresAt && (

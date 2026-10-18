@@ -2,7 +2,14 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { pool } from '../lib/db';
 import { cleanSlug } from '../lib/storage';
-import { generateToken, hashPassword, comparePassword, requireAuth, DUMMY_PASSWORD_HASH } from '../middleware/auth';
+import {
+  generateToken,
+  hashPassword,
+  comparePassword,
+  requireAuth,
+  allowDemoAccount,
+  DUMMY_PASSWORD_HASH,
+} from '../middleware/auth';
 import { getEffectiveTierForEvent, acquireUserEventCreationLock } from '../middleware/tierGate';
 import { validateBody } from '../middleware/validate';
 import { computeExpiry } from '../lib/retention';
@@ -190,6 +197,7 @@ authRouter.post('/register', authLimiter, validateBody(RegisterSchema), async (r
       companyName: result.user.company_name,
       avatarUrl: result.user.avatar_url,
       createdAt: result.user.created_at,
+      isDemo: false,
     };
 
     return res.status(201).json({ user: sanitizedUser, event: result.event, token: result.token });
@@ -206,7 +214,7 @@ authRouter.post('/login', authLimiter, validateBody(LoginSchema), async (req, re
 
   try {
     const { rows } = await pool.query(
-      'SELECT id, email, full_name, role, company_name, avatar_url, created_at, password_hash, token_version FROM users WHERE email = $1 LIMIT 1',
+      'SELECT id, email, full_name, role, company_name, avatar_url, created_at, password_hash, token_version, is_demo FROM users WHERE email = $1 LIMIT 1',
       [email]
     );
 
@@ -314,6 +322,8 @@ authRouter.post('/login', authLimiter, validateBody(LoginSchema), async (req, re
       companyName: user.company_name,
       avatarUrl: user.avatar_url,
       createdAt: user.created_at,
+      // N-166 — the studio tells a demo visitor nothing is saved.
+      isDemo: user.is_demo === true,
     };
 
     event.planTier = await getEffectiveTierForEvent(event.id);
@@ -329,7 +339,7 @@ authRouter.get('/me', requireAuth, async (req, res) => {
   try {
     const userRes = await pool.query(
       `SELECT id, email, full_name as "fullName", role, company_name as "companyName",
-              avatar_url as "avatarUrl", created_at as "createdAt"
+              avatar_url as "avatarUrl", created_at as "createdAt", is_demo as "isDemo"
        FROM users WHERE id = $1`,
       [req.user!.userId]
     );
@@ -405,7 +415,11 @@ authRouter.put('/me', requireAuth, validateBody(UpdateProfileSchema), async (req
  * had access, and ending only the session that happens to be asking would miss
  * exactly the session they are worried about.
  */
-authRouter.post('/logout', requireAuth, async (req, res) => {
+authRouter.post('/logout', allowDemoAccount, requireAuth, async (req, res) => {
+  // N-166 — every visitor shares the demo login, so ending all its sessions
+  // would sign out everyone else trying the demo. This visitor's own browser
+  // forgets its token; nothing else needs revoking on a view-only account.
+  if (req.user!.isDemo) return res.status(204).send();
   try {
     await pool.query('UPDATE users SET token_version = token_version + 1 WHERE id = $1', [
       req.user!.userId,

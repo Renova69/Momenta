@@ -530,6 +530,7 @@ function WeddingAppContent() {
                 onOpenPricing={() => setIsPricingOpen(true)}
                 onSetCover={setCover}
                 onRemoveCover={removeCover}
+                isDemoAccount={currentHostUser?.isDemo === true}
               />
             ) : (
               <HostAuthPage

@@ -33,6 +33,7 @@ export const HostProfileModal: React.FC<HostProfileModalProps> = ({
   const nameId = useId();
   const emailId = useId();
   const { dialogRef, dialogProps } = useDialog({ onClose, labelledBy: titleId, enabled: isOpen });
+  const isDemo = hostUser.isDemo === true;
 
   useEffect(() => {
     if (isOpen) {
@@ -93,7 +94,8 @@ export const HostProfileModal: React.FC<HostProfileModalProps> = ({
               type="text"
               value={nameDraft}
               onChange={(e) => setNameDraft(e.target.value)}
-              className="w-full px-3 py-2.5 rounded-xl bg-noir-800 border border-cream-400/20 text-sm text-cream-100 focus:outline-hidden focus:border-gold-400"
+              disabled={isDemo}
+              className="w-full px-3 py-2.5 rounded-xl bg-noir-800 border border-cream-400/20 text-sm text-cream-100 focus:outline-hidden focus:border-gold-400 disabled:bg-noir-950 disabled:text-cream-400/60 disabled:cursor-not-allowed"
             />
           </div>
 
@@ -115,21 +117,29 @@ export const HostProfileModal: React.FC<HostProfileModalProps> = ({
 
           {error && <p className="text-xs text-rosewood-400">{error}</p>}
 
-          <button
-            onClick={handleSave}
-            disabled={isSaving}
-            className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-linear-to-r from-gold-400 to-gold-500 text-noir-900 font-bold text-sm shadow-glow hover:brightness-110 active:scale-98 transition-all disabled:opacity-60"
-          >
-            {isSaving ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
-            ) : saved ? (
-              <Check className="w-4 h-4" />
-            ) : null}
-            <span>{saved ? i18n.t('host_profile.saved') : i18n.t('host_profile.save_button')}</span>
-          </button>
+          {isDemo ? (
+            // N-166 — the demo login is every visitor's; the server refuses
+            // these changes, so they are not offered.
+            <p role="note" className="text-xs text-cream-300 p-3 rounded-xl bg-noir-800 border border-gold-400/20">
+              {i18n.t('demo.view_only_body')}
+            </p>
+          ) : (
+            <button
+              onClick={handleSave}
+              disabled={isSaving}
+              className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-linear-to-r from-gold-400 to-gold-500 text-noir-900 font-bold text-sm shadow-glow hover:brightness-110 active:scale-98 transition-all disabled:opacity-60"
+            >
+              {isSaving ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : saved ? (
+                <Check className="w-4 h-4" />
+              ) : null}
+              <span>{saved ? i18n.t('host_profile.saved') : i18n.t('host_profile.save_button')}</span>
+            </button>
+          )}
         </div>
 
-        {onChangePassword && onDeleteAccount && (
+        {!isDemo && onChangePassword && onDeleteAccount && (
           <AccountSecurity onChangePassword={onChangePassword} onDeleteAccount={onDeleteAccount} />
         )}
       </div>

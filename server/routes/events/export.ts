@@ -15,7 +15,7 @@ import { formatBytes } from '../../lib/planLimits';
 import { requireUuidParams } from '../../middleware/uuid';
 import { ZipArchive } from 'archiver';
 import { storageAdapter, storagePathBelongsToEvent } from '../../lib/storage';
-import { requireAuth, optionalAuth } from '../../middleware/auth';
+import { requireAuth, optionalAuth, allowDemoAccount } from '../../middleware/auth';
 import { requireEventTier, getStorageUsage } from '../../middleware/tierGate';
 import { issueDownloadToken, verifyDownloadToken } from '../../lib/downloadToken';
 import { errorLabel } from '../../lib/errors';
@@ -73,6 +73,8 @@ eventsRouter.get('/:id/usage', requireAuth, requireUuidParams('id'), async (req,
 // back a five-minute token so the download can stream straight to disk.
 eventsRouter.post(
   '/:id/export-token',
+  // N-166 — a download changes nothing, so the view-only demo may take one.
+  allowDemoAccount,
   requireAuth,
   requireUuidParams('id'),
   requireEventTier('celebration_pass'),
