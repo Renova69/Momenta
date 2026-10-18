@@ -64,6 +64,30 @@ if (process.env.NODE_ENV === 'production') {
   }
 }
 
+// N-174 — the address guests open. It is written into every stored photo,
+// voice message and preview URL under local storage, and checkout may only
+// return to it. The fallback below is http://localhost, so a production
+// server started without it stored addresses no phone can load, and setting
+// it later repaired none of the rows already written.
+if (process.env.NODE_ENV === 'production') {
+  const base = (process.env.PUBLIC_BASE_URL || '').trim();
+  if (!base) {
+    throw new Error(
+      '[CONFIG] PUBLIC_BASE_URL must be set in production: the address guests open, e.g. https://album.example.com. ' +
+      'Refusing to start.'
+    );
+  }
+  let protocol = '';
+  try {
+    protocol = new URL(base).protocol;
+  } catch {
+    // Reported below.
+  }
+  if (protocol !== 'https:' && protocol !== 'http:') {
+    throw new Error(`[CONFIG] PUBLIC_BASE_URL must be an http(s) address, e.g. https://album.example.com. Refusing to start.`);
+  }
+}
+
 // [FIX C-9] CORS_ORIGIN must be explicitly configured — wildcard '*' is not safe with credentials
 const CORS_ORIGIN = process.env.CORS_ORIGIN;
 if (!CORS_ORIGIN) {

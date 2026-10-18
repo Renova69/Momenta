@@ -85,8 +85,9 @@ services:
       TRUST_PROXY: ${TRUST_PROXY:-false}
       # Baked into every stored photo/audio URL at upload time, and one of the
       # two origins post-checkout redirects are validated against. Wrong here
-      # means broken images and 400s from checkout.
-      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-}
+      # means broken images and 400s from checkout, so it is required, and the
+      # server refuses one that is not an http(s) address (N-174).
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:?set PUBLIC_BASE_URL in .env - the address guests open, e.g. https://album.example.com}
       DB_POOL_MAX: ${DB_POOL_MAX:-40}
       # Stripe. Leaving STRIPE_SECRET_KEY unset does NOT merely disable
       # payments: it reopens the unpaid self-serve tier write in
@@ -135,6 +136,9 @@ services:
       # Config is validated on import here too, so the same explicit answer is
       # required as for the app itself. Nothing proxies to this container.
       TRUST_PROXY: ${TRUST_PROXY:-false}
+      # Validated on import as for the app (N-174), and the sweeps build the
+      # same stored addresses.
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:?set PUBLIC_BASE_URL in .env - the address guests open, e.g. https://album.example.com}
       # The retention sweep deletes stored media, so it needs the same storage
       # configuration the app writes with — pointed at local disk while the app
       # uses R2, it would find nothing to purge and silently report zero.
