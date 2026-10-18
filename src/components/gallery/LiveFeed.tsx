@@ -293,6 +293,7 @@ const LiveFeedComponent: React.FC<LiveFeedProps> = ({
                   onReact={onReact}
                   onOpenComments={onOpenComments}
                   onOpenLightbox={onOpenLightbox}
+                  isClosed={!!closedAt}
                 />
               ))}
             </div>

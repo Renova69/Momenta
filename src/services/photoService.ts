@@ -7,6 +7,22 @@ import { runThrottledPhotoUpload } from './photoUploadThrottle';
 import { ServiceContext } from './storageServiceContext';
 import { ApiError } from '../api/apiClient';
 import { isRefusedForGood, refusedUploadMessage } from './uploadRefusal';
+import { i18n } from '../i18n';
+
+/**
+ * N-183 — the album closed while this page was open, and the server refused a
+ * like, reaction or comment already shown. Put the photo back as it was, say
+ * why, and re-read the album so the page shows it closed. Returns false for
+ * any other failure, which the caller handles as before.
+ */
+function undoIfAlbumClosed(ctx: ServiceContext, eventId: string, photoId: string, before: Photo | undefined, err: unknown): boolean {
+  if (!(err instanceof ApiError) || err.code !== 'ALBUM_CLOSED') return false;
+  persistPhotos(eventId, getPhotos(ctx, eventId).map((p) => (p.id === photoId && before ? before : p)));
+  ctx.notify();
+  ctx.notifyError(i18n.t('error.album_closed'));
+  void ctx.refreshEventDetails();
+  return true;
+}
 
 
 /**
@@ -158,6 +174,7 @@ export function discardLocalPhoto(ctx: ServiceContext, eventId: string, localId:
 
 export function toggleLikePhoto(ctx: ServiceContext, photoId: string, guestId: string): void {
   const event = ctx.getEvent();
+  const before = getPhotos(ctx, event.id).find((p) => p.id === photoId);
   const photos = getPhotos(ctx, event.id).map((p) => {
     if (p.id === photoId) {
       const likedIds = p.likedByGuestIds || [];
@@ -179,6 +196,7 @@ export function toggleLikePhoto(ctx: ServiceContext, photoId: string, guestId: s
 
   // Sync to PostgreSQL backend
   photosApi.toggleLike(photoId, guestId, ctx.getCurrentGuest(event.id)?.guestToken).catch((err) => {
+    if (undoIfAlbumClosed(ctx, event.id, photoId, before, err)) return;
     console.warn('[Storage] Like not synced to backend:', err);
     if (isGuestIdentityRejected(err)) ctx.forgetGuestIdentity(event.id);
   });
@@ -187,6 +205,7 @@ export function toggleLikePhoto(ctx: ServiceContext, photoId: string, guestId: s
 /** Toggles one emoji reaction on a photo — independent of the others, unlike toggleLikePhoto's single boolean. */
 export function togglePhotoReaction(ctx: ServiceContext, photoId: string, reaction: PhotoReactionKind, guestId: string): void {
   const event = ctx.getEvent();
+  const before = getPhotos(ctx, event.id).find((p) => p.id === photoId);
   const photos = getPhotos(ctx, event.id).map((p) => {
     if (p.id !== photoId) return p;
     const reactions = p.reactions || [];
@@ -201,6 +220,7 @@ export function togglePhotoReaction(ctx: ServiceContext, photoId: string, reacti
   ctx.notify();
 
   photosApi.toggleReaction(photoId, reaction, guestId, ctx.getCurrentGuest(event.id)?.guestToken).catch((err) => {
+    if (undoIfAlbumClosed(ctx, event.id, photoId, before, err)) return;
     console.warn('[Storage] Reaction not synced to backend:', err);
     if (isGuestIdentityRejected(err)) ctx.forgetGuestIdentity(event.id);
   });
@@ -219,6 +239,7 @@ export function addComment(ctx: ServiceContext, photoId: string, guestId: string
     createdAt: new Date().toISOString(),
   };
 
+  const before = getPhotos(ctx, event.id).find((p) => p.id === photoId);
   const photos = getPhotos(ctx, event.id).map((p) => {
     if (p.id === photoId) {
       const comments = [...(p.comments || []), newComment];
@@ -251,6 +272,7 @@ export function addComment(ctx: ServiceContext, photoId: string, guestId: string
       ctx.syncGuestFromServer(event.id, serverComment.guestId, serverComment.guestToken);
     })
     .catch((err) => {
+      if (undoIfAlbumClosed(ctx, event.id, photoId, before, err)) return;
       if (isGuestIdentityRejected(err)) ctx.forgetGuestIdentity(event.id);
     });
 }

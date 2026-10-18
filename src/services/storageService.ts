@@ -83,6 +83,7 @@ class WedStorageService {
     joinEventRoom: (eventId) => this.joinEventRoom(eventId),
     syncFromBackend: (eventIdOverride) => this.syncFromBackend(eventIdOverride),
     emitReaction: (reaction, guestName) => this.emitReaction(reaction, guestName),
+    refreshEventDetails: () => this.refreshEventDetails(),
   };
 
   constructor() {

@@ -27,4 +27,6 @@ export interface ServiceContext {
   joinEventRoom: (eventId: string) => void;
   syncFromBackend: (eventIdOverride?: string) => Promise<void>;
   emitReaction: (reaction: string, guestName: string | null) => void;
+  /** Re-read the album's own record, as when the server says it has closed (N-183). */
+  refreshEventDetails: () => Promise<void>;
 }

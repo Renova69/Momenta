@@ -4,6 +4,7 @@ import { STORAGE_KEYS, getOrCreateDeviceFingerprint } from './storageKeys';
 import { ServiceContext } from './storageServiceContext';
 import { isGeneratedElsewhere } from '../utils/avatar';
 import { i18n } from '../i18n';
+import { ApiError } from '../api/apiClient';
 
 /** A stored avatar worth keeping: a real selfie, not a generated stand-in. */
 function keptPicture(avatarUrl: string | null | undefined): string | undefined {
@@ -36,7 +37,10 @@ async function storeInlineSelfie(ctx: ServiceContext, guest: Guest): Promise<Gue
     return { ...guest, avatarUrl };
   } catch (err) {
     console.warn('Selfie was not stored:', err);
-    ctx.notifyError(i18n.t('profile.avatar_failed'));
+    // N-183 — a closed album takes no new pictures, so "try again from your
+    // profile" could never work there.
+    const closed = err instanceof ApiError && err.code === 'ALBUM_CLOSED';
+    ctx.notifyError(i18n.t(closed ? 'error.album_closed' : 'profile.avatar_failed'));
     return { ...guest, avatarUrl: undefined };
   }
 }

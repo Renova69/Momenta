@@ -9,6 +9,7 @@ import {
   clearCurrentGuest,
 } from '../../src/services/guestService';
 import { guestsApi } from '../../src/api/guestsApi';
+import { ApiError } from '../../src/api/apiClient';
 import { STORAGE_KEYS } from '../../src/services/storageKeys';
 import { ServiceContext } from '../../src/services/storageServiceContext';
 import { Guest, WeddingEvent } from '../../src/types';
@@ -395,5 +396,27 @@ describe('a guest the server named before this phone did (N-125)', () => {
     syncGuestFromServer(ctx, EVENT_ID, 'g-srv', 'tok');
 
     expect(storedCurrent()?.name).toBe(i18n.t('guest.fallback_name'));
+  });
+});
+
+// N-183 — a guest joining a closed album with a selfie was told to try the
+// selfie again from their profile, which a closed album can never accept.
+describe('a selfie refused by a closed album (N-183)', () => {
+  const SELFIE = 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQ';
+
+  it('says the album has closed, not to try again', async () => {
+    const { ctx } = harness();
+    vi.spyOn(guestsApi, 'register').mockResolvedValue({
+      id: 'g-new',
+      eventId: EVENT_ID,
+      name: 'Ana',
+      createdAt: new Date().toISOString(),
+      guestToken: 'tok',
+    } as Guest);
+    vi.spyOn(guestsApi, 'setAvatar').mockRejectedValue(new ApiError('closed', 403, undefined, 'ALBUM_CLOSED'));
+
+    await registerGuest(ctx, 'Ana', undefined, SELFIE);
+
+    expect(ctx.notifyError).toHaveBeenCalledWith(i18n.t('error.album_closed'));
   });
 });

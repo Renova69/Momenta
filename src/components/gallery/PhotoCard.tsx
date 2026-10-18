@@ -19,6 +19,11 @@ interface PhotoCardProps {
   photo: Photo;
   currentGuest: Guest;
   onLike: (photoId: string) => void;
+  /**
+   * N-183 — the album has closed: likes and reactions are refused, so their
+   * buttons are disabled and say why instead of doing nothing.
+   */
+  isClosed?: boolean;
   onReact: (photoId: string, reaction: PhotoReactionKind) => void;
   onOpenComments: (photo: Photo) => void;
   onOpenLightbox: (photo: Photo) => void;
@@ -64,7 +69,9 @@ const PhotoCardComponent: React.FC<PhotoCardProps> = ({
   onReact,
   onOpenComments,
   onOpenLightbox,
+  isClosed = false,
 }) => {
+  const closedTitle = isClosed ? i18n.t('error.album_closed') : undefined;
   // Memoized below: a language switch changes no prop, so subscribe to it (N-184).
   useLanguage();
   const isLiked = photo.likedByGuestIds?.includes(currentGuest.id);
@@ -240,9 +247,11 @@ const PhotoCardComponent: React.FC<PhotoCardProps> = ({
         <div className="pt-2 border-t border-cream-400/10 flex items-center justify-between text-xs text-cream-300">
           <button
             onClick={handleLikeClick}
+            disabled={isClosed}
+            title={closedTitle}
             aria-label={i18n.t('feed.like_photo', { n: photo.likesCount })}
             aria-pressed={!!isLiked}
-            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full transition-all ${
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full transition-all disabled:opacity-50 disabled:cursor-not-allowed ${
               isLiked
                 ? 'bg-rosewood-500/20 text-rosewood-400 font-bold'
                 : 'hover:bg-noir-700 text-cream-400 hover:text-cream-200'
@@ -282,11 +291,12 @@ const PhotoCardComponent: React.FC<PhotoCardProps> = ({
                 <button
                   key={kind}
                   onClick={(e) => handleReactClick(e, kind)}
-                  title={i18n.t(labelKey)}
+                  disabled={isClosed}
+                  title={closedTitle ?? i18n.t(labelKey)}
                   // N-144 — named in words, not by the emoji alone, and pressed or not.
                   aria-label={i18n.t(labelKey)}
                   aria-pressed={false}
-                  className="w-7 h-7 rounded-full flex items-center justify-center text-sm opacity-40 hover:opacity-100 hover:bg-noir-700 transition-all"
+                  className="w-7 h-7 rounded-full flex items-center justify-center text-sm opacity-40 hover:opacity-100 hover:bg-noir-700 transition-all disabled:cursor-not-allowed disabled:hover:opacity-40"
                 >
                   {glyph}
                 </button>
@@ -296,10 +306,11 @@ const PhotoCardComponent: React.FC<PhotoCardProps> = ({
               <button
                 key={kind}
                 onClick={(e) => handleReactClick(e, kind)}
-                title={i18n.t(labelKey)}
+                disabled={isClosed}
+                title={closedTitle ?? i18n.t(labelKey)}
                 aria-label={`${i18n.t(labelKey)} (${count})`}
                 aria-pressed={hasReacted}
-                className={`flex items-center gap-1 px-2 py-1 rounded-full text-xs transition-all ${
+                className={`flex items-center gap-1 px-2 py-1 rounded-full text-xs transition-all disabled:cursor-not-allowed ${
                   hasReacted
                     ? 'bg-gold-400/20 border border-gold-400/50 text-gold-300 font-bold'
                     : 'bg-noir-900/60 border border-cream-400/10 text-cream-300 hover:border-cream-400/30'

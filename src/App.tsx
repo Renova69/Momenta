@@ -24,6 +24,7 @@ import { LightboxModal } from './components/gallery/LightboxModal';
 import { GuestOnboardingModal } from './components/guest/GuestOnboardingModal';
 import { HostDialogs, PricingPlansModal } from './components/host/HostDialogs';
 import { isAlbumClosed } from './utils/albumStatus';
+import { useClosedAlbumRefresh } from './hooks/useClosedAlbumRefresh';
 
 /**
  * Everything below is loaded when it is first needed, not before.
@@ -159,6 +160,7 @@ function WeddingAppContent() {
   // N-159 — from its deadline an album takes nothing new. The server refuses
   // on its own; this keeps the screens from offering what it would refuse.
   const albumClosedAt = isAlbumClosed(event.expiresAt) ? (event.expiresAt ?? null) : null;
+  useClosedAlbumRefresh(albumClosedAt, refreshEventDetails);
 
   // Handlers
   const handleOpenCaptureForQuest = (questId: string) => {

@@ -652,3 +652,48 @@ describe('addPhoto when the server refuses the photo', () => {
     expect(stored()).toHaveLength(1);
   });
 });
+
+// N-183 — the album closed while the page was open. The like, reaction or
+// comment showed at once, the server refused it, and nothing put it back or
+// said why: a comment stayed on screen until the next sync quietly dropped it.
+describe('an album that closed while the page was open (N-183)', () => {
+  const closed = () => new ApiError('This album has closed', 403, undefined, 'ALBUM_CLOSED');
+
+  function closedHarness() {
+    const h = harness([photo()]);
+    const refreshEventDetails = vi.fn().mockResolvedValue(undefined);
+    (h.ctx as unknown as { refreshEventDetails: typeof refreshEventDetails }).refreshEventDetails = refreshEventDetails;
+    return { ...h, refreshEventDetails };
+  }
+
+  it('takes a refused like back, says why, and re-reads the album', async () => {
+    const { ctx, notifyError, refreshEventDetails } = closedHarness();
+    vi.spyOn(photosApi, 'toggleLike').mockRejectedValue(closed());
+
+    toggleLikePhoto(ctx, 'p1', 'g1');
+    expect(stored()[0].likesCount).toBe(1);
+
+    await vi.waitFor(() => expect(stored()[0].likesCount).toBe(0));
+    expect(notifyError).toHaveBeenCalledWith(i18n.t('error.album_closed'));
+    expect(refreshEventDetails).toHaveBeenCalled();
+  });
+
+  it('takes a refused reaction back', async () => {
+    const { ctx } = closedHarness();
+    vi.spyOn(photosApi, 'toggleReaction').mockRejectedValue(closed());
+
+    togglePhotoReaction(ctx, 'p1', 'heart', 'g1');
+
+    await vi.waitFor(() => expect(stored()[0].reactions).toEqual([]));
+  });
+
+  it('takes a refused comment back', async () => {
+    const { ctx } = closedHarness();
+    vi.spyOn(photosApi, 'addComment').mockRejectedValue(closed());
+
+    addComment(ctx, 'p1', 'g1', 'Guest', 'Lovely');
+    expect(stored()[0].commentsCount).toBe(1);
+
+    await vi.waitFor(() => expect(stored()[0].commentsCount).toBe(0));
+  });
+});
