@@ -129,6 +129,10 @@ services:
         condition: service_healthy
     # The image's own tsx, started directly, as the app is (N-83).
     command: ["node_modules/.bin/tsx", "scripts/maintenance-scheduler.ts"]
+    # The image's HEALTHCHECK asks the web server, which this container does
+    # not run; inherited, it reported the scheduler unhealthy for ever (N-186).
+    healthcheck:
+      disable: true
     environment:
       NODE_ENV: production
       DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env - letters and digits, see .env.example}@db:5432/${POSTGRES_DB:-wedmoments_db}

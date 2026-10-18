@@ -85,7 +85,12 @@ COPY tsconfig*.json ./
 #
 # Not reachable under STORAGE_PROVIDER=r2, where createStorageAdapter returns
 # the R2 adapter and never constructs the local one.
-RUN mkdir -p uploads uploads-quarantine && chown -R node:node uploads uploads-quarantine
+#
+# N-175 — logs/maintenance too: compose mounts the maintenance reports'
+# named volume at /app/logs, and Docker creates a mount point the image lacks
+# as root, which the scheduler (running as node) cannot write to. A volume
+# mounted over a directory the image has takes that directory's owner.
+RUN mkdir -p uploads uploads-quarantine logs/maintenance && chown -R node:node uploads uploads-quarantine logs
 
 USER node
 

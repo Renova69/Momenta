@@ -66,3 +66,28 @@ describe('the image in CI (N-83)', () => {
     expect(building[0][1].if).toBeUndefined();
   });
 });
+
+// N-175 — compose mounts the maintenance reports' volume at /app/logs, which
+// the image never created, so Docker created it owned by root and the
+// scheduler, running as node, could not write a single report.
+describe('the paths the image writes to', () => {
+  it('creates /app/logs for the node user before switching to it', () => {
+    const dockerfile = read('Dockerfile');
+    const userLine = dockerfile.indexOf('USER node');
+    const mkdir = dockerfile.search(/RUN mkdir -p [^\n]*\blogs\/maintenance\b/);
+    expect(mkdir).toBeGreaterThan(-1);
+    expect(mkdir).toBeLessThan(userLine);
+    expect(dockerfile).toMatch(/chown -R node:node [^\n]*\blogs\b/);
+  });
+});
+
+// N-186 — the maintenance service runs the app image, whose HEALTHCHECK asks
+// :6501/api/health, but the scheduler serves nothing: it was always unhealthy.
+describe('the maintenance service', () => {
+  it('does not inherit the web health check', () => {
+    const compose = yaml.load(read('docker-compose.yml')) as {
+      services: Record<string, { healthcheck?: { disable?: boolean } }>;
+    };
+    expect(compose.services.maintenance.healthcheck?.disable).toBe(true);
+  });
+});
