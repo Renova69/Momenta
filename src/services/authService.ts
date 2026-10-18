@@ -97,21 +97,51 @@ export class AuthService {
       // devices.
       window.addEventListener(SESSION_EXPIRED_EVENT, () => this.clearLocalSession());
 
-      try {
-        const savedUser = localStorage.getItem(AUTH_USER_KEY);
-        const savedToken = localStorage.getItem(AUTH_TOKEN_KEY);
-        if (savedUser && savedToken) {
-          this.currentUser = JSON.parse(savedUser);
-          this.token = savedToken;
-        } else {
-          this.currentUser = null;
-          this.token = null;
-        }
-      } catch {
+      // N-182 — another tab signed in or out, or changed the password and was
+      // handed a new token. Read once, the session went stale here: a tab
+      // signed out elsewhere stayed in the studio with every action failing.
+      window.addEventListener('storage', (event) => {
+        if (event.key !== null && event.key !== AUTH_USER_KEY && event.key !== AUTH_TOKEN_KEY) return;
+        this.loadSavedSession();
+        this.notify();
+      });
+
+      this.loadSavedSession();
+    }
+  }
+
+  private loadSavedSession(): void {
+    try {
+      const savedUser = localStorage.getItem(AUTH_USER_KEY);
+      const savedToken = localStorage.getItem(AUTH_TOKEN_KEY);
+      if (savedUser && savedToken) {
+        this.currentUser = JSON.parse(savedUser);
+        this.token = savedToken;
+      } else {
         this.currentUser = null;
         this.token = null;
       }
+    } catch {
+      this.currentUser = null;
+      this.token = null;
     }
+  }
+
+  /**
+   * N-182 — what an account request's refusal means. A 401 that is not about
+   * the password the host typed is the session itself ending: this tab signs
+   * out, as apiFetch does, rather than reading it as "wrong email or password"
+   * and leaving the host to retry for ever.
+   */
+  private async accountRefusal(res: Response, fallbackKey: string, codeKeys: Record<string, string> = {}): Promise<string> {
+    if (res.status === 401) {
+      const body = (await res.clone().json().catch(() => ({}))) as { code?: unknown };
+      if (body.code !== 'INVALID_CREDENTIALS' && body.code !== 'PASSWORD_SETUP_REQUIRED') {
+        this.clearLocalSession();
+        return i18n.t(body.code === 'SESSION_REVOKED' ? 'error.session_revoked' : 'error.unauthorized');
+      }
+    }
+    return refusalMessage(res, fallbackKey, codeKeys);
   }
 
   public isAuthenticated(): boolean {
@@ -196,7 +226,7 @@ export class AuthService {
   /** Updates the host's own name. Email is not editable — it's how they sign in. */
   public async updateProfile(fullName: string): Promise<AuthResult> {
     if (!this.token) {
-      return { success: false, error: 'Not signed in' };
+      return { success: false, error: i18n.t('error.unauthorized') };
     }
     try {
       const res = await fetch(`${this.apiHost}/api/auth/me`, {
@@ -213,10 +243,9 @@ export class AuthService {
         this.setSession(data.user, this.token);
         return { success: true, user: data.user };
       }
-      const errJson = await res.json().catch(() => ({}));
-      return { success: false, error: errJson.error || 'Update failed' };
-    } catch (e) {
-      return { success: false, error: e instanceof Error ? e.message : 'Network error' };
+      return { success: false, error: await this.accountRefusal(res, 'host_profile.save_failed') };
+    } catch {
+      return { success: false, error: i18n.t('auth.network_error') };
     }
   }
 
@@ -236,7 +265,9 @@ export class AuthService {
       if (!res.ok) {
         return {
           success: false,
-          error: await refusalMessage(res, 'account.password_change_failed', { INVALID_CREDENTIALS: 'account.password_wrong' }),
+          error: await this.accountRefusal(res, 'account.password_change_failed', {
+            INVALID_CREDENTIALS: 'account.password_wrong',
+          }),
         };
       }
       const data = (await res.json()) as { token: string };
@@ -262,7 +293,7 @@ export class AuthService {
       if (!res.ok) {
         return {
           success: false,
-          error: await refusalMessage(res, 'account.delete_failed', {
+          error: await this.accountRefusal(res, 'account.delete_failed', {
             INVALID_CREDENTIALS: 'account.password_wrong',
             BILLING_UNVERIFIABLE: 'account.delete_billing_unreachable',
           }),

@@ -425,3 +425,79 @@ describe('the host account (N-122)', () => {
     expect(authService.isAuthenticated()).toBe(true);
   });
 });
+
+// N-182 — the session was read once per tab. Signed out in one tab, another
+// stayed in the studio with every action failing; and the account actions,
+// which call fetch themselves, read an expired session as "wrong email or
+// password" and never signed the tab out.
+describe('the host session across tabs and expiry (N-182)', () => {
+  const USER = { id: 'u-tabs', email: 'tabs@example.com', fullName: 'Tabs', role: 'couple', createdAt: '' } as HostUser;
+
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  it('follows a sign-out made in another tab', () => {
+    localStorage.setItem('wedmoments_host_user', JSON.stringify(USER));
+    localStorage.setItem('wedmoments_host_token', 'tok-1');
+    const service = new AuthService();
+    const changed = vi.fn();
+    service.subscribe(changed);
+    expect(service.isAuthenticated()).toBe(true);
+
+    localStorage.removeItem('wedmoments_host_user');
+    localStorage.removeItem('wedmoments_host_token');
+    window.dispatchEvent(new StorageEvent('storage', { key: 'wedmoments_host_token' }));
+
+    expect(service.isAuthenticated()).toBe(false);
+    expect(changed).toHaveBeenCalled();
+  });
+
+  it('follows a new token from a password change in another tab', () => {
+    localStorage.setItem('wedmoments_host_user', JSON.stringify(USER));
+    localStorage.setItem('wedmoments_host_token', 'tok-old');
+    const service = new AuthService();
+
+    localStorage.setItem('wedmoments_host_token', 'tok-new');
+    window.dispatchEvent(new StorageEvent('storage', { key: 'wedmoments_host_token' }));
+
+    expect(service.getToken()).toBe('tok-new');
+  });
+
+  it('signs the tab out when the session has expired, instead of blaming the password', async () => {
+    localStorage.setItem('wedmoments_host_user', JSON.stringify(USER));
+    localStorage.setItem('wedmoments_host_token', 'tok-expired');
+    const service = new AuthService();
+    global.fetch = vi.fn().mockResolvedValue(createMockResponse({ error: 'Unauthorized: Token expired or invalid' }, 401, false));
+
+    const result = await service.changePassword('Right-pass-1', 'New-pass-2');
+
+    expect(result.success).toBe(false);
+    expect(result.error).toBe(i18n.t('error.unauthorized'));
+    expect(service.isAuthenticated()).toBe(false);
+  });
+
+  it('still says the password is wrong when it is', async () => {
+    localStorage.setItem('wedmoments_host_user', JSON.stringify(USER));
+    localStorage.setItem('wedmoments_host_token', 'tok-live');
+    const service = new AuthService();
+    global.fetch = vi.fn().mockResolvedValue(createMockResponse({ error: 'The password is not correct.', code: 'INVALID_CREDENTIALS' }, 401, false));
+
+    const result = await service.deleteAccount('wrong');
+
+    expect(result.error).toBe(i18n.t('account.password_wrong'));
+    expect(service.isAuthenticated()).toBe(true);
+  });
+
+  it("says a refused name change in the app's language", async () => {
+    localStorage.setItem('wedmoments_host_user', JSON.stringify(USER));
+    localStorage.setItem('wedmoments_host_token', 'tok-live');
+    const service = new AuthService();
+    global.fetch = vi.fn().mockResolvedValue(createMockResponse({ error: 'Session has been signed out', code: 'SESSION_REVOKED' }, 401, false));
+
+    const result = await service.updateProfile('New Name');
+
+    expect(result.error).toBe(i18n.t('error.session_revoked'));
+    expect(service.isAuthenticated()).toBe(false);
+  });
+});
