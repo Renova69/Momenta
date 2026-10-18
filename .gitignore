@@ -53,3 +53,7 @@ backups/
 # Browser test output (npm run test:browser)
 playwright-report/
 test-results/
+
+# A PDF an old version of tests/unit/pdfPrintService.spec.ts saved into the
+# working directory (N-190).
+/pdf-slug-*.pdf

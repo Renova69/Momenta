@@ -116,6 +116,16 @@ describe('checking a restore against its manifest', () => {
 
 // Runs wherever PostgreSQL's client tools or the database container can be
 // reached: on a developer's machine, the container; on CI, the runner's tools.
+//
+// N-190 — CI sets REQUIRE_PG_TOOLS=1, so a runner without them fails here
+// instead of skipping the round trip without a word: MASTER_AUDIT §3l says CI
+// runs it on every change, and a silent skip would make that untrue.
+describe('the round trip can run where it is required', () => {
+  it.runIf(process.env.REQUIRE_PG_TOOLS === '1')('finds pg_dump and pg_restore', () => {
+    expect(pgToolsReachable()).toBe(true);
+  });
+});
+
 describe.runIf(pgToolsReachable())('the round trip against the real database', () => {
   it('backs up, restores into a throwaway database, and every table matches', async () => {
     const backup = await runBackup({ databaseUrl: String(CONFIG.DATABASE_URL), dir, keep: 2 });

@@ -156,6 +156,10 @@ jobs:
       # known JWT secret and for HSTS, neither of which is what is under test.
       NODE_ENV: test
 
+      # The backup round trip (tests/unit/dbBackup.spec.ts) fails here rather
+      # than skipping if the runner has no PostgreSQL client tools (N-190).
+      REQUIRE_PG_TOOLS: '1'
+
     steps:
       - uses: actions/checkout@v7
 
