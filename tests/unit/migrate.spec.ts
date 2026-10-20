@@ -159,6 +159,22 @@ describe('SQL migration runner', () => {
     await cleanUp([CREATE, BROKEN, AFTER_BROKEN]);
   });
 
+  it('keeps the database error behind a failed migration, not only its message', async () => {
+    writeMigration(BROKEN, 'SELECT this_function_does_not_exist();');
+
+    const failure = await runMigrations(tempDir).then(
+      () => null,
+      (err: unknown) => err
+    );
+
+    // The message alone loses the SQLSTATE and the position, which are what
+    // an operator reading a failed boot needs to find the bad statement.
+    expect(failure).toBeInstanceOf(Error);
+    expect((failure as Error).cause).toMatchObject({ code: '42883' });
+
+    await cleanUp([BROKEN]);
+  });
+
   it('fails loudly when the migrations directory is missing', async () => {
     await expect(runMigrations(path.join(tempDir, 'does-not-exist'))).rejects.toThrow(/Migrations directory not found/);
   });

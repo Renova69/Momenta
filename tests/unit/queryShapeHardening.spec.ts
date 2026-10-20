@@ -261,7 +261,6 @@ describe('query shape (MEDIUM)', () => {
       CONFIG.STRIPE_PRICE_PRO_PLANNER = 'price_pro_test';
 
       const realConnect = pool.connect.bind(pool);
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const connectSpy = vi.spyOn(pool, 'connect').mockImplementation(((...args: unknown[]) => {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         if (args.length > 0) return (realConnect as any)(...args);
