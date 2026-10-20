@@ -501,3 +501,71 @@ describe('the host session across tabs and expiry (N-182)', () => {
     expect(service.isAuthenticated()).toBe(false);
   });
 });
+
+// N-207 — a session that ended on its own (expired, or signed out from another
+// device) dropped the host onto a bare sign-in form: the dialog that held the
+// message unmounted with the session. The service now remembers why, for the
+// sign-in page to say, until the host signs in again.
+describe('saying why the session ended (N-207)', () => {
+  const USER = { id: 'u-ended', email: 'ended@example.com', fullName: 'Ended', role: 'couple', createdAt: '' } as HostUser;
+
+  beforeEach(() => {
+    localStorage.clear();
+    localStorage.setItem('wedmoments_host_user', JSON.stringify(USER));
+    localStorage.setItem('wedmoments_host_token', 'tok-1');
+  });
+
+  it('remembers that an account action found the session expired', async () => {
+    const service = new AuthService();
+    global.fetch = vi.fn().mockResolvedValue(createMockResponse({ error: 'Unauthorized: Token expired or invalid' }, 401, false));
+
+    await service.changePassword('Right-pass-1', 'New-pass-2');
+
+    expect(service.getSessionEndedNotice()).toBe('auth.session_ended');
+  });
+
+  it('remembers a sign-out from another device, by the code the server sent', () => {
+    const service = new AuthService();
+
+    window.dispatchEvent(new CustomEvent(SESSION_EXPIRED_EVENT, { detail: { code: 'SESSION_REVOKED' } }));
+
+    expect(service.isAuthenticated()).toBe(false);
+    expect(service.getSessionEndedNotice()).toBe('error.session_revoked');
+  });
+
+  it('says nothing after a sign-out the host asked for', () => {
+    const service = new AuthService();
+
+    service.logout();
+
+    expect(service.getSessionEndedNotice()).toBeNull();
+  });
+
+  it('forgets the notice once the host signs in again', async () => {
+    const service = new AuthService();
+    window.dispatchEvent(new CustomEvent(SESSION_EXPIRED_EVENT, { detail: {} }));
+    global.fetch = vi.fn().mockResolvedValue(createMockResponse({ user: USER, token: 'tok-2' }));
+
+    await service.login('ended@example.com', 'Right-pass-1');
+
+    expect(service.getSessionEndedNotice()).toBeNull();
+  });
+});
+
+// N-209 — the sign-in page kept a refusal in the language it was first shown
+// in. The key travels with the text, so the page can say it again in another.
+describe('a refusal carries its key (N-209)', () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  it('names the key of a refused sign-in', async () => {
+    const service = new AuthService();
+    global.fetch = vi.fn().mockResolvedValue(createMockResponse({ error: 'Invalid email or password' }, 401, false));
+
+    const result = await service.login('host@example.com', 'wrong');
+
+    expect(result.errorKey).toBe('auth.invalid_credentials');
+    expect(result.error).toBe(i18n.t('auth.invalid_credentials'));
+  });
+});

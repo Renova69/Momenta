@@ -317,6 +317,8 @@ export const en: Record<string, string> = {
   'canvas.frame_double_border_desc': 'Classic invitation-style double rule',
   'canvas.frame_art_deco_desc': 'Geometric corner accents',
   'auth.invalid_credentials': 'Invalid email or password',
+  // N-207 — on the sign-in page, after a session ended without the host asking.
+  'auth.session_ended': 'Your session has ended. Sign in again to continue.',
   'auth.register_failed': 'Could not create the account',
   'auth.login_failed': 'Could not sign in. Please try again.',
   'auth.email_taken': 'An account with this email already exists. Sign in instead.',

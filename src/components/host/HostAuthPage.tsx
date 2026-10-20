@@ -1,6 +1,7 @@
 import React, { useId, useState } from 'react';
 import { HostUser, WeddingEvent } from '../../types';
-import { authService, DEMO_HOST_USERS } from '../../services/authService';
+import { authService, AuthResult, DEMO_HOST_USERS } from '../../services/authService';
+import { useLanguage } from '../../hooks/useLanguage';
 import { i18n } from '../../i18n';
 import { LegalNotice } from '../legal/LegalLinks';
 import {
@@ -29,21 +30,37 @@ export const HostAuthPage: React.FC<HostAuthPageProps> = ({ onSuccess, initialTa
   const [role, setRole] = useState<'couple' | 'planner'>('couple');
   const [companyName, setCompanyName] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [errorMsg, setErrorMsg] = useState('');
+  // N-209 — the key when there is one, so the refusal is said again in the
+  // language the host switches to; the text when the service gave only that.
+  const [error, setError] = useState<{ key?: string; text: string } | null>(null);
+  useLanguage();
+  const errorMsg = error ? (error.key ? i18n.t(error.key) : error.text) : '';
+  // N-207 — why the last session ended, when the host did not end it: the
+  // dialog that met the refusal closed with the session, so it is said here.
+  const sessionEndedKey = authService.getSessionEndedNotice();
+
+  const showRefusal = (res: AuthResult, fallbackKey: string) =>
+    setError(res.error ? { key: res.errorKey, text: res.error } : { key: fallbackKey, text: i18n.t(fallbackKey) });
+
+  // N-208 — a refusal belongs to the form it came from.
+  const switchTab = (tab: 'signin' | 'signup' | 'demo') => {
+    setActiveTab(tab);
+    setError(null);
+  };
 
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email.trim()) return;
 
     setIsLoading(true);
-    setErrorMsg('');
+    setError(null);
     const res = await authService.login(email, password);
     setIsLoading(false);
 
     if (res.success && res.user) {
       onSuccess(res.user, res.event);
     } else {
-      setErrorMsg(res.error || i18n.t('auth.invalid_credentials'));
+      showRefusal(res, 'auth.invalid_credentials');
     }
   };
 
@@ -52,24 +69,24 @@ export const HostAuthPage: React.FC<HostAuthPageProps> = ({ onSuccess, initialTa
     if (!email.trim() || !fullName.trim()) return;
 
     setIsLoading(true);
-    setErrorMsg('');
+    setError(null);
     const res = await authService.register(email, fullName, password, role, companyName);
     setIsLoading(false);
 
     if (res.success && res.user) {
       onSuccess(res.user, res.event);
     } else {
-      setErrorMsg(res.error || i18n.t('auth.register_failed'));
+      showRefusal(res, 'auth.register_failed');
     }
   };
 
   const handleDemoLogin = async (demoUser: HostUser) => {
-    setErrorMsg('');
+    setError(null);
     const res = await authService.loginWithDemo(demoUser);
     if (res.success && res.user) {
       onSuccess(res.user, res.event);
     } else {
-      setErrorMsg(res.error || i18n.t('auth.demo_unavailable'));
+      showRefusal(res, 'auth.demo_unavailable');
     }
   };
 
@@ -93,7 +110,7 @@ export const HostAuthPage: React.FC<HostAuthPageProps> = ({ onSuccess, initialTa
         {/* Tab Switcher */}
         <div className="flex items-center bg-noir-950 p-1.5 rounded-2xl border border-cream-400/10 mb-6 text-xs font-semibold">
           <button
-            onClick={() => setActiveTab('signin')}
+            onClick={() => switchTab('signin')}
             aria-current={activeTab === 'signin' ? 'true' : undefined}
             className={`flex-1 py-2.5 rounded-xl transition-all ${
               activeTab === 'signin'
@@ -104,7 +121,7 @@ export const HostAuthPage: React.FC<HostAuthPageProps> = ({ onSuccess, initialTa
             {i18n.t('host.signin')}
           </button>
           <button
-            onClick={() => setActiveTab('signup')}
+            onClick={() => switchTab('signup')}
             aria-current={activeTab === 'signup' ? 'true' : undefined}
             className={`flex-1 py-2.5 rounded-xl transition-all ${
               activeTab === 'signup'
@@ -115,7 +132,7 @@ export const HostAuthPage: React.FC<HostAuthPageProps> = ({ onSuccess, initialTa
             {i18n.t('host.signup')}
           </button>
           <button
-            onClick={() => setActiveTab('demo')}
+            onClick={() => switchTab('demo')}
             aria-current={activeTab === 'demo' ? 'true' : undefined}
             className={`flex-1 py-2.5 rounded-xl transition-all ${
               activeTab === 'demo'
@@ -128,6 +145,11 @@ export const HostAuthPage: React.FC<HostAuthPageProps> = ({ onSuccess, initialTa
         </div>
 
         {/* role="alert": announced as it appears, not only shown (N-146). */}
+        {!errorMsg && sessionEndedKey && (
+          <div role="alert" className="mb-6 p-3.5 rounded-xl bg-noir-950 border border-gold-400/30 text-cream-200 text-xs text-center">
+            {i18n.t(sessionEndedKey)}
+          </div>
+        )}
         {errorMsg && (
           <div role="alert" className="mb-6 p-3.5 rounded-xl bg-rosewood-900/60 border border-rosewood-400/40 text-rosewood-200 text-xs text-center">
             {errorMsg}

@@ -344,6 +344,8 @@ export const bg: Record<string, string> = {
   'canvas.frame_double_border_desc': 'Класическа покана с двойна линия',
   'canvas.frame_art_deco_desc': 'Геометрични акценти в ъглите',
   'auth.invalid_credentials': 'Невалиден имейл или парола',
+  // N-207 — on the sign-in page, after a session ended without the host asking.
+  'auth.session_ended': 'Сесията ви изтече. Влезте отново, за да продължите.',
   'auth.register_failed': 'Неуспешно създаване на профил',
   'auth.login_failed': 'Неуспешно влизане. Моля, опитайте отново.',
   'auth.email_taken': 'Вече има профил с този имейл. Влезте в него.',

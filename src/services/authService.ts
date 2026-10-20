@@ -1,6 +1,6 @@
 import { HostUser } from '../types';
 import { ENV } from '../config/env';
-import { SESSION_EXPIRED_EVENT, ERROR_CODE_KEYS } from '../api/apiClient';
+import { SESSION_EXPIRED_EVENT, ERROR_CODE_KEYS, type SessionExpiredDetail } from '../api/apiClient';
 import { i18n } from '../i18n';
 import { WeddingEvent } from '../types';
 
@@ -10,6 +10,11 @@ export interface AuthResult {
   user?: HostUser;
   event?: Partial<WeddingEvent>;
   error?: string;
+  /**
+   * N-209 — the translation key behind `error`, when there is one, so a page
+   * that keeps showing the refusal can say it again in another language.
+   */
+  errorKey?: string;
 }
 
 /** What each refusal means when the server sent no code for it. */
@@ -27,7 +32,7 @@ const AUTH_STATUS_KEYS: Record<number, string> = {
  * a host reading Bulgarian got each error in English. The server's code is
  * read first, then the status, then the caller's general message.
  */
-async function refusalMessage(
+async function refusalKey(
   res: Response,
   fallbackKey: string,
   /** What a code means in this action, over its general meaning. */
@@ -39,9 +44,24 @@ async function refusalMessage(
   // and the field's hint had gone with the first keystroke.
   const PASSWORD_FIELDS = ['password', 'newPassword'];
   if (res.status === 400 && Array.isArray(body.details) && body.details.some((d) => PASSWORD_FIELDS.includes(d?.field))) {
-    return i18n.t('auth.password_too_short');
+    return 'auth.password_too_short';
   }
-  return i18n.t(codeKeys[code] || ERROR_CODE_KEYS[code] || AUTH_STATUS_KEYS[res.status] || fallbackKey);
+  return codeKeys[code] || ERROR_CODE_KEYS[code] || AUTH_STATUS_KEYS[res.status] || fallbackKey;
+}
+
+async function refusalMessage(res: Response, fallbackKey: string, codeKeys: Record<string, string> = {}): Promise<string> {
+  return i18n.t(await refusalKey(res, fallbackKey, codeKeys));
+}
+
+/** A refused sign-in or registration, as an AuthResult carrying its key. */
+async function refusal(res: Response, fallbackKey: string): Promise<AuthResult> {
+  const errorKey = await refusalKey(res, fallbackKey);
+  return { success: false, error: i18n.t(errorKey), errorKey };
+}
+
+/** What the sign-in page says about a session the host did not end. */
+function sessionEndedKey(code: unknown): string {
+  return code === 'SESSION_REVOKED' ? 'error.session_revoked' : 'auth.session_ended';
 }
 
 const AUTH_USER_KEY = 'wedmoments_host_user';
@@ -86,6 +106,8 @@ export class AuthService {
   private token: string | null = null;
   private listeners: Set<() => void> = new Set();
   private apiHost: string = ENV.API_URL;
+  /** N-207 — why the last session ended, when the host did not end it. */
+  private sessionEndedNotice: string | null = null;
 
   constructor() {
     if (typeof window !== 'undefined') {
@@ -95,7 +117,10 @@ export class AuthService {
       // momentary refusal — a database blip makes `isSessionTokenCurrent`
       // fail closed — into a forced re-login on every one of the host's
       // devices.
-      window.addEventListener(SESSION_EXPIRED_EVENT, () => this.clearLocalSession());
+      window.addEventListener(SESSION_EXPIRED_EVENT, (event) => {
+        this.sessionEndedNotice = sessionEndedKey((event as CustomEvent<SessionExpiredDetail>).detail?.code);
+        this.clearLocalSession();
+      });
 
       // N-182 — another tab signed in or out, or changed the password and was
       // handed a new token. Read once, the session went stale here: a tab
@@ -137,6 +162,7 @@ export class AuthService {
     if (res.status === 401) {
       const body = (await res.clone().json().catch(() => ({}))) as { code?: unknown };
       if (body.code !== 'INVALID_CREDENTIALS' && body.code !== 'PASSWORD_SETUP_REQUIRED') {
+        this.sessionEndedNotice = sessionEndedKey(body.code);
         this.clearLocalSession();
         return i18n.t(body.code === 'SESSION_REVOKED' ? 'error.session_revoked' : 'error.unauthorized');
       }
@@ -156,6 +182,16 @@ export class AuthService {
     return this.token;
   }
 
+  /**
+   * N-207 — the translation key for why the last session ended, when it ended
+   * without the host asking (it expired, or another device signed it out), or
+   * null. Kept until the host signs in again, for the sign-in page to say: the
+   * dialog that met the refusal closes with the session.
+   */
+  public getSessionEndedNotice(): string | null {
+    return this.sessionEndedNotice;
+  }
+
   public async login(email: string, password?: string): Promise<AuthResult> {
     try {
       const res = await fetch(`${this.apiHost}/api/auth/login`, {
@@ -169,14 +205,14 @@ export class AuthService {
         this.setSession(data.user, data.token);
         return { success: true, user: data.user, event: data.event };
       } else {
-        return { success: false, error: await refusalMessage(res, 'auth.login_failed') };
+        return refusal(res, 'auth.login_failed');
       }
     } catch (e) {
       console.warn('Backend login unreachable:', e);
       // Never fall back to a password-less demo match: signing in requires the
       // server to verify the bcrypt password. The 1-Click Demo tab (loginWithDemo)
       // remains available as an explicitly local-only preview.
-      return { success: false, error: i18n.t('auth.network_error') };
+      return { success: false, error: i18n.t('auth.network_error'), errorKey: 'auth.network_error' };
     }
   }
 
@@ -205,11 +241,11 @@ export class AuthService {
         this.setSession(data.user, data.token);
         return { success: true, user: data.user, event: data.event };
       } else {
-        return { success: false, error: await refusalMessage(res, 'auth.register_failed') };
+        return refusal(res, 'auth.register_failed');
       }
     } catch (e) {
       console.warn('Backend register offline:', e);
-      return { success: false, error: i18n.t('auth.network_error') };
+      return { success: false, error: i18n.t('auth.network_error'), errorKey: 'auth.network_error' };
     }
   }
 
@@ -342,6 +378,8 @@ export class AuthService {
       }).catch(() => undefined);
     }
 
+    // The host asked for this one; there is nothing to explain.
+    this.sessionEndedNotice = null;
     this.currentUser = null;
     this.token = null;
     if (typeof window !== 'undefined') {
@@ -354,6 +392,7 @@ export class AuthService {
   private setSession(user: HostUser, token: string) {
     this.currentUser = user;
     this.token = token;
+    this.sessionEndedNotice = null;
     if (typeof window !== 'undefined') {
       localStorage.setItem(AUTH_USER_KEY, JSON.stringify(user));
       localStorage.setItem(AUTH_TOKEN_KEY, token);

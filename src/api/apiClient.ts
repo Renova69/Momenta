@@ -123,9 +123,14 @@ export const SESSION_EXPIRED_EVENT = 'wedmoments:session-expired';
  */
 const GUEST_SCOPE_ERROR_CODES = new Set(['GUEST_TOKEN_REQUIRED', 'GUEST_IDENTITY_REQUIRED']);
 
-function notifySessionExpired(): void {
+/** N-207 — carries the server's code, so the sign-in page can say why. */
+export interface SessionExpiredDetail {
+  code?: string;
+}
+
+function notifySessionExpired(code?: string): void {
   if (typeof window === 'undefined') return;
-  window.dispatchEvent(new CustomEvent(SESSION_EXPIRED_EVENT));
+  window.dispatchEvent(new CustomEvent<SessionExpiredDetail>(SESSION_EXPIRED_EVENT, { detail: { code } }));
 }
 
 export async function apiFetch<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
@@ -172,7 +177,7 @@ export async function apiFetch<T>(endpoint: string, options: RequestInit = {}): 
     // days, and without this the host studio stays rendered while every action
     // fails. A refused guest identity says nothing about it.
     if (res.status === 401 && token && !(code && GUEST_SCOPE_ERROR_CODES.has(code))) {
-      notifySessionExpired();
+      notifySessionExpired(code);
     }
 
     throw new ApiError(errorMsg, res.status, details, code);

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, cleanup, waitFor, act } from '@testing-library/react';
 import React from 'react';
 
 import { HostAuthPage } from '../../src/components/host/HostAuthPage';
@@ -124,5 +124,52 @@ describe('what each field is for (N-154)', () => {
     expect(container.querySelector('input[type="text"]')).toHaveAttribute('autocomplete', 'name');
     expect(container.querySelector('input[type="email"]')).toHaveAttribute('autocomplete', 'email');
     expect(container.querySelector('input[type="password"]')).toHaveAttribute('autocomplete', 'new-password');
+  });
+});
+
+describe('the sign-in page after a session ended (N-207)', () => {
+  it('says the session ended, and announces it', () => {
+    vi.spyOn(authService, 'getSessionEndedNotice').mockReturnValue('auth.session_ended');
+
+    render(<HostAuthPage onSuccess={vi.fn()} />);
+
+    expect(screen.getByRole('alert')).toHaveTextContent(i18n.t('auth.session_ended'));
+  });
+});
+
+describe('a refusal on the sign-in page (N-208, N-209)', () => {
+  afterEach(() => {
+    i18n.setLanguage('bg');
+  });
+
+  const failSignIn = async () => {
+    fireEvent.change(screen.getByPlaceholderText('monika.alexander@wedmoments.bg'), { target: { value: 'monika@example.com' } });
+    fireEvent.change(screen.getByPlaceholderText('••••••••••••'), { target: { value: 'wrong' } });
+    fireEvent.click(screen.getByText(i18n.t('host.signin_btn')));
+    await screen.findByRole('alert');
+  };
+
+  it('is cleared when the host moves to another form', async () => {
+    vi.spyOn(authService, 'login').mockResolvedValue({ success: false, error: 'Wrong password' });
+    render(<HostAuthPage onSuccess={vi.fn()} />);
+    await failSignIn();
+
+    fireEvent.click(screen.getByText(i18n.t('host.signup')));
+
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  it('follows the language the host switches to', async () => {
+    vi.spyOn(authService, 'login').mockResolvedValue({
+      success: false,
+      error: i18n.t('auth.invalid_credentials'),
+      errorKey: 'auth.invalid_credentials',
+    });
+    render(<HostAuthPage onSuccess={vi.fn()} />);
+    await failSignIn();
+
+    act(() => i18n.setLanguage('en'));
+
+    expect(screen.getByRole('alert')).toHaveTextContent('Invalid email or password');
   });
 });
