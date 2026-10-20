@@ -38,7 +38,10 @@ export const SlugSchema = z
 const WeddingDateSchema = z
   .string()
   .max(40)
-  .refine((value) => isAcceptableWeddingDate(value), 'eventDate must be a date at most two years ahead');
+  .refine((value) => isAcceptableWeddingDate(value), 'eventDate must be a date at most two years ahead')
+  // N-194 — store the instant that was checked, not the string: Postgres
+  // reads a date-only value in its own time zone.
+  .transform((value) => new Date(value).toISOString());
 
 export const UpdateEventSchema = z.object({
   slug: SlugSchema.optional(),

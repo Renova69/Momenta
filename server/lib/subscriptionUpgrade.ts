@@ -237,9 +237,15 @@ export async function applyTierUpgrade(
 }
 
 /**
- * Record a one-time pass on the album it was bought for (N-168, N-169): the
- * higher of the pass it already had and this one, bought now. An album named
- * that is not this host's gets nothing; with none named, the newest album.
+ * Record a one-time pass on the album it was bought for (N-168, N-169). An
+ * open album keeps the higher of the pass it has and this one; a closed album
+ * takes the pass bought. The pass's days start now only when it is the one
+ * the album ends up with. An album named that is not this host's gets
+ * nothing; with none named, the newest album.
+ *
+ * N-193 — a closed album kept its dearer pass and restarted that pass's
+ * days, so a €49 Celebration Pass reopened a closed Deluxe album as Deluxe
+ * for 365 days. The owner's rule (2026-10-20): it reopens as the pass bought.
  */
 async function bindPassToAlbum(
   userId: string,
@@ -247,11 +253,12 @@ async function bindPassToAlbum(
   eventId: string | null,
   db: Pool | PoolClient
 ): Promise<void> {
+  const takesBoughtPass = `(pass_tier IS NULL OR expires_at <= NOW()
+                            OR (${tierRankSql('$2::text')}) >= (${tierRankSql('pass_tier')}))`;
   await db.query(
     `UPDATE events
-        SET pass_tier = CASE WHEN pass_tier IS NULL OR (${tierRankSql('$2::text')}) >= (${tierRankSql('pass_tier')})
-                             THEN $2 ELSE pass_tier END,
-            pass_started_at = NOW()
+        SET pass_tier = CASE WHEN ${takesBoughtPass} THEN $2 ELSE pass_tier END,
+            pass_started_at = CASE WHEN ${takesBoughtPass} THEN NOW() ELSE pass_started_at END
       WHERE host_user_id = $1
         AND id = COALESCE($3::uuid, (SELECT id FROM events newest
                                        WHERE newest.host_user_id = $1

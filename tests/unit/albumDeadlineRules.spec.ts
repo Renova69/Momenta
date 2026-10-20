@@ -30,7 +30,9 @@ vi.mock('../../server/lib/stripe', () => ({
 import { authRouter } from '../../server/routes/auth';
 import { eventsRouter } from '../../server/routes/events';
 import { query } from '../../server/lib/db';
-import { applyTierUpgrade } from '../../server/lib/subscriptionUpgrade';
+import { applyTierUpgrade, retireSpentPass } from '../../server/lib/subscriptionUpgrade';
+import { getEffectiveTierForEvent } from '../../server/middleware/tierGate';
+import { isAcceptableWeddingDate } from '../../shared/eventLimits';
 import { refreshExpiryDates } from '../../server/lib/retention';
 import { deleteEventFixtures } from '../helpers/cleanup';
 
@@ -147,6 +149,49 @@ describe('editing the wedding date (N-168)', () => {
     const res = await putEvent(host, { eventDate: 'not-a-date' });
     expect(res.status).toBe(400);
   });
+
+  // N-194 — the check read the string with JavaScript's parser and Postgres
+  // stored it with its own. They disagree on two-digit years: '12/31/69' is
+  // 1969 to one and 2069 to the other, so a free album stayed open 43 years.
+  it.each(['12/31/69', '1/1/50', 'Jan 1 50'])(
+    'refuses %s, which the database would read as another year (N-194)',
+    async (eventDate) => {
+      const host = await registerHost();
+      const before = (await albumRow(host.eventId)).expires_at?.getTime();
+
+      expect((await putEvent(host, { eventDate })).status).toBe(400);
+      expect((await albumRow(host.eventId)).expires_at?.getTime()).toBe(before);
+    }
+  );
+
+  it('refuses a day that does not exist, instead of failing (N-194)', async () => {
+    const host = await registerHost();
+    expect((await putEvent(host, { eventDate: '2026-02-30' })).status).toBe(400);
+  });
+});
+
+// N-200 — the owner's rule (2026-10-20): two calendar years, so the same day
+// two years on is allowed whatever 29 February falls between.
+describe('the two-year limit (N-200)', () => {
+  const at = (iso: string) => Date.parse(iso);
+
+  it('allows the same day two years on, across a 29 February', () => {
+    const now = at('2026-10-20T08:00:00.000Z');
+    expect(isAcceptableWeddingDate('2028-10-19T12:00:00.000Z', now)).toBe(true);
+    expect(isAcceptableWeddingDate('2028-10-20T12:00:00.000Z', now)).toBe(true);
+    expect(isAcceptableWeddingDate('2028-10-21T12:00:00.000Z', now)).toBe(false);
+  });
+
+  it('allows that day at any hour, not only before the current time', () => {
+    const now = at('2029-03-10T08:00:00.000Z');
+    expect(isAcceptableWeddingDate('2031-03-10T14:00:00.000Z', now)).toBe(true);
+  });
+
+  it('counts two years from 29 February as reaching 1 March', () => {
+    const now = at('2028-02-29T10:00:00.000Z');
+    expect(isAcceptableWeddingDate('2030-03-01T10:00:00.000Z', now)).toBe(true);
+    expect(isAcceptableWeddingDate('2030-03-02T10:00:00.000Z', now)).toBe(false);
+  });
 });
 
 describe('buying a plan (N-169)', () => {
@@ -190,5 +235,51 @@ describe('buying a plan (N-169)', () => {
     const album = await albumRow(host.eventId);
     expect(album.pass_tier).toBeNull();
     expect(album.expires_at?.getTime()).toBe(closedAt.getTime());
+  });
+
+  // N-193 — the owner's rule (2026-10-20): a cheaper pass bought for an album
+  // closed under a dearer one reopens it as the pass bought. It used to keep
+  // the dearer pass and restart its window, so €49 bought a year of Deluxe.
+  it('reopens a closed Deluxe album as the Celebration Pass bought for it (N-193)', async () => {
+    const host = await registerHost();
+    await applyTierUpgrade(host.userId, 'deluxe_keepsake', {
+      billingType: 'one_time',
+      amountPaidCents: 8900,
+      purchase: { eventId: host.eventId },
+    });
+    await closedAlbum(host, 400);
+    expect(await retireSpentPass(host.userId)).toBe(true);
+
+    await applyTierUpgrade(host.userId, 'celebration_pass', {
+      billingType: 'one_time',
+      amountPaidCents: 4900,
+      purchase: { eventId: host.eventId },
+    });
+
+    const album = await albumRow(host.eventId);
+    expect(album.pass_tier).toBe('celebration_pass');
+    expect(Math.abs(album.expires_at!.getTime() - (Date.now() + 90 * DAY))).toBeLessThan(60_000);
+    expect(await getEffectiveTierForEvent(host.eventId)).toBe('celebration_pass');
+  });
+
+  it("keeps an open album's dearer pass, and when its days started (N-193)", async () => {
+    const host = await registerHost();
+    await applyTierUpgrade(host.userId, 'deluxe_keepsake', {
+      billingType: 'one_time',
+      amountPaidCents: 8900,
+      purchase: { eventId: host.eventId },
+    });
+    const before = await albumRow(host.eventId);
+
+    await applyTierUpgrade(host.userId, 'celebration_pass', {
+      billingType: 'one_time',
+      amountPaidCents: 4900,
+      purchase: { eventId: host.eventId },
+    });
+
+    const after = await albumRow(host.eventId);
+    expect(after.pass_tier).toBe('deluxe_keepsake');
+    expect(after.pass_started_at?.getTime()).toBe(before.pass_started_at?.getTime());
+    expect(after.expires_at?.getTime()).toBe(before.expires_at?.getTime());
   });
 });
