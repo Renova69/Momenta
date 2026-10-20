@@ -134,6 +134,28 @@ describe('the demo account is view-only (N-166)', () => {
     expect((await send('GET', '/api/auth/me', secondToken)).status).toBe(200);
   });
 
+  // N-206 — sign-in creates an album for an account that has none, and that
+  // runs before any guard. The demo planner had none on any database, so the
+  // first visitor to pick it wrote one into the shared demo account.
+  it('creates nothing when a demo account with no album signs in', async () => {
+    const host = await registerHost('empty-demo');
+    await query('UPDATE users SET is_demo = TRUE WHERE id = $1', [host.userId]);
+    await deleteEventFixtures([host.eventId]);
+
+    const res = await send('POST', '/api/auth/login', null, { email: host.email, password: PASSWORD });
+
+    expect(res.status).toBe(200);
+    const { rows } = await query('SELECT count(*)::int AS n FROM events WHERE host_user_id = $1', [host.userId]);
+    expect(rows[0].n).toBe(0);
+  });
+
+  it('gives the demo planner an album of its own, so signing in needs none made (N-206)', async () => {
+    const { rows } = await query(
+      "SELECT count(*)::int AS n FROM events WHERE host_user_id = '10eebc99-9c0b-4ef8-bb6d-6bb9bd380a02'"
+    );
+    expect(rows[0].n).toBeGreaterThan(0);
+  });
+
   it('leaves an ordinary host free to edit', async () => {
     const host = await registerHost('plain');
     const res = await send('PUT', `/api/events/${host.eventId}`, host.token, { title: 'Our wedding' });

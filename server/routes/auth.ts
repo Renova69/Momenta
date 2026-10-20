@@ -249,7 +249,11 @@ authRouter.post('/login', authLimiter, validateBody(LoginSchema), async (req, re
     const eventRes = await pool.query(LATEST_EVENT_SQL, [user.id]);
     let event = eventRes.rows[0];
 
-    if (!event) {
+    // N-206 — a demo account is view-only (N-166), and this write runs before
+    // any guard: the demo planner, seeded with no album, had one created by
+    // whichever visitor picked it first. Its album is seeded now (migration
+    // 038); a demo account without one simply signs in without one.
+    if (!event && user.is_demo !== true) {
       // DB-13: this fallback path (an OAuth import or any account that
       // somehow reached login with zero events) had its own copy of the
       // auto-create-an-event logic that predated both SEC-D4 (no
@@ -333,8 +337,8 @@ authRouter.post('/login', authLimiter, validateBody(LoginSchema), async (req, re
       isDemo: user.is_demo === true,
     };
 
-    event.planTier = await getEffectiveTierForEvent(event.id);
-    res.json({ user: sanitizedUser, event, token });
+    if (event) event.planTier = await getEffectiveTierForEvent(event.id);
+    res.json({ user: sanitizedUser, event: event ?? null, token });
   } catch (err) {
     console.error('[Auth] Login error:', errorLabel(err));
     res.status(500).json({ error: 'Login failed. Please try again.' });

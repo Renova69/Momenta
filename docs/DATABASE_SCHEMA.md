@@ -376,6 +376,7 @@ the strength of mail nobody received.
 | 035 | `035_qr_text_defaults.sql` | Poster headline and subtext no longer default to English (N-117). |
 | 036 | `036_no_third_party_covers.sql` | Clears stored stock-photo cover addresses (N-131). |
 | 037 | `037_album_pass.sql` | `events.pass_tier`, `events.pass_started_at` — a one-time pass belongs to the album it was bought for, and counts its days from the wedding or the purchase, whichever is later (N-168, N-169). Backfilled onto each pass holder's newest album, start left NULL. |
+| 038 | `038_demo_planner_album.sql` | Seeds the demo planner's album, the one sign-in used to create for it before the view-only guard (N-206). Sign-in no longer creates an album for a demo account. |
 
 Full detail on the security/architecture-motivated migrations (009-019) is in
 `OPEN_ITEMS.md`, which is kept current as the working audit log for this kind
