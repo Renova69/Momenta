@@ -9,7 +9,7 @@ export default defineConfig({
   plugins: [react(), tailwindcss()],
   resolve: {
     alias: {
-      '@': path.resolve(__dirname, './src'),
+      '@': path.resolve(import.meta.dirname, './src'),
     },
   },
   server: {
@@ -31,5 +31,12 @@ export default defineConfig({
     port: 6500,
     host: true,
     strictPort: true,
+  },
+  build: {
+    // Vite 6's default, kept on purpose. Vite 8 raised its own to Safari 16.4
+    // and Chrome 111, and a guest's phone is whatever they brought to the
+    // wedding: below that floor the bundle would not parse and the album would
+    // open blank, where today it opens with plainer styling.
+    target: ['es2020', 'edge88', 'firefox78', 'chrome87', 'safari14'],
   },
 });

@@ -1,9 +1,10 @@
-import { describe, it, expect, beforeEach, afterEach, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, beforeEach, afterEach, afterAll } from 'vitest';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { runMigrations } from '../../server/lib/migrate';
 import { query } from '../../server/lib/db';
+import { holdSchemaChangeLock } from '../helpers/schemaChangeLock';
 
 /**
  * The migration runner executes on every server boot, and the one time it did
@@ -68,6 +69,14 @@ async function cleanUp(filenames: string[]) {
   await query('DELETE FROM schema_migrations WHERE filename = ANY($1::text[])', [filenames]);
 }
 
+// The scratch table must not appear or vanish while dbBackup.spec.ts is
+// dumping the database; see tests/helpers/schemaChangeLock.ts.
+let releaseSchemaChangeLock: () => Promise<void> = async () => {};
+
+beforeAll(async () => {
+  releaseSchemaChangeLock = await holdSchemaChangeLock();
+});
+
 beforeEach(() => {
   tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'wedmoments-migrate-'));
 });
@@ -77,7 +86,11 @@ afterEach(() => {
 });
 
 afterAll(async () => {
-  await cleanUp([CREATE, ALTER, BROKEN, AFTER_BROKEN]);
+  try {
+    await cleanUp([CREATE, ALTER, BROKEN, AFTER_BROKEN]);
+  } finally {
+    await releaseSchemaChangeLock();
+  }
 });
 
 describe('SQL migration runner', () => {

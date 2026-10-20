@@ -7,6 +7,7 @@ import { libpqEnv, withDatabase, toolMajorVersion, toolCommand, pgToolsReachable
 import { backupFileName, backupsToPrune, runBackup, sha256File } from '../../scripts/db-backup';
 import { compareCounts, newestBackup, runRestoreCheck, SCRATCH_PREFIX } from '../../scripts/db-restore-check';
 import { query } from '../../server/lib/db';
+import { holdSchemaChangeLock } from '../helpers/schemaChangeLock';
 
 /**
  * The database backup and the restore check. Nothing backed the database up;
@@ -126,9 +127,22 @@ describe('the round trip can run where it is required', () => {
   });
 });
 
+/**
+ * A backup of the shared test database that no schema-changing spec can
+ * interleave with; see tests/helpers/schemaChangeLock.ts.
+ */
+async function backupUnderLock(options: Parameters<typeof runBackup>[0]) {
+  const release = await holdSchemaChangeLock();
+  try {
+    return await runBackup(options);
+  } finally {
+    await release();
+  }
+}
+
 describe.runIf(pgToolsReachable())('the round trip against the real database', () => {
   it('backs up, restores into a throwaway database, and every table matches', async () => {
-    const backup = await runBackup({ databaseUrl: String(CONFIG.DATABASE_URL), dir, keep: 2 });
+    const backup = await backupUnderLock({ databaseUrl: String(CONFIG.DATABASE_URL), dir, keep: 2 });
 
     expect(fs.existsSync(backup.file)).toBe(true);
     expect(backup.manifest.consistent).toBe(true);
@@ -150,7 +164,7 @@ describe.runIf(pgToolsReachable())('the round trip against the real database', (
 describe.runIf(process.platform !== 'win32' && pgToolsReachable())('backup file permissions', () => {
   it('writes the folder, the dump and the manifest for their owner only', async () => {
     const sub = path.join(dir, 'private');
-    const backup = await runBackup({ databaseUrl: String(CONFIG.DATABASE_URL), dir: sub, keep: 1 });
+    const backup = await backupUnderLock({ databaseUrl: String(CONFIG.DATABASE_URL), dir: sub, keep: 1 });
 
     expect(fs.statSync(sub).mode & 0o077).toBe(0);
     expect(fs.statSync(backup.file).mode & 0o077).toBe(0);
