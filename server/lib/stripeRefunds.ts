@@ -8,13 +8,39 @@ import { getStripeClient, isLiveSubscriptionStatus, retrieveSubscriptionOrNull }
  * rule (2026-10-18): refund automatically rather than keep money nobody can
  * spend, or leave it to be noticed.
  *
- * A subscription the checkout started is cancelled first, so it never charges
- * again. The refund carries an idempotency key per session, so a webhook that
- * Stripe retries after a failure here never refunds twice. Throws when Stripe
- * cannot be reached, which rolls the webhook back for Stripe to retry.
+ * The refund comes first and carries an idempotency key per session, so a
+ * webhook that Stripe retries after a failure here never refunds twice. A
+ * subscription the checkout started is cancelled after it, so it never charges
+ * again. Throws when Stripe cannot be reached, which rolls the webhook back
+ * for Stripe to retry.
+ *
+ * N-195 — the cancel used to come first. When the refund then failed, the
+ * retry found the subscription ended, took that as "nothing was granted", and
+ * returned before any refund: the payment was kept. Refunded first, the
+ * subscription is still live on a retry, so the retry takes this path again.
  */
 export async function refundCheckoutSession(session: Stripe.Checkout.Session, reason: string): Promise<void> {
   const stripe = getStripeClient();
+
+  const paymentIntent = idOf(session.payment_intent) ?? (await invoicePaymentIntent(idOf(session.invoice)));
+  if (paymentIntent) {
+    try {
+      await stripe.refunds.create(
+        { payment_intent: paymentIntent, metadata: { checkout_session: session.id, reason } },
+        { idempotencyKey: `refund-${session.id}` }
+      );
+      console.warn(`[Billing] refunded checkout session ${session.id}: ${reason}`);
+    } catch (err) {
+      // Stripe keeps an idempotency key for a day; a retry after that is told
+      // the refund it already made cannot be made again, which is the outcome.
+      if ((err as { code?: unknown }).code !== 'charge_already_refunded') throw err;
+      console.warn(`[Billing] checkout session ${session.id} was already refunded: ${reason}`);
+    }
+  } else {
+    console.error(
+      `[Billing] could not find the payment of checkout session ${session.id} to refund (${reason}) — refund it by hand in the Stripe dashboard`
+    );
+  }
 
   const subscriptionId = idOf(session.subscription);
   if (subscriptionId) {
@@ -23,20 +49,6 @@ export async function refundCheckoutSession(session: Stripe.Checkout.Session, re
       await stripe.subscriptions.cancel(subscriptionId);
     }
   }
-
-  const paymentIntent = idOf(session.payment_intent) ?? (await invoicePaymentIntent(idOf(session.invoice)));
-  if (!paymentIntent) {
-    console.error(
-      `[Billing] could not find the payment of checkout session ${session.id} to refund (${reason}) — refund it by hand in the Stripe dashboard`
-    );
-    return;
-  }
-
-  await stripe.refunds.create(
-    { payment_intent: paymentIntent, metadata: { checkout_session: session.id, reason } },
-    { idempotencyKey: `refund-${session.id}` }
-  );
-  console.warn(`[Billing] refunded checkout session ${session.id}: ${reason}`);
 }
 
 /** A subscription's first payment lives on its invoice, not on the session. */

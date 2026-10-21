@@ -1289,6 +1289,70 @@ describe('a payment the app cannot use is refunded (N-172, N-173)', () => {
     expect((await subscriptionRow(userId)).stripe_subscription_id).toBe(first);
   });
 
+  // N-195 — the subscription was cancelled before the refund was asked for.
+  // When the refund then failed, Stripe's retry found the subscription ended
+  // and returned before either refund path: the payment was kept.
+  it('still refunds on the retry when the refund failed the first time (N-195)', async () => {
+    const userId = await registerHost();
+    const first = uniqueId('sub');
+    const second = uniqueId('sub');
+    await applyTierUpgrade(userId, 'pro_planner', { billingType: 'monthly', stripeSubscriptionId: first });
+    stripeSays(first, 'active');
+    stripeSays(second, 'active');
+    const defaultCancel = refundCalls.cancel.getMockImplementation();
+    refundCalls.cancel.mockImplementation(async (id: string) => {
+      stripeNow.set(id, 'canceled');
+      return { id, status: 'canceled' };
+    });
+    refundCalls.refund.mockClear();
+    refundCalls.refund.mockRejectedValueOnce(new Error('Stripe answered 500'));
+    const event = checkoutSessionEvent('checkout.session.completed', {
+      mode: 'subscription',
+      payment_status: 'paid',
+      amount_total: 4900,
+      subscription: second,
+      invoice: `in_${uniqueId('inv')}`,
+      metadata: { userId, tier: 'pro_planner' },
+    });
+
+    try {
+      expect((await postEvent(event)).status).toBe(500);
+      expect((await postEvent(event)).status).toBe(200);
+    } finally {
+      refundCalls.cancel.mockImplementation(defaultCancel!);
+    }
+
+    expect(refundCalls.refund).toHaveBeenCalledTimes(2);
+    expect(stripeNow.get(second)).toBe('canceled');
+    expect((await subscriptionRow(userId)).stripe_subscription_id).toBe(first);
+  });
+
+  // A retry more than a day later outlives the idempotency key, and Stripe
+  // then refuses the refund it already made. That is the outcome wanted.
+  it('takes a payment already refunded as refunded, and still cancels', async () => {
+    const goneUserId = '00000000-0000-4000-8000-0000000000ab';
+    const sub = uniqueId('sub');
+    stripeSays(sub, 'active');
+    refundCalls.cancel.mockClear();
+    refundCalls.refund.mockRejectedValueOnce(
+      Object.assign(new Error('Charge has already been refunded.'), { code: 'charge_already_refunded' })
+    );
+
+    const res = await postEvent(
+      checkoutSessionEvent('checkout.session.completed', {
+        mode: 'subscription',
+        payment_status: 'paid',
+        amount_total: 4900,
+        subscription: sub,
+        invoice: `in_${uniqueId('inv')}`,
+        metadata: { userId: goneUserId, tier: 'pro_planner' },
+      })
+    );
+
+    expect(res.status).toBe(200);
+    expect(refundCalls.cancel).toHaveBeenCalledWith(sub);
+  });
+
   it('does not refund a new subscription when the one on file has ended', async () => {
     const userId = await registerHost();
     const old = uniqueId('sub');
