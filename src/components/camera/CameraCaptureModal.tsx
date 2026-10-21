@@ -166,11 +166,16 @@ export const CameraCaptureModal: React.FC<CameraCaptureModalProps> = ({
   }, [useFrontCamera, stopCamera]);
 
   useEffect(() => {
+    // N-198 — the permission check answers later; by then this run may have
+    // been cleaned up (the camera closed), and starting it then left a live
+    // stream that nothing would stop.
+    let cancelled = false;
     if (isOpen && !capturedRawUrl && !closedAt) {
       if (navigator.permissions && navigator.permissions.query) {
         navigator.permissions
           .query({ name: 'camera' as PermissionName })
           .then((status) => {
+            if (cancelled) return;
             if (status.state === 'granted') {
               setPermissionState('granted');
               startCamera();
@@ -183,7 +188,7 @@ export const CameraCaptureModal: React.FC<CameraCaptureModalProps> = ({
             }
           })
           .catch(() => {
-            startCamera();
+            if (!cancelled) startCamera();
           });
       } else {
         startCamera();
@@ -193,6 +198,7 @@ export const CameraCaptureModal: React.FC<CameraCaptureModalProps> = ({
     }
 
     return () => {
+      cancelled = true;
       stopCamera();
     };
   }, [isOpen, capturedRawUrl, closedAt, useFrontCamera, startCamera, stopCamera]);

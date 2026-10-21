@@ -672,4 +672,26 @@ describe('the camera stream', () => {
 
     expect(current.stop).not.toHaveBeenCalled();
   });
+
+  // N-198 — the permission check's answer started the camera however late it
+  // came. Closing the camera before it answered left a live stream behind.
+  it('is never started when the permission check answers after the camera was closed', async () => {
+    let answer: (status: { state: PermissionState }) => void = () => undefined;
+    Object.defineProperty(navigator, 'permissions', {
+      configurable: true,
+      value: { query: vi.fn(() => new Promise((resolve) => (answer = resolve))) },
+    });
+    const { rerender } = renderModal();
+    await waitFor(() => expect(navigator.permissions.query).toHaveBeenCalled());
+
+    rerender(
+      <CameraCaptureModal
+        {...({ isOpen: false, onClose: vi.fn(), currentGuest: guest, quests, onPhotoUploaded: vi.fn() } as unknown as React.ComponentProps<typeof CameraCaptureModal>)}
+      />
+    );
+    answer({ state: 'granted' });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(navigator.mediaDevices.getUserMedia).not.toHaveBeenCalled();
+  });
 });
