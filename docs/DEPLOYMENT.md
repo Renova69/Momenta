@@ -81,7 +81,9 @@ location / {
     proxy_set_header Host $host;
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     proxy_set_header X-Forwarded-Proto $scheme;
-    client_max_body_size 30m;
+    # The app takes files up to 50 MB (MAX_UPLOAD_SIZE_MB), a photographer's
+    # full-size originals among them; a little more for the form around one.
+    client_max_body_size 55m;
 }
 ```
 
