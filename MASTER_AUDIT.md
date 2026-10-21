@@ -1450,6 +1450,69 @@ checked to have no album row and removed.
 
 ---
 
+## 3n. Review of the §3m Fixes, and the Login Journeys Run Live (2026-10-20 to 21)
+
+**17 findings (N-193 to N-209): 3 Medium, 14 Low. All fixed on 2026-10-21,**
+after the owner decided the two questions they raised (below). Five of them
+finish a §3m fix that closed only part of its finding: N-170 (N-198), N-174
+(N-201), N-178 (N-205), N-179 (N-197) and N-191 (N-199).
+
+The range `4e851ee..10be21a` (the §3m fixes and the dependency housekeeping
+above, 111 files) had not been reviewed as a whole. Three read-only reviewers
+took a domain each: authentication, accounts and billing; albums, media and
+the client; operations, backups and the toolchain. Each finding went to a
+second agent told to refute it, which kept 14 of 16 and lowered three
+severities. Alongside, one agent built the production client, ran the server
+on its own port with local storage, and drove thirteen login and session
+journeys in Chromium twice, with throwaway `@example.com` hosts and without
+writing to the demo accounts. Eleven passed both runs; three defects came out
+of it, and a fourth (N-206) from reading the sign-in route while doing so.
+
+**Gates after the fixes:** typecheck, lint and the production audit clean;
+2,459 unit tests passed in 214 files (2 skipped, both expected on Windows),
+90.11% of lines covered; e2e 28 of 28; browser tests 7 of 7. The login run
+was repeated against the fixed build: the three journeys that had failed now
+show the session-ended notice, clear a refusal when the form changes, and
+follow the language. Journey 5 still reports a failure only because its check
+lists the wordings from before N-207; the screenshot shows the new notice.
+
+| ID | Finding | Severity | Files | Verified | Fixed |
+|---|---|---|---|---|---|
+| **N-193** | **A €49 Celebration Pass reopened a closed Deluxe album as Deluxe for 365 days.** `bindPassToAlbum` kept the album's higher pass and restarted its days on every purchase. Once the Deluxe album closed the account's pass was spent, so checkout and the webhook allowed the cheaper pass, and the pricing dialog offered it. Run with a throwaway host: Deluxe album closed 35 days, Celebration bought, album open 365 days as Deluxe. | Medium | `server/lib/subscriptionUpgrade.ts` | Yes, live | `21c2e99` (reopens as the pass bought, the owner's choice) |
+| **N-194** | **The wedding date was checked by one parser and stored by another.** The schema read it with JavaScript's `Date.parse`; `PUT /api/events/:id` sent the raw string to Postgres. They disagree on two-digit years: `12/31/69` passed the two-year cap as 1969 and was stored as 2069, so a free album stayed open 43 years. `2026-02-30` answered 500. | Medium | `shared/eventLimits.ts`, `server/routes/events/shared.ts` | Yes, probed against both parsers | `21c2e99` |
+| **N-195** | A refund that failed was never retried. The checkout's subscription was cancelled before the refund was asked for; when the refund failed, Stripe's retry found the subscription ended and returned before either refund path. | Low | `server/lib/stripeRefunds.ts`, `server/routes/billingWebhook.ts` | By trace | `d14b654` |
+| **N-196** | Two checkouts for one account could both be granted. The duplicate check (N-172) was serialized only by a Stripe customer, which a first purchase or a pass buyer does not have. | Low | `server/routes/billingWebhook.ts` | Yes, with two overlapping deliveries | `32e6f1a` |
+| **N-197** | Account deletion still left the plan cancelled with only "try again" or "internal error" when an album was claimed in another tab during the cancel, or an erase failed on the database. | Low | `server/routes/authAccount.ts` | By trace | `1fbdac6` (says the plan is cancelled and to try again) |
+| **N-198** | Closing the camera before the browser answered the permission check left a live stream: the answer started the camera however late it came. | Low | `src/components/camera/CameraCaptureModal.tsx` | Yes, in a test | `df4f3a8` |
+| **N-199** | An album link with a full stop after it (`/e/ivan-maria.`), as a link copied from a sentence keeps, got a plain 404 after N-191. | Low | `server/lib/builtClient.ts` | Yes | `f16d4ba` (redirected; never to `//host`) |
+| **N-200** | "Two years ahead" was 730 days, so the same day two years on was refused whenever a 29 February fell between. | Low | `shared/eventLimits.ts` | Yes | `21c2e99` (calendar years, the owner's choice) |
+| **N-201** | `.env.example` ships `PUBLIC_BASE_URL=http://localhost:6501` and the guide starts by copying it, so N-174's check never saw an empty value and production started with localhost. | Low | `server/lib/config.ts`, `.env.example` | Yes | `d3cd270` |
+| **N-202** | A backup setting with a leading zero (`08`) is octal to the shell: `BACKUP_KEEP=08` pruned nothing and `BACKUP_INTERVAL_HOURS=08` crashed the loop after every backup. | Low | `scripts/backup-loop.sh` | Yes, in `postgres:16-alpine` | `986fa95` |
+| **N-203** | `BACKUP_RETRY_MINUTES` and `BACKUP_ATTEMPTS`, documented as settings, were never passed to the backup container. | Low | `docker-compose.yml` | By reading | `986fa95` |
+| **N-204** | The guide's nginx block allowed 30 MB per request; the app takes files up to 50 MB. | Low | `docs/DEPLOYMENT.md` | By reading | `a5b721f` |
+| **N-205** | A backup failing every attempt was still only a log line: the service had no health state. | Low | `docker-compose.yml`, `scripts/backup-loop.sh` | By reading | `986fa95` (healthcheck on the newest dump's age) |
+| **N-206** | Signing in to the demo planner created its album, a write before the demo's view-only guard (N-166): it was seeded with none. | Low | `server/routes/auth.ts` | By trace and in the database | `4c05628` (migration 038 seeds it) |
+| **N-207** | **When a session ended during a profile-dialog action, the host landed on a bare sign-in form.** The dialog that held the message closed with the session; the same on reload with a dead token and on another device after a password change. | Medium | `src/services/authService.ts`, `src/components/host/HostAuthPage.tsx`, `src/api/apiClient.ts` | Yes, live, twice | `9e989e3` |
+| **N-208** | A sign-in refusal stayed above the sign-up and demo forms. | Low | `src/components/host/HostAuthPage.tsx` | Yes, live | `9e989e3` |
+| **N-209** | A sign-in refusal stayed in the language it was first shown in. | Low | `src/components/host/HostAuthPage.tsx`, `src/services/authService.ts` | Yes, live | `9e989e3` |
+
+**Decisions by the owner, 2026-10-20:** a cheaper pass bought for an album
+closed under a dearer one reopens it as the pass bought (Celebration, 90
+days), and never restarts the dearer pass (N-193); "two years ahead" means two
+calendar years (N-200).
+
+**Refuted, recorded so they are not raised again:** moving an open album's
+date forward two years at a time follows the owner's rule of 2026-10-18 (the
+plan decides, from the wedding); the lightbox's like and reaction buttons on a
+closed album already return before doing anything (`App.tsx`).
+
+**Seen and left as they are:** a plain sign-out also signs out the host's
+other devices, by design (`token_version`); the sign-in limit (25 per 15
+minutes per address) counts successful attempts too; the sign-in page has no
+show-password toggle and no forgot-password hint while SMTP is deferred.
+
+---
+
 ## 4. Confirmed Low
 
 **All eight fixed in `9e6f239`**, except L-1, which was not a defect: `vercel.json`
