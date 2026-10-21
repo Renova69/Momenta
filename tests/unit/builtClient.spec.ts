@@ -149,4 +149,30 @@ describe('a file that is not there (N-191)', () => {
   it('still answers an album address with the page', async () => {
     expect((await get('/e/ivan-and-maria-2026', 'identity')).status).toBe(200);
   });
+
+  // N-199 — a link copied from the end of a sentence keeps its full stop. The
+  // client matched '/e/ivan-maria.' as the album; N-191's 404 dead-ended it.
+  it('sends an address that only gained a full stop or a comma to the address without it (N-199)', async () => {
+    const cases: Array<[string, string]> = [
+      ['/e/ivan-maria.', '/e/ivan-maria'],
+      ['/e/ivan-maria/tv.', '/e/ivan-maria/tv'],
+      ['/e/ivan-maria,', '/e/ivan-maria'],
+      ['/e/ivan-maria.).', '/e/ivan-maria'],
+      ['/e/ivan-maria.?lang=en', '/e/ivan-maria?lang=en'],
+    ];
+    for (const [from, to] of cases) {
+      const res = await get(from, 'identity');
+      expect(res.status, from).toBe(301);
+      expect(res.headers.location, from).toBe(to);
+    }
+  });
+
+  it('never sends the visitor to another site that way', async () => {
+    const res = await get('//evil.example.', 'identity');
+    expect(res.headers.location ?? '').not.toMatch(/^\/\//);
+  });
+
+  it('still answers a missing file with a stop after it with 404', async () => {
+    expect((await get('/quarantine/events/abc/wedding-photo-1.jpg.', 'identity')).status).toBe(404);
+  });
 });

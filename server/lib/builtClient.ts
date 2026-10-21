@@ -24,6 +24,9 @@ const CACHE_FOR_GOOD = 'public, max-age=31536000, immutable';
 /** Kept, but checked with the server before each use. */
 const ALWAYS_CHECK = 'no-cache';
 
+/** What a sentence leaves on the end of a link pasted from it. */
+const TRAILING_PUNCTUATION = /[.,;:!?)\]]+$/;
+
 function setCacheHeaders(res: Response, filePath: string): void {
   res.setHeader('Cache-Control', filePath.includes(HASHED_DIR) ? CACHE_FOR_GOOD : ALWAYS_CHECK);
 }
@@ -36,6 +39,20 @@ export function builtClient(distDir: string): Router {
   router.use(express.static(distDir, { setHeaders: setCacheHeaders }));
   router.use((req, res, next) => {
     if (req.method === 'GET' && !req.path.startsWith('/api') && !req.path.startsWith('/uploads')) {
+      // N-199 — a link copied from the end of a sentence keeps its full stop
+      // ('/e/ivan-maria.'). Without it the address is one the client routes,
+      // so the visitor is sent there; a file name keeps its dot and stays a
+      // 404 below. Never to '//host', which a browser reads as another site.
+      const trimmed = req.path.replace(TRAILING_PUNCTUATION, '');
+      if (
+        trimmed !== req.path &&
+        trimmed.startsWith('/') &&
+        !trimmed.startsWith('//') &&
+        !path.posix.basename(trimmed).includes('.')
+      ) {
+        const query = req.originalUrl.indexOf('?');
+        return res.redirect(301, trimmed + (query >= 0 ? req.originalUrl.slice(query) : ''));
+      }
       // N-191 — a file that is not there is a 404, not the page: no address
       // the client routes has a dot in its last segment, and a broken photo
       // address used to load the app's HTML with a 200.
