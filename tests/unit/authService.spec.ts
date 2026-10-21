@@ -415,6 +415,19 @@ describe('the host account (N-122)', () => {
     );
   });
 
+  // N-197 — the plan was cancelled and the deletion then stopped.
+  it('says the plan is cancelled and to try again when the deletion stopped half way', async () => {
+    await signedIn();
+    global.fetch = vi
+      .fn()
+      .mockResolvedValue(createMockResponse({ error: 'Not finished', code: 'ACCOUNT_DELETION_INCOMPLETE' }, 409, false));
+
+    const result = await authService.deleteAccount('Right-pass-1');
+
+    expect(result.success).toBe(false);
+    expect(result.error).toBe(i18n.t('account.delete_incomplete'));
+  });
+
   it('says nothing was deleted when the plan could not be cancelled', async () => {
     await signedIn();
     global.fetch = vi.fn().mockResolvedValue(createMockResponse({ code: 'BILLING_UNVERIFIABLE' }, 503, false));

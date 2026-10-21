@@ -44,6 +44,7 @@ export const en: Record<string, string> = {
   'account.delete_confirm': 'Are you sure? The account and all albums will be deleted for good.',
   'account.delete_failed': 'The account was not deleted. Please try again.',
   'account.delete_billing_unreachable': 'We could not reach the payment provider to cancel your plan. Nothing was deleted; please try again in a few minutes.',
+  'account.delete_incomplete': 'Your plan has been cancelled, but the account was not deleted completely. Try again to finish deleting it.',
   'host_profile.save_failed': 'Save failed. Please try again.',
   'nav.logout': 'Sign Out',
   'nav.appearing_as': 'Guests see you as {{name}}',

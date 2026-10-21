@@ -102,28 +102,31 @@ accountRouter.post(
 );
 
 /**
- * Cancel every plan of this account that Stripe still bills. False when Stripe
- * could not say or could not cancel: the account must then stay, rather than
- * be erased while its card goes on being charged.
+ * Cancel every plan of this account that Stripe still bills. `verified` is
+ * false when Stripe could not say or could not cancel: the account must then
+ * stay, rather than be erased while its card goes on being charged.
+ * `cancelled` says whether a plan was actually cancelled here.
  */
-async function cancelPlansAtStripe(userId: string): Promise<boolean> {
+async function cancelPlansAtStripe(userId: string): Promise<{ verified: boolean; cancelled: boolean }> {
   const { rows } = await pool.query<{ stripe_subscription_id: string }>(
     `SELECT DISTINCT stripe_subscription_id FROM subscriptions
       WHERE user_id = $1 AND stripe_subscription_id IS NOT NULL AND status <> 'canceled'`,
     [userId]
   );
+  let cancelled = false;
   for (const { stripe_subscription_id: subscriptionId } of rows) {
     const liveness = await subscriptionLivenessAtStripe(subscriptionId);
     if (liveness === 'ended') continue;
-    if (liveness === 'unknown') return false;
+    if (liveness === 'unknown') return { verified: false, cancelled };
     try {
       await getStripeClient().subscriptions.cancel(subscriptionId);
+      cancelled = true;
     } catch (err) {
       console.error(`[Auth] could not cancel subscription ${subscriptionId} for an account deletion:`, errorLabel(err));
-      return false;
+      return { verified: false, cancelled };
     }
   }
-  return true;
+  return { verified: true, cancelled };
 }
 
 /**
@@ -149,6 +152,18 @@ async function expireOpenCheckouts(userId: string): Promise<void> {
 const DELETION_IN_PROGRESS = {
   error: 'One of the albums is already being deleted. Try again in a few minutes.',
   code: 'DELETION_IN_PROGRESS',
+};
+
+/**
+ * N-197 — the plan is cancelled before any album is erased, so an erased
+ * account is never left billed. When the erasure then stops (an album claimed
+ * by another tab during the cancel, or a database error), the host is told
+ * that much instead of a bare "try again" or "internal error", and asking
+ * again finishes the deletion.
+ */
+const DELETION_INCOMPLETE = {
+  error: 'Your plan has been cancelled, but the account could not be deleted completely. Try again to finish.',
+  code: 'ACCOUNT_DELETION_INCOMPLETE',
 };
 
 const MAX_ERASURE_ROUNDS = 3;
@@ -195,6 +210,7 @@ accountRouter.delete(
   async (req, res) => {
     const userId = req.user!.userId;
     const { password } = req.body as z.infer<typeof DeleteAccountSchema>;
+    let planCancelled = false;
 
     try {
       const refused = await passwordRefusal(userId, password);
@@ -209,7 +225,9 @@ accountRouter.delete(
       );
       if (held.rows.length > 0) return res.status(409).json(DELETION_IN_PROGRESS);
 
-      if (!(await cancelPlansAtStripe(userId))) {
+      const plans = await cancelPlansAtStripe(userId);
+      planCancelled = plans.cancelled;
+      if (!plans.verified) {
         return res.status(503).json({
           error: 'The payment provider could not be reached to cancel the plan. Nothing was deleted; please try again.',
           code: 'BILLING_UNVERIFIABLE',
@@ -226,7 +244,9 @@ accountRouter.delete(
             photosDeleted += (await eraseAlbum(id)).photosDeleted;
             albumsDeleted += 1;
           } catch (err) {
-            if (err instanceof AlbumBeingDeletedError) return res.status(409).json(DELETION_IN_PROGRESS);
+            if (err instanceof AlbumBeingDeletedError) {
+              return res.status(409).json(planCancelled ? DELETION_INCOMPLETE : DELETION_IN_PROGRESS);
+            }
             throw err;
           }
         }
@@ -243,7 +263,7 @@ accountRouter.delete(
       res.json({ deleted: true, albumsDeleted, photosDeleted });
     } catch (err) {
       console.error('[Auth] DELETE /account error:', errorLabel(err));
-      res.status(500).json({ error: 'Internal server error' });
+      res.status(500).json(planCancelled ? DELETION_INCOMPLETE : { error: 'Internal server error' });
     }
   }
 );

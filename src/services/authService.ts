@@ -332,6 +332,7 @@ export class AuthService {
           error: await this.accountRefusal(res, 'account.delete_failed', {
             INVALID_CREDENTIALS: 'account.password_wrong',
             BILLING_UNVERIFIABLE: 'account.delete_billing_unreachable',
+            ACCOUNT_DELETION_INCOMPLETE: 'account.delete_incomplete',
           }),
         };
       }

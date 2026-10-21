@@ -205,6 +205,25 @@ describe('deleting the account (N-122)', () => {
     await query('UPDATE events SET deleting_at = NULL WHERE id = $1', [host.eventId]);
   });
 
+  // N-197 — the rest of N-179. The check above runs before Stripe; an album
+  // claimed in another tab during the cancel, or an erase that failed, still
+  // left the plan cancelled and said only "try again" or "internal error".
+  it('says the plan is cancelled when the deletion stops after cancelling it', async () => {
+    const host = await registerHost();
+    await givePlan(host.userId, 'sub_account_incomplete');
+    stripe.cancel.mockImplementation(async () => {
+      await query('UPDATE events SET deleting_at = NOW() WHERE id = $1', [host.eventId]);
+      return { status: 'canceled' };
+    });
+
+    const res = await send('DELETE', '/api/auth/account', host.token, { password: PASSWORD });
+
+    expect(res.status).toBe(409);
+    expect((await res.json()).code).toBe('ACCOUNT_DELETION_INCOMPLETE');
+    expect((await query('SELECT 1 FROM users WHERE id = $1', [host.userId])).rows).toHaveLength(1);
+    await query('UPDATE events SET deleting_at = NULL WHERE id = $1', [host.eventId]);
+  });
+
   // N-173 — a checkout still open could be paid after the account was gone.
   it('closes a checkout still open for the account, so it cannot be paid afterwards', async () => {
     const host = await registerHost();

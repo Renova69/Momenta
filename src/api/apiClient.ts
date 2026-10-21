@@ -55,6 +55,7 @@ export const ERROR_CODE_KEYS: Record<string, string> = {
   INGEST_KEY_INVALID: 'ingest.reason_bad_key',
   INGEST_ALBUM_NOT_FOUND: 'ingest.reason_album_gone',
   DELETION_IN_PROGRESS: 'error.deletion_in_progress',
+  ACCOUNT_DELETION_INCOMPLETE: 'account.delete_incomplete',
   PHOTO_NOT_PUBLIC: 'error.photo_not_public',
   STORAGE_DELETE_FAILED: 'error.storage_delete_failed',
   ALREADY_ENTITLED: 'error.already_entitled',
