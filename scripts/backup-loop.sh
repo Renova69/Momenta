@@ -18,14 +18,24 @@ set -u
 # Dumps and manifests readable by their owner only: they hold every guest's data.
 umask 077
 
-# A whole number of at least 1, or the default (N-177). BACKUP_KEEP=0, which
-# many tools read as "keep all", pruned with `tail -n +1` and removed every
-# dump, the new one included; a value that is not a number counted as 0.
-whole_number_or() {
+# A whole number of at least 1, without leading zeros, or nothing (N-177).
+# BACKUP_KEEP=0, which many tools read as "keep all", pruned with
+# `tail -n +1` and removed every dump, the new one included; a value that is
+# not a number counted as 0.
+# N-202 — and the zeros go: the shell reads 08 in $(( )) as an octal number it
+# cannot parse, so BACKUP_KEEP=08 pruned nothing and BACKUP_INTERVAL_HOURS=08
+# crashed the loop after every backup.
+whole_number() {
   case "$1" in
-    '' | *[!0-9]*) echo "$2" ;;
-    *) if [ "$1" -ge 1 ]; then echo "$1"; else echo "$2"; fi ;;
+    '' | *[!0-9]*) return 0 ;;
   esac
+  n=${1#"${1%%[!0]*}"}
+  [ -z "$n" ] || echo "$n"
+}
+
+whole_number_or() {
+  n=$(whole_number "$1")
+  echo "${n:-$2}"
 }
 
 KEEP=$(whole_number_or "${BACKUP_KEEP:-14}" 14)
@@ -36,7 +46,7 @@ RETRY_MINUTES=$(whole_number_or "${BACKUP_RETRY_MINUTES:-15}" 15)
 ATTEMPTS=$(whole_number_or "${BACKUP_ATTEMPTS:-4}" 4)
 DIR="${BACKUP_TARGET_DIR:-/backups}"
 
-[ "$KEEP" = "${BACKUP_KEEP:-14}" ] || echo "[backup] BACKUP_KEEP=\"${BACKUP_KEEP:-}\" is not a whole number of at least 1; keeping $KEEP" >&2
+[ -n "$(whole_number "${BACKUP_KEEP:-14}")" ] || echo "[backup] BACKUP_KEEP=\"${BACKUP_KEEP:-}\" is not a whole number of at least 1; keeping $KEEP" >&2
 
 COUNTS_SQL="select json_build_object(
   'createdAt', to_char(now() at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"'),
@@ -109,9 +119,30 @@ backup_with_retries() {
   done
 }
 
+# N-205 — the service's healthcheck (`backup-loop.sh health`). When every
+# attempt failed, a log line was all that said so and the container stayed
+# "Up" for weeks. Unhealthy once the newest dump is older than one interval
+# and its retries, with an hour to spare for the dump itself.
+health() {
+  newest=$(ls -1t "$DIR"/wedmoments-*.dump 2>/dev/null | head -n 1)
+  if [ -z "$newest" ]; then
+    echo "[backup] no backup in $DIR yet"
+    return 1
+  fi
+  age=$(($(date +%s) - $(stat -c %Y "$newest")))
+  limit=$((INTERVAL_HOURS * 3600 + ATTEMPTS * RETRY_MINUTES * 60 + 3600))
+  echo "[backup] newest $newest, $((age / 3600))h old"
+  [ "$age" -le "$limit" ]
+}
+
 # Sourced by tests for the functions above, without running the loop.
 if [ "${BACKUP_LIB_ONLY:-0}" = "1" ]; then
   return 0 2>/dev/null || exit 0
+fi
+
+if [ "${1:-}" = "health" ]; then
+  health
+  exit $?
 fi
 
 if [ "${BACKUP_ONCE:-0}" = "1" ]; then

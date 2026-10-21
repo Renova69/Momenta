@@ -222,10 +222,24 @@ services:
       PGDATABASE: ${POSTGRES_DB:-wedmoments_db}
       BACKUP_KEEP: ${BACKUP_KEEP:-14}
       BACKUP_INTERVAL_HOURS: ${BACKUP_INTERVAL_HOURS:-24}
+      # N-203 — a container gets only what is named here; these two were
+      # documented as settings and never reached the loop.
+      BACKUP_RETRY_MINUTES: ${BACKUP_RETRY_MINUTES:-15}
+      BACKUP_ATTEMPTS: ${BACKUP_ATTEMPTS:-4}
       # The host user who copies the dumps elsewhere (`id -u`); without it
       # they are root's alone (N-187). See docs/OPERATIONS.md, section 6.
       BACKUP_UID: ${BACKUP_UID:-}
       BACKUP_GID: ${BACKUP_GID:-}
+    # N-205 — unhealthy once the newest dump is older than one interval and
+    # its retries, so failing backups show in `docker compose ps` and to
+    # whatever watches container health, not only in the log.
+    healthcheck:
+      test: ["CMD", "/bin/sh", "/opt/backup-loop.sh", "health"]
+      interval: 15m
+      timeout: 30s
+      retries: 1
+      start_period: 2h
+      start_interval: 1m
     volumes:
       - ./scripts/backup-loop.sh:/opt/backup-loop.sh:ro
       - ${BACKUP_DIR:-./backups}:/backups

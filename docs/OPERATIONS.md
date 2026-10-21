@@ -226,9 +226,15 @@ adding another. The service runs as root and the files are readable by their
 owner only; set `BACKUP_UID` (and `BACKUP_GID`) to the host user who copies
 them elsewhere, and they are handed to that user.
 
+The service reports itself **unhealthy** once the newest dump is older than
+one interval plus its retries and an hour (26 hours with the defaults), so
+backups that keep failing show in `docker compose ps` and to anything that
+watches container health, not only in the log. Point your monitoring at it.
+
 ```bash
 docker compose run --rm -e BACKUP_ONCE=1 backup   # one backup now, by hand
 npm run db:backup                                 # the same, from a checkout
+docker inspect --format '{{.State.Health.Status}}' wedmoments-backup
 ```
 
 `npm run db:backup` uses the PostgreSQL client tools installed where it runs

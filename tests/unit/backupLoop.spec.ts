@@ -3,6 +3,7 @@ import { spawnSync } from 'child_process';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
+import yaml from 'js-yaml';
 
 /**
  * The compose `backup` service's loop, scripts/backup-loop.sh, sourced with
@@ -98,5 +99,58 @@ describe.runIf(shAvailable)('the backup loop (scripts/backup-loop.sh)', () => {
   it('hands the files to BACKUP_UID only when it is set (N-187)', () => {
     expect(source('chown() { echo "chown $*"; }; hand_over a b').out).toBe('');
     expect(source('chown() { echo "chown $*"; }; hand_over a b', { BACKUP_UID: '1000' }).out).toBe('chown 1000:1000 a b');
+  });
+
+  // N-202 — the shell reads 08 in $(( )) as an octal number it cannot parse:
+  // BACKUP_KEEP=08 pruned nothing, and BACKUP_INTERVAL_HOURS=08 crashed the
+  // loop after every backup, so each restart backed up again.
+  it('reads a leading zero as the number it is (N-202)', () => {
+    writeDumps(10);
+    const { err } = source('prune', { BACKUP_KEEP: '08' });
+    expect(dumps()).toHaveLength(8);
+    expect(err).not.toMatch(/BACKUP_KEEP/);
+
+    expect(source('echo "$INTERVAL_HOURS $((INTERVAL_HOURS * 3600))"', { BACKUP_INTERVAL_HOURS: '08' }).out).toBe('8 28800');
+    expect(source('echo "$KEEP"', { BACKUP_KEEP: '00' }).out.split('\n').pop()).toBe('14');
+  });
+
+  // N-205 — when every attempt failed, a log line was all that said so: the
+  // container stayed "Up" with no health state for monitoring to see.
+  it('reports itself unhealthy once the newest dump is older than an interval and its retries (N-205)', () => {
+    const env = { BACKUP_INTERVAL_HOURS: '24', BACKUP_ATTEMPTS: '4', BACKUP_RETRY_MINUTES: '15' };
+    expect(source('health', env).status).not.toBe(0);
+
+    writeDumps(1);
+    expect(source('health', env).status).toBe(0);
+
+    const newest = path.join(dir, dumps()[0]);
+    const late = (Date.now() - 27 * 3600 * 1000) / 1000;
+    fs.utimesSync(newest, late, late);
+    const stale = source('health', env);
+    expect(stale.status).not.toBe(0);
+    expect(stale.out).toMatch(/27h/);
+  });
+});
+
+// N-203 — compose passes a container only the variables it names. The script
+// read BACKUP_RETRY_MINUTES and BACKUP_ATTEMPTS, documented as settings, and
+// never received them.
+describe('the compose backup service', () => {
+  const compose = yaml.load(fs.readFileSync(path.join(process.cwd(), 'docker-compose.yml'), 'utf8')) as {
+    services: Record<string, { environment?: Record<string, string>; healthcheck?: { test?: string[] } }>;
+  };
+  const service = compose.services.backup;
+  const script = fs.readFileSync(path.join(process.cwd(), 'scripts', 'backup-loop.sh'), 'utf8');
+  // Set by hand or by the tests, never by the service.
+  const NOT_SETTINGS = new Set(['BACKUP_LIB_ONLY', 'BACKUP_ONCE', 'BACKUP_TARGET_DIR']);
+
+  it('passes every setting the loop reads (N-203)', () => {
+    const read = [...new Set([...script.matchAll(/\$\{(BACKUP_[A-Z_]+)/g)].map((m) => m[1]))].filter((v) => !NOT_SETTINGS.has(v));
+    expect(read.length).toBeGreaterThan(4);
+    for (const name of read) expect(Object.keys(service.environment ?? {}), name).toContain(name);
+  });
+
+  it('checks its own health with the loop (N-205)', () => {
+    expect(service.healthcheck?.test?.join(' ')).toMatch(/backup-loop\.sh health/);
   });
 });
