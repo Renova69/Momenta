@@ -78,13 +78,23 @@ if (process.env.NODE_ENV === 'production') {
     );
   }
   let protocol = '';
+  let hostname = '';
   try {
-    protocol = new URL(base).protocol;
+    ({ protocol, hostname } = new URL(base));
   } catch {
     // Reported below.
   }
   if (protocol !== 'https:' && protocol !== 'http:') {
     throw new Error(`[CONFIG] PUBLIC_BASE_URL must be an http(s) address, e.g. https://album.example.com. Refusing to start.`);
+  }
+  // N-201 — .env.example ships http://localhost:6501 and the guide starts by
+  // copying it, so the check above never saw an empty value. A loopback
+  // address is this server's own, which no guest's phone can open.
+  if (/^(localhost|127(\.\d{1,3}){3}|\[::1\]|0\.0\.0\.0)$/i.test(hostname)) {
+    throw new Error(
+      `[CONFIG] PUBLIC_BASE_URL is ${base}, an address only this machine can open. ` +
+      'Set the address guests open, e.g. https://album.example.com. Refusing to start.'
+    );
   }
 }
 
