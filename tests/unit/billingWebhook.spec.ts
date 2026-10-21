@@ -76,7 +76,7 @@ function stripeSays(subscriptionId: string, status: string): void {
 import { handleStripeWebhook, eventCustomerId } from '../../server/routes/billingWebhook';
 import { applyTierUpgrade, suspendTierForNonPayment } from '../../server/lib/subscriptionUpgrade';
 import { CONFIG } from '../../server/lib/config';
-import { query } from '../../server/lib/db';
+import { pool, query } from '../../server/lib/db';
 import { deleteEventFixtures } from '../helpers/cleanup';
 
 const TEST_PORT = 6626;
@@ -1351,6 +1351,35 @@ describe('a payment the app cannot use is refunded (N-172, N-173)', () => {
 
     expect(res.status).toBe(200);
     expect(refundCalls.cancel).toHaveBeenCalledWith(sub);
+  });
+
+  // N-196 — the duplicate check reads and then decides, and only a Stripe
+  // customer serialized it. A buyer with none stored (every first purchase,
+  // every pass buyer) went unlocked, so two deliveries at once both read
+  // "free" and both granted: one payment kept, nothing refunded.
+  it('takes two checkouts for one account one at a time, and refunds the second', async () => {
+    const userId = await registerHost();
+    refundCalls.refund.mockClear();
+    // Hold the account's row, as a slow transaction would, so the two
+    // deliveries are in flight together.
+    const holder = await pool.connect();
+    let first: Promise<Response>;
+    let second: Promise<Response>;
+    try {
+      await holder.query('BEGIN');
+      await holder.query("SELECT 1 FROM subscriptions WHERE user_id = $1 AND status = 'active' FOR UPDATE", [userId]);
+      first = postEvent(paidPass(userId));
+      second = postEvent(paidPass(userId));
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    } finally {
+      await holder.query('COMMIT');
+      holder.release();
+    }
+
+    expect((await first).status).toBe(200);
+    expect((await second).status).toBe(200);
+    expect(refundCalls.refund).toHaveBeenCalledTimes(1);
+    expect((await subscriptionRow(userId)).tier).toBe('celebration_pass');
   });
 
   it('does not refund a new subscription when the one on file has ended', async () => {

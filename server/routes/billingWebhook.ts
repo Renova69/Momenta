@@ -68,6 +68,23 @@ async function lockStripeCustomer(db: PoolClient, customerId: string): Promise<v
 }
 
 /**
+ * N-196 — serializes checkouts for one account, which a Stripe customer does
+ * not. A checkout carries one only when the account has one stored: never on
+ * a first purchase, never for a pass buyer (a payment-mode session creates
+ * none), and a subscription checkout makes a new one per session. Unlocked,
+ * two deliveries at once both passed the duplicate check (N-172) and both
+ * granted. Taken after the customer lock, always, so the two never wait on
+ * each other in opposite orders.
+ */
+async function lockCheckoutAccount(db: PoolClient, event: Stripe.Event): Promise<void> {
+  if (!event.type.startsWith('checkout.session.')) return;
+  const session = event.data.object as Stripe.Checkout.Session;
+  const userId = session.metadata?.userId || session.client_reference_id;
+  if (!userId) return;
+  await db.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [`billing_account_${userId}`]);
+}
+
+/**
  * The Stripe customer every one of the handled event types carries, for locking.
  *
  * Stripe sends `customer` as a bare id string on some event types and as an
@@ -618,6 +635,7 @@ async function processEvent(event: Stripe.Event, prefetched: PrefetchedEventData
     if (customerId) {
       await lockStripeCustomer(client, customerId);
     }
+    await lockCheckoutAccount(client, event);
 
     if (!(await claimEvent(client, event))) {
       await client.query('ROLLBACK');
